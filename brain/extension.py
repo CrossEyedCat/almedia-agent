@@ -76,7 +76,7 @@ from brain.validate import rel_error, validate_graph
 
 SETTLE_LOOKS = 2          # a readable file is taken when it reads the same on this many looks in a row
 SQL_TIMEOUT = 10.0        # seconds a contributed query may run
-SQL_MAX_ROWS = 2_000_000  # rows it may return (28 days at the finest grain are about 121,000)
+SQL_MAX_ROWS = 500_000    # rows it may return (28 days at the finest grain are about 121,000)
 VALIDATE_DAYS = 7         # the window brain/validate.py checks the graph on, as at the monitor's start
 MAX_ATTEMPTS = 3          # looks on which an unexpected error is tried again before the file is answered with it
 ABS_TOL = 1e-9            # two values this close are equal whatever their size (sums of money that cancel)
