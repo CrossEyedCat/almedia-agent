@@ -62,6 +62,11 @@ class TreeNode:
     repeated: bool = False  # already shown elsewhere in the tree
 
 
+def tree_dict(t: TreeNode) -> dict:
+    return {"metric": t.metric, "role": t.role, "repeated": t.repeated,
+            "children": [tree_dict(c) for c in t.children]}
+
+
 class MetricGraph:
     def __init__(self) -> None:
         self.specs: dict[str, MetricSpec] = {}
@@ -88,6 +93,12 @@ class MetricGraph:
     @classmethod
     def load(cls, metrics_dir: str | Path = DEFAULT_METRICS_DIR) -> "MetricGraph":
         return cls.from_specs(load_specs(metrics_dir))
+
+    def adopt(self, other: "MetricGraph") -> None:
+        """Take over another graph's metrics, links and statuses in place. The monitor and the evaluator
+        hold this object, so a metric the extension agent accepts reaches them without a restart."""
+        self.specs, self.nodes, self.edges, self.status = other.specs, other.nodes, other.edges, other.status
+        self.additive, self._sources = other.additive, other._sources
 
     def _check_references(self) -> None:
         for s in self.specs.values():
@@ -166,7 +177,7 @@ class MetricGraph:
                        "sources": sorted(self._sources[s.name]),
                        "formula": s.formula.text if s.formula else None,
                        "decomposition": s.investigative_formula.text if s.investigative_formula else None,
-                       "column": s.column, "outcome": s.outcome},
+                       "column": s.column, "outcome": s.outcome, "domain": s.domain},
             )
             self.status.setdefault(s.name, "unvalidated")
 
@@ -276,10 +287,12 @@ class MetricGraph:
         return [m for m in self.specs if m not in reachable]
 
     # ------------------------------------------------------------------ tree
-    def tree(self, root: str) -> TreeNode:
+    def tree(self, root: str, seen: set[str] | None = None) -> TreeNode:
+        """The spanning tree over formula links from `root`. Pass the same `seen` set for several roots
+        to draw them one under the other: what an earlier tree shows is marked `repeated`, not drawn again."""
         if root not in self.specs:
             raise GraphError(f"unknown metric {root}")
-        seen: set[str] = set()
+        seen = set() if seen is None else seen
 
         def build(m: str, role: str | None) -> TreeNode:
             if m in seen:
@@ -333,10 +346,6 @@ class MetricGraph:
 
     # ---------------------------------------------------------------- export
     def to_dict(self) -> dict:
-        def tree_dict(t: TreeNode) -> dict:
-            return {"metric": t.metric, "role": t.role, "repeated": t.repeated,
-                    "children": [tree_dict(c) for c in t.children]}
-
         return {
             "nodes": [{"id": n.id, "kind": n.kind, "label": n.label,
                        "status": self.status.get(n.id, "") if n.kind == "metric" else "",

@@ -18,6 +18,7 @@ Contract (README §3.1) plus a few optional fields the graph uses:
                       the effect moves when this metric rises, 0 = unknown
     direction      -- up (higher is better), down, or none
     tolerance      -- relative tolerance for identity checks
+    domain         -- the business domain the console files the metric under (optional; contracts README, item 7)
 """
 from __future__ import annotations
 
@@ -34,7 +35,7 @@ DIMENSIONS = ("country", "platform", "category", "channel")
 KNOWN_FIELDS = {
     "name", "description", "unit", "dimensions", "column", "sql", "formula", "decomposition",
     "atomic", "additive", "bounds", "systems", "source", "may_affect", "direction", "tolerance",
-    "outcome",
+    "outcome", "domain",
 }
 
 
@@ -70,6 +71,7 @@ class MetricSpec:
     tolerance: float = 1e-6
     origin: str = "core"
     outcome: bool = False
+    domain: str | None = None
     raw: dict = field(default_factory=dict, compare=False, repr=False)
 
     @property
@@ -155,6 +157,10 @@ def spec_from_dict(raw: dict, origin: str = "core") -> MetricSpec:
     if isinstance(systems, str):
         systems = (systems,)
 
+    domain = raw.get("domain")
+    if domain is not None and (not isinstance(domain, str) or not domain.strip()):
+        raise SpecError(f"{name}: domain must be a short text (the console's domain id), got {domain!r}")
+
     return MetricSpec(
         name=name,
         description=str(raw.get("description", "")).strip(),
@@ -174,6 +180,7 @@ def spec_from_dict(raw: dict, origin: str = "core") -> MetricSpec:
         tolerance=float(raw.get("tolerance", 1e-6)),
         origin=origin,
         outcome=raw.get("outcome") is True,
+        domain=domain.strip() if domain else None,
         raw=dict(raw),
     )
 
