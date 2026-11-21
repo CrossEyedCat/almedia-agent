@@ -7,6 +7,9 @@
 <script>var t = new URLSearchParams(location.search).get('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;</script>
 <link rel="stylesheet" href="/static/console.css">
 <style>
+/* the title and the domain selector stay at the top while the page scrolls */
+.sticky-top { position: sticky; top: 0; z-index: 10; background: var(--bg); border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.sticky-top .top { padding: 16px 0 8px; }
 /* domain selector: the main control */
 #domains { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0 16px; }
 .chip { display: inline-flex; gap: 8px; align-items: baseline; padding: 8px 16px; }
@@ -25,7 +28,9 @@
 #toast { margin-left: auto; color: var(--muted); min-height: 24px; }
 /* layout */
 main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); gap: 24px; padding-bottom: 48px; align-items: start; }
-#graphwrap { overflow: auto; max-height: 72vh; padding: 8px 24px; }
+/* the graph stays in view while the long report on the right is read */
+#graph-card { position: sticky; top: calc(var(--top-h, 120px) + 16px); display: flex; flex-direction: column; max-height: calc(100vh - var(--top-h, 120px) - 32px); }
+#graphwrap { flex: 1 1 auto; min-height: 160px; overflow: auto; padding: 8px 24px; }
 .legend { display: flex; flex-wrap: wrap; gap: 0 24px; padding: 8px 24px 16px; color: var(--muted); font-size: 12px; }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 8px; border: 1.5px solid; vertical-align: 0; }
 #extra { padding: 0 24px 24px; color: var(--muted); font-size: 12px; }
@@ -58,20 +63,23 @@ svg text { font-family: var(--ui); }
 .detail .empty, #feed .empty { padding: 8px 0 16px; }
 svg#g { min-width: 720px; }                       /* keep the boxes readable; the card scrolls sideways instead */
 #demo-controls summary { white-space: nowrap; }
-@media (max-width: 900px) { main { grid-template-columns: 1fr; } .page { padding: 0 16px; } }
-@media (max-width: 600px) { .demo-tag small { display: none; } #graphwrap { padding: 8px 16px; } }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } .page { padding: 0 16px; }
+  #graph-card { position: static; max-height: none; } #graphwrap { max-height: 70vh; } }
+@media (max-width: 600px) { .sticky-top { position: static; }   /* on a phone the chips would take too much of the screen */
+  .demo-tag small { display: none; } #graphwrap { padding: 8px 16px; } }
 </style>
 </head>
 <body>
 <div class="page">
-<header class="top">
-  <h1>Eye of the System</h1>
-  <span class="muted" id="clock">connecting...</span>
-  <span id="exbadge"></span>
-  <a class="grow" href="/data">Data &rarr;</a>
-</header>
-
-<nav id="domains" aria-label="Business domain"></nav>
+<div class="sticky-top">
+  <header class="top">
+    <h1>Eye of the System</h1>
+    <span class="muted" id="clock">connecting...</span>
+    <span id="exbadge"></span>
+    <a class="grow" href="/data">Data &rarr;</a>
+  </header>
+  <nav id="domains" aria-label="Business domain"></nav>
+</div>
 
 <details id="demo-controls">
   <summary><span class="demo-tag" title="These buttons write simulated faults into the simulator. The monitor cannot see them; it has to find them in the data.">DEMO<small>simulated faults, not part of the monitor</small></span> controls &#9662;</summary>
@@ -89,7 +97,7 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
 </details>
 
 <main>
-  <section class="card">
+  <section class="card" id="graph-card">
     <h2 id="graph-title">Metric graph</h2>
     <div id="graphwrap"><svg id="g"></svg></div>
     <div class="legend" aria-hidden="true">
@@ -359,13 +367,16 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
     post('/api/metric', { yaml_text: y }).then(function (r) { toast('Metric handed to the monitor: ' + r.saved); }).catch(function (e) { toast('Failed: ' + e.message); });
   };
 
+  function setTop() { document.documentElement.style.setProperty('--top-h', document.querySelector('.sticky-top').offsetHeight + 'px'); }
+  setTop(); window.addEventListener('resize', setTop); if (document.fonts && document.fonts.ready) document.fonts.ready.then(setTop);
+
   Promise.all([get('/api/graph'), get('/api/domains'), get('/api/incidents')]).then(function (r) {
     graph = r[0]; domains = r[1]; incidents = r[2].incidents; example = r[2].example;
     graph.nodes.forEach(function (n) { if (n.kind === 'metric') meta[n.id] = n; });
     domains.forEach(function (d) { d.metrics.forEach(function (m) { domOf[m] = d.id; }); });
     if (example) $('exbadge').appendChild(el('span', 'pill example', ['showing the contract example, no live incident yet']));
     if (incidents.length) selInc = incidents[0].id;
-    renderAll();
+    renderAll(); setTop();
     refresh(); setInterval(refresh, 2000);
   }).catch(function (e) { $('graphwrap').textContent = 'Could not load the graph: ' + e.message; });
 })();

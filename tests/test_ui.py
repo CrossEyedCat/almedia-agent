@@ -210,3 +210,18 @@ def test_style_stays_flat_and_both_pages_share_it(client):
         assert "/static/console.css" in html and "gradient" not in html and "box-shadow" not in html
         assert "prefers-color-scheme" not in html                      # themes live in one place
     assert client.get("/static/console.css").status_code == 200
+
+
+def test_title_and_domain_selector_stay_at_the_top_when_scrolling(client):
+    html = client.get("/").text
+    head, body = html.split("</head>")
+    assert ".sticky-top { position: sticky; top: 0;" in head
+    block = body.split('<div class="sticky-top">')[1].split("<main>")[0]
+    assert 'id="domains"' in block and "Eye of the System" in block          # both sit inside the sticky container
+    assert 'id="demo-controls"' not in block.split('id="domains"')[0]
+
+
+def test_the_graph_card_stays_in_view_next_to_a_long_report(client):
+    html = client.get("/").text
+    assert 'id="graph-card"' in html and "#graph-card { position: sticky;" in html
+    assert "--top-h" in html and "setTop" in html                      # the offset follows the real height of the top bar
