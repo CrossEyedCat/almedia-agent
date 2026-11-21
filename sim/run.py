@@ -47,14 +47,21 @@ def backfill(path: str, hours: int, start: str = DEFAULT_START, countries=COUNTR
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--backfill", type=parse_span, required=True, help="history length, e.g. 28d")
-    ap.add_argument("--start", default=DEFAULT_START, help="first hour, UTC")
+    clock = ap.add_mutually_exclusive_group()
+    clock.add_argument("--start", default=None, help="first hour, UTC")
+    clock.add_argument("--until-now", action="store_true", help="history ends at the real current UTC hour (demo)")
     ap.add_argument("--countries", default=",".join(COUNTRIES))
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--db", default=db.DEFAULT_DB)
     ap.add_argument("--force", action="store_true", help="replace an existing database")
     a = ap.parse_args(argv)
     t0 = time.time()
-    p = backfill(a.db, a.backfill, a.start, tuple(a.countries.split(",")), a.seed, overwrite=a.force or not Path(a.db).exists(), add_context=True)
+    start = a.start or DEFAULT_START
+    if a.until_now:
+        if a.backfill < 1:
+            ap.error("--backfill must be at least one hour")
+        start = (pd.Timestamp.now(tz="UTC").floor("h") - pd.Timedelta(hours=a.backfill - 1)).strftime("%Y-%m-%dT%H:00:00Z")
+    p = backfill(a.db, a.backfill, start, tuple(a.countries.split(",")), a.seed, overwrite=a.force or not Path(a.db).exists(), add_context=True)
     con = db.connect(p)
     rows = con.execute("SELECT COUNT(*) FROM facts_hourly").fetchone()[0]
     print(f"{p}: {rows} rows, {a.backfill} hours, seed {a.seed}, {time.time() - t0:.1f} s")

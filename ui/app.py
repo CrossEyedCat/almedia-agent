@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from sim import db, inject
+from sim.clock import sync_current_hour, wall_now
 from ui import domains as domain_map
 from sim.inject import AlreadyEnded, AlreadyInjected, NoSuchInjection
 from sim.world import CATEGORIES, CHANNELS, COUNTRIES, PLATFORMS
@@ -31,6 +32,20 @@ INCIDENTS_DIR = Path(os.environ.get("INCIDENTS_DIR", ROOT / "incidents"))
 INCOMING_DIR = Path(os.environ.get("INCOMING_METRICS_DIR", ROOT / "incoming_metrics"))
 EXAMPLE_INCIDENT = ROOT / "docs/contracts/incident_example.json"
 MARKET_DB = Path(os.environ.get("MARKET_DB", ROOT / "data/market.db"))
+
+CLOCK_MODE = os.environ.get("MARKET_CLOCK", "replay")
+if CLOCK_MODE not in ("wall", "replay"):
+    raise ValueError("MARKET_CLOCK must be wall or replay")
+
+
+def current_hour(con):
+    if CLOCK_MODE == "wall":
+        try:
+            return sync_current_hour(con, wall_now())
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+    return db.last_hour(con)
+
 
 app = FastAPI(title="Eye of the System")
 class NoCacheStatic(StaticFiles):
@@ -127,13 +142,15 @@ def state():
         return {"ready": False, "error": f"no database at {MARKET_DB}; run python -m sim.run --backfill 28d"}
     con = db.connect(MARKET_DB)
     try:
-        last = db.last_hour(con)
+        last = current_hour(con)
         meta = db.read_meta(con)
         injected = [{"id": i["id"], "kind": i["kind"], "at": con.execute("SELECT injected_at FROM ground_truth WHERE rowid = ?", (i["id"],)).fetchone()[0],
                      "scope": i["scope"], "description": i["description"], "active": i["active"]}
                     for i in inject.list_injections(con, last + pd.Timedelta(hours=1))]
         return {"ready": True, "last_hour": last.strftime("%Y-%m-%dT%H:00:00Z"), "start": meta["start"].strftime("%Y-%m-%dT%H:00:00Z"),
-                "countries": list(meta["countries"]), "injected": injected}
+                "countries": list(meta["countries"]), "injected": injected,
+                "clock_mode": CLOCK_MODE, "display_timezone": "Europe/Berlin",
+                "server_now": wall_now().isoformat()}
     finally:
         con.close()
 
@@ -147,7 +164,7 @@ class Inject(BaseModel):
     severity: float = 0.35
     hours: int = Field(default=12, ge=1)
     delay_hours: float = 2
-    when: str = "now"  # now = from the next simulated hour; past = 6 hours before the end of the data
+    when: str = "now"  # now = current data hour; wall mode synchronizes it to the real current hour
 
 
 @app.post("/api/inject")
@@ -164,7 +181,7 @@ def do_inject(req: Inject):
 
 
 def _inject(con, req: "Inject"):
-    last = db.last_hour(con)
+    last = current_hour(con)
     # "now" is the latest hour of data: the effect shows at once and carries on as the clock moves
     start = last if req.when == "now" else last - pd.Timedelta(hours=5)
     end = start + pd.Timedelta(hours=req.hours)
@@ -210,7 +227,7 @@ def end_fault(req: End):
         raise HTTPException(409, "no database yet")
     con = db.connect(MARKET_DB)
     try:
-        at = db.last_hour(con)
+        at = current_hour(con)
         inject.end_injection(con, req.id, at)
         return {"ok": True, "id": req.id, "ended_from": at.strftime("%Y-%m-%dT%H:00:00Z")}
     except NoSuchInjection as exc:

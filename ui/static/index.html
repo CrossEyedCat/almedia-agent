@@ -404,11 +404,17 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
   function incidentSignature() {
     return JSON.stringify([incidents, skipped]);
   }
+  var wallMode = false;
+  function displayHour(ts) {
+    return new Intl.DateTimeFormat('en-GB', {timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit',
+      year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).format(new Date(ts)) + ' Europe/Berlin';
+  }
   function refresh() {
     get('/api/state').then(function (s) {
-      $('clock').textContent = s.ready ? 'simulated clock ' + s.last_hour.replace('T', ' ').replace(':00:00Z', ':00 UTC') : s.error;
+      wallMode = s.clock_mode === 'wall';
+      $('clock').textContent = s.ready ? (wallMode ? 'Current hour · ' : 'Replay hour · ') + displayHour(s.last_hour) + ' · simulated data' : s.error;
       fillEnd(list(s.injected).filter(function (i) { return i.active; }));
-    }).catch(function () { $('clock').textContent = 'server not reachable'; });
+    }).catch(function (e) { $('clock').textContent = 'Clock unavailable: ' + e.message; });
     get('/api/graph').then(function (g) {
       if (graphSignature(g) !== graphKey) { graphKey = graphSignature(g); takeGraph(g); try { renderAll(); } catch (e) { note('Could not draw the graph: ' + e.message); } }
     }).catch(function () {});
@@ -455,7 +461,7 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
     l.forEach(function (i) {
       var where = ['country', 'platform', 'category', 'source'].map(function (d) { return obj(i.scope)[d]; }).filter(Boolean).join(' ');
       var o = document.createElement('option'); o.value = i.id;
-      o.textContent = i.kind + ' ' + where + ' from ' + str(obj(i.scope).start).replace('T', ' ').replace(':00:00Z', ':00').slice(5);
+      o.textContent = i.kind + ' ' + where + ' from ' + displayHour(obj(i.scope).start);
       sel.appendChild(o);
     });
     if (keep) sel.value = keep;
@@ -464,12 +470,12 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
     var id = parseInt($('end-select').value, 10);
     if (!id) return;
     toast('Ending...');
-    post('/api/end', { id: id }).then(function (r) { toast('Ended from ' + r.ended_from.replace('T', ' ').replace(':00:00Z', ':00 UTC')); refresh(); })
+    post('/api/end', { id: id }).then(function (r) { toast('Ended from ' + displayHour(r.ended_from)); refresh(); })
       .catch(function (e) { toast('Failed: ' + e.message); });
   };
   function act(body, label) {
     toast(label + '...');
-    post('/api/inject', body).then(function (r) { toast(label + ' from ' + r.start.replace('T', ' ').replace(':00:00Z', ':00 UTC')); refresh(); })
+    post('/api/inject', body).then(function (r) { toast(label + ' from ' + displayHour(r.start) + '. Injected into data; waiting for monitor detection before graph updates.'); refresh(); })
       .catch(function (e) { toast('Failed: ' + e.message); });
   }
   $('f-go').onclick = function () {

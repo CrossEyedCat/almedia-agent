@@ -8,3 +8,5 @@ incidents/
 incoming_metrics/
 
 eval_incidents/
+incidents-wall/
+incoming_metrics-wall/
