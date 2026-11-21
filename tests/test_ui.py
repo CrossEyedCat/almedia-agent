@@ -293,11 +293,14 @@ def test_the_example_shows_only_while_the_incident_folder_does_not_exist(client,
     assert r["example"] is False and r["incidents"] == []                          # an empty folder means nothing found
 
 
-def test_notes_and_other_subfolders_are_ignored(client, tmp_path):
+def test_non_alert_notes_are_shown_and_other_subfolders_are_ignored(client, tmp_path):
     d = tmp_path / "incidents"
     (d / "notes").mkdir(parents=True)
     (d / "notes" / "inc-0009.json").write_text(json.dumps({"id": "inc-0009", "metric": "orders", "status": "explained"}))
-    assert client.get("/api/incidents").json()["incidents"] == []
+    other = d / "other"
+    other.mkdir()
+    (other / "stray.json").write_text(json.dumps({"id": "stray", "metric": "orders", "status": "open"}))
+    assert [i["id"] for i in client.get("/api/incidents").json()["incidents"]] == ["inc-0009"]
 
 
 # ------------------------------------------------------------- the answer to adding a metric (issue 3)

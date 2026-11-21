@@ -17,7 +17,7 @@ import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from sim import db, inject
 from ui import domains as domain_map
@@ -85,21 +85,29 @@ def _read_incident(path: Path) -> dict | None:
         data = json.loads(path.read_text(encoding="utf-8"), parse_constant=_no_constant)
     except (OSError, ValueError):
         return None
-    if not isinstance(data, dict) or not isinstance(data.get("id"), str) or not isinstance(data.get("metric"), str):
+    if not isinstance(data, dict) or not isinstance(data.get("id"), str):
         return None
+    # The monitor currently keeps non-alert status records in notes/; these carry no outcome metric.
+    if not isinstance(data.get("metric"), str):
+        if data.get("status") not in ("pending", "explained"):
+            return None
+        data["metric"] = "data_arrival" if data["status"] == "pending" else "calendar"
     return data
 
 
 def _incidents() -> tuple[list[dict], bool, int]:
     """(incidents, is_example, number of files ignored). The contract example is shown only when the folder does not
-    exist; once the monitor has made it, an empty folder means "nothing found"."""
+    exist; once the monitor has made it, an empty folder means "nothing found". Non-alert status notes are included."""
     if INCIDENTS_DIR.is_dir():
         items, skipped = [], 0
-        for p in sorted(INCIDENTS_DIR.glob("*.json")):
+        paths = sorted(INCIDENTS_DIR.glob("*.json"))
+        known = {p.stem for p in paths}
+        paths += [p for p in sorted((INCIDENTS_DIR / "notes").glob("*.json")) if p.stem not in known]
+        for p in paths:
             d = _read_incident(p)
             if d is None:
                 skipped += 1
-            else:
+            elif p.parent == INCIDENTS_DIR or d.get("status") in ("explained", "pending"):
                 items.append(d)
         return sorted(items, key=lambda i: str(i.get("last_seen") or ""), reverse=True), False, skipped
     if EXAMPLE_INCIDENT.exists():
@@ -137,7 +145,7 @@ class Inject(BaseModel):
     category: str | None = None
     source: str | None = None
     severity: float = 0.35
-    hours: int = 12
+    hours: int = Field(default=12, ge=1)
     delay_hours: float = 2
     when: str = "now"  # now = from the next simulated hour; past = 6 hours before the end of the data
 
@@ -165,15 +173,15 @@ def _inject(con, req: "Inject"):
             raise HTTPException(422, "country and platform must be valid")
         if not 0 < req.severity < 1:
             raise HTTPException(422, "severity must be between 0 and 1")
-        n = inject.payment_failure(con, req.country, req.platform, start, req.severity)
+        n = inject.payment_failure(con, req.country, req.platform, start, req.severity, end=end)
     elif req.kind == "stockout_surge":
         if req.category not in CATEGORIES:
             raise HTTPException(422, f"category must be one of {CATEGORIES}")
-        n = inject.stockout_surge(con, req.category, start, None, country=req.country if req.country in COUNTRIES else None)
+        n = inject.stockout_surge(con, req.category, start, end, country=req.country if req.country in COUNTRIES else None)
     elif req.kind == "search_regression":
         if req.country not in COUNTRIES:
             raise HTTPException(422, "country must be valid")
-        n = inject.search_regression(con, req.country, start, 0.5)
+        n = inject.search_regression(con, req.country, start, 0.5, end=end)
     elif req.kind == "ad_budget_exhausted":
         if req.country not in COUNTRIES:
             raise HTTPException(422, "country must be valid")
