@@ -36,6 +36,8 @@ and what the cause is: the payments release for Android in Germany, with the evi
 **1:50 Not everything unusual is a problem.** (Promo in FR, then a late source.)
 "A planned promo lifts orders in France. It sees the promo in the calendar and records it as explained, no alert. A data source that
 arrives late is held as pending instead of raising a false alarm."
+(Timing, measured on 22 Nov with `--speed 2`: the promo row appears in a few seconds, grey, and stays. The pending row lives only while the data
+is late, about two data hours, so about 4 seconds: inject "Arrives 2 h late" and look straight away, or leave this half sentence out.)
 
 **2:15 Does it work?** (Open `docs/results.md`.)
 "We scored it against faults we injected ourselves, on two 49-day runs: 24 of 24 faults found, all 24 in the right place, 22 with the
@@ -51,6 +53,12 @@ What it does today: it watches the business, not the servers."
 - Do not say the new-metric button works end to end: the console hands the file over; the monitor's side is not finished.
 - Do not say "100%" without the cause number (22 of 24) and the caveat on the data.
 - Do not call the wall-clock mode a demo mode: it moves one data hour per real hour. Use the accelerated clock on stage.
+
+## Timings measured from a clean start (accelerated clock, `--speed 2`)
+
+- Payment failure in Germany on Android: the incident appears about 5 seconds after the click, with the payments release as the cause.
+- "End it (rollback)": the incident turns resolved about 8 seconds later (three normal data hours).
+- Promo in France: an `explained` record, grey, no alert. Late data: `pending` for about 4 seconds, then it disappears by itself.
 
 ## If something goes wrong
 
