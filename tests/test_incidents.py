@@ -94,7 +94,10 @@ def test_the_outcome_is_the_metric_and_the_moved_rate_is_the_contribution(run):
     (inc,) = files(book)
     assert inc["metric"] == "contribution"
     assert [c["node"] for c in inc["contributions"]] == ["payment_success_rate"]
-    assert inc["contributions"][0]["share_of_delta"] == pytest.approx(1.0)
+    # its share of the whole gap between the observed outcome and the state with every rate at its baseline:
+    # the rest is the ordinary movement of the other rates in that cell during those hours
+    assert inc["contributions"][0]["share_of_delta"] > 0.7
+    assert inc["explained_share"] == inc["contributions"][0]["share_of_delta"]
     assert inc["change"]["observed"] < inc["change"]["expected"]
     assert inc["impact"]["contribution_eur"] < 0 and inc["impact"]["orders"] < 0
     assert -60 < inc["change"]["delta_pct"] < -25   # a 40 % payment failure in that cell

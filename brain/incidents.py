@@ -30,16 +30,11 @@ import pandas as pd
 
 from brain.clock import HOUR
 from brain.data import iso_hour
-from brain.impact import estimate, tree_metrics
+from brain.investigate import Investigator, num, ordered, seg_text
 from brain.monitor import Alert, Monitor, Tick, compatible, leading, nested
 
 RESOLVE_AFTER_HOURS = 3      # normal, judged hours before an incident is closed
-RELEASE_BEFORE_HOURS = 2     # a release this long before the onset is taken as it is
-RELEASE_LOOKBACK_HOURS = 12  # an older one only if the hours between it and the onset already lean the same way
 HEALTH_MIN_SURPRISE = 2.0    # "back to normal" needs data that would show the fault, and does not show it
-RELEASE_AFTER_HOURS = 2      # the onset estimate can be early when the first hours were weak
-FOLLOW_MIN_SURPRISE = 1.3    # one targeted question along a link, direction predicted: p below 0.05
-DIM_ORDER = ("country", "platform", "category", "channel")
 
 
 def clean(value):
@@ -76,20 +71,6 @@ def write_json(path: Path, obj: dict) -> None:
             time.sleep(0.02)
 
 
-def ordered(segment: dict) -> dict:
-    return {d: segment[d] for d in DIM_ORDER if d in segment}
-
-
-def seg_text(segment: dict) -> str:
-    return " x ".join(str(v) for v in ordered(segment).values()) or "all segments"
-
-
-def num(x: float, digits: int = 3) -> str:
-    if x is None or not math.isfinite(x):
-        return "n/a"
-    return f"{x:.{digits}g}" if abs(x) < 1000 else f"{x:,.0f}"
-
-
 @dataclass
 class Incident:
     id: str
@@ -109,6 +90,7 @@ class Book:
     def __init__(self, monitor: Monitor, folder: str | Path, fresh: bool = False):
         self.monitor = monitor
         self.graph = monitor.graph
+        self.investigator = Investigator(monitor)
         self.folder = Path(folder)
         self.folder.mkdir(parents=True, exist_ok=True)
         old_notes = self.folder / "notes"   # where explained and pending records lived before the readers knew them
@@ -226,202 +208,9 @@ class Book:
     def _when(ts: pd.Timestamp) -> str:
         return ts.strftime("%Y-%m-%d %H:%M UTC")
 
-    def _releases(self, inc: Incident, now: pd.Timestamp) -> list[dict]:
-        """Releases around the onset whose system is tagged on a moved metric and whose scope fits."""
-        rows = self.monitor.store.read_sql(
-            "SELECT ts, system, country, platform, description FROM releases WHERE ts <= ? AND ts >= ? AND ts <= ? "
-            "ORDER BY ts",
-            (iso_hour(now), iso_hour(inc.onset - RELEASE_LOOKBACK_HOURS * HOUR),
-             iso_hour(inc.onset + RELEASE_AFTER_HOURS * HOUR)))
-        primary = max(inc.metrics.values(), key=lambda a: a.score)
-        out, seen = [], set()
-        for r in rows.to_dict("records"):
-            scope = {d: r[d] for d in ("country", "platform") if isinstance(r[d], str) and r[d]}
-            key = (r["system"], tuple(sorted(scope.items())))
-            tagged = [m for m in inc.metrics if r["system"] in self.graph.specs[m].systems]
-            if "rollback" in (r["description"] or "").lower():
-                continue    # by the contract a rollback row ends a release; it is not a new cause
-            if key in seen or not tagged or not compatible(scope, inc.segment):
-                continue
-            ts = pd.Timestamp(r["ts"])
-            if ts < inc.onset - RELEASE_BEFORE_HOURS * HOUR:
-                # The onset is the first hour the detector could flag; at night that can be hours after
-                # the release. An older release counts only if the hours in between already lean the
-                # same way as the incident, which a harmless release earlier that day does not show.
-                lean = self.monitor.window(primary.metric, inc.segment, ts, inc.onset)
-                if lean is None or lean["score"] < FOLLOW_MIN_SURPRISE or \
-                        (lean["observed"] < lean["expected"]) != (primary.observed < primary.expected):
-                    continue
-            seen.add(key)   # a second identical row (a repeated click) is the same release
-            out.append({"ts": pd.Timestamp(r["ts"]), "system": r["system"], "scope": scope,
-                        "description": r["description"] or "", "metrics": tagged})
-        return out
-
-    def _follow(self, inc: Incident, alerts: list[Alert], end: pd.Timestamp) -> list[dict]:
-        """Metrics that a moved metric may affect (links of the graph) and that did move the way the
-        link predicts, in the same place and hours. They were too weak for the hourly scan, but they
-        carry the damage: out-of-stock listings cost orders through the add-to-cart rate."""
-        out, seen = [], set()   # a link target that alerts by itself still confirms the link, all the more
-        for a in alerts:
-            spec = self.graph.specs[a.metric]
-            origins = [a.metric] + (list(spec.formula.ratio_parts()[0]) if spec.formula is not None else [])
-            for origin in origins:
-                for e in self.graph.out_edges(origin, "may_affect"):
-                    if e.dst in seen:
-                        continue
-                    w = self.monitor.window(e.dst, inc.segment, inc.onset, end)
-                    if w is None:
-                        continue
-                    sign = e.attrs.get("sign", 0)
-                    moved = 1 if w["observed"] > w["expected"] else -1
-                    as_predicted = not sign or moved == sign * (1 if a.observed > a.expected else -1)
-                    shown = w["score"] >= FOLLOW_MIN_SURPRISE and as_predicted
-                    if not shown and not sign:
-                        continue   # a link without a direction says nothing until the movement is clear
-                    seen.add(e.dst)
-                    # `shown` False: the link predicts a direction but the data cannot show it yet. The
-                    # metric still enters the impact estimate (the damage does not wait for significance)
-                    # but confirms nothing and gets no line in the trail.
-                    out.append(dict(w, via=a.metric, sign=sign, shown=shown, note=e.attrs.get("note", "")))
-        return out
-
     def _render(self, inc: Incident, tick: Tick) -> dict:
-        graph = self.graph
-        alerts = sorted(inc.metrics.values(), key=lambda a: -a.score)
-        primary = alerts[0]
-        end = inc.last_seen + HOUR
-        outcome = graph.top_outcomes()[0] if graph.top_outcomes() else None
-        rates = {a.metric: (self.monitor.expected_rate(a.metric, inc.segment) or a.expected) for a in alerts}
-        followed = self._follow(inc, alerts, end)
-        rates.update({f["metric"]: f["expected"] for f in followed})
-        counts = tuple(m for m in (tree_metrics(graph, outcome) if outcome else [])
-                       if graph.specs[m].unit == "count" and graph.specs[m].direction == "up"
-                       and graph.specs[m].investigative_formula is not None)   # what is counted along the way
-        impact = estimate(graph, self.monitor.evaluator, outcome, inc.segment, inc.onset, end, rates,
-                          also=counts) if outcome else None
-
-        where = seg_text(inc.segment)
-        direction = "fell" if primary.observed < primary.expected else "rose"
-        trail = [{
-            "action": "watch", "target": primary.metric,
-            "result": f"{num(primary.observed)} against an expected {num(primary.expected)} in {where} "
-                      f"({num(primary.numerator)} of {num(primary.denominator)} in the newest "
-                      f"{min(primary.hours, 3)} bad hour(s); surprise 10^-{primary.score:.0f}, z {primary.z:+.1f})"}]
-        diluted = sorted({seg_text(a.segment) for a in tick.alerts
-                          if a.metric == primary.metric and a.segment != primary.segment
-                          and compatible(a.segment, primary.segment)})
-        trail.append({"action": "compare", "target": "segments",
-                      "result": f"strongest in {where}" + (f"; weaker in {', '.join(diluted[:6])}" if diluted
-                                                           else "; no other series of this metric moved")})
-        for a in alerts[1:]:
-            trail.append({"action": "watch", "target": a.metric,
-                          "result": f"also moved in {seg_text(a.segment)}: {num(a.observed)} against {num(a.expected)}"
-                                    f" (z {a.z:+.1f})"})
-        for f in followed:
-            if f["metric"] in inc.metrics or not f["shown"]:
-                continue   # it has its own "also moved" line, or is not clear yet
-            trail.append({"action": "follow", "target": f["metric"],
-                          "result": f"{f['via']} may affect it ({f['note'] or 'link in the graph'}): "
-                                    f"{num(f['observed'])} against {num(f['expected'])} in {where} over the incident "
-                                    f"(z {f['z']:+.1f}), the direction the link predicts"})
-        held = sorted(h for h, ms in tick.held.items() if set(ms) & set(inc.metrics))
-        trail.append({"action": "check", "target": "freshness",
-                      "result": "all sources for these metrics have arrived" if not held else
-                      "hours still waiting for data: " + ", ".join(self._when(h) for h in held)})
-        covering = [e for e in tick.events
-                    if e["start"] < end and inc.onset < e["end"]
-                    and (e["country"] is None or inc.segment.get("country") in (None, e["country"]))]
-        linked = sorted(m for m in inc.metrics if any(n.id == "calendar" for n in graph.context_of(m)))
-        trail.append({"action": "check", "target": "calendar", "result": (
-            f"no planned event covers {where} in these hours" if not covering else
-            "; ".join(f"{e['description'] or e['kind']} ({self._when(e['start'])} to {self._when(e['end'])})"
-                      for e in covering)
-            + " overlaps, but the graph links the calendar to "
-            + (f"only {', '.join(linked)} of the moved metrics" if linked else "none of the moved metrics")
-            + ": it does not explain this change")})
-
-        body = {
-            "id": inc.id, "status": inc.status,
-            "first_seen": iso_hour(inc.first_seen), "last_seen": iso_hour(inc.last_seen),
-            "metric": primary.metric, "segment": ordered(inc.segment),
-            "fingerprint": f"{primary.metric}|{where}",
-            "change": {"observed": primary.observed, "expected": primary.expected,
-                       "delta_pct": 100 * primary.effect, "z": primary.z,
-                       "window": {"start": iso_hour(inc.onset), "end": iso_hour(end)}},
-            "drivers": [{"metric": a.metric, "segment": ordered(a.segment), "observed": a.observed,
-                         "expected": a.expected, "delta_pct": 100 * a.effect, "z": a.z, "surprise": a.score,
-                         "test": a.kind, "onset": iso_hour(a.onset)} for a in alerts],
-        }
-        loss = ""
-        if impact is not None:
-            total = sum(abs(v) for v in impact.by_factor.values())
-            body["metric"] = outcome
-            body["change"] = {"observed": impact.observed, "expected": impact.expected,
-                              "delta": impact.delta,
-                              "delta_pct": 100 * (impact.observed / impact.expected - 1) if impact.expected else None,
-                              "z": primary.z, "window": {"start": iso_hour(inc.onset), "end": iso_hour(end)}}
-            unit = graph.specs[outcome].unit
-            body["impact"] = {f"{outcome}_{unit}" if unit != "count" else outcome: impact.delta}
-            lost = {m: impact.values[m] - v for m, v in impact.restored.items()}
-            body["impact"].update({m: d for m, d in lost.items() if abs(d) >= 0.5})
-            body["contributions"] = [
-                {"node": m, "share_of_delta": abs(d) / total if total else 0.0,
-                 "observed": impact.values[m], "expected": rates[m]}
-                for m, d in sorted(impact.by_factor.items(), key=lambda kv: -abs(kv[1]))]
-            trail.append({"action": "estimate", "target": outcome,
-                          "result": f"{num(impact.observed, 4)} against {num(impact.expected, 4)} with "
-                                    f"{', '.join(impact.by_factor)} at the expected rate, in {where} since "
-                                    f"{self._when(inc.onset)}"})
-            also = "".join(f", {d:+,.0f} {m}" for m, d in body["impact"].items() if m in lost)
-            loss = f" Effect on {outcome} in {where} so far: {impact.delta:+,.0f} {unit}{also}."
-
-        hypotheses = []
-        for r in self._releases(inc, tick.now):
-            exact = r["scope"] == {d: v for d, v in inc.segment.items() if d in ("country", "platform")} \
-                and primary.metric in r["metrics"]
-            lag = int((inc.onset - r["ts"]) / HOUR)
-            hypotheses.append({
-                "cause": f"release {r['system']}: {r['description']}", "kind": "release",
-                "status": "supported" if exact else "plausible",
-                "evidence": [
-                    f"released {self._when(r['ts'])}, " + ("the hour the change began" if lag == 0 else
-                                                          f"{abs(lag)} h {'before' if lag > 0 else 'after'} the estimated onset"),
-                    f"scope {seg_text(r['scope'])} " + ("is exactly where the change is" if exact else
-                                                        f"contains or overlaps {where}"),
-                    f"system {r['system']} is linked to {', '.join(r['metrics'])} in the graph"]})
-            trail.append({"action": "check", "target": f"release:{r['system']}",
-                          "result": f"{r['description']} at {self._when(r['ts'])}, scope {seg_text(r['scope'])}"})
-        if not hypotheses:
-            trail.append({"action": "check", "target": "releases",
-                          "result": "no release of a linked system in or over this place around the onset"})
-            # the moved metric itself is the first cause when a link of the graph that has a direction
-            # predicted a second movement and that movement is there; otherwise it stays a candidate
-            confirmed = [f"{f['metric']} moved as the link from {primary.metric} predicts: {num(f['observed'])} "
-                         f"against {num(f['expected'])} (z {f['z']:+.1f})"
-                         for f in followed if f["via"] == primary.metric and f["sign"] and f["shown"]]
-            if confirmed:
-                inc.confirmed = confirmed   # once confirmed it stays so while the incident is open: a later
-            hypotheses.append({               # tick with a thinner window must not take the label back
-                "cause": f"{primary.metric} {direction} in {where} without a matching release"
-                         + ("" if covering else " or planned event"),
-                "kind": "metric", "status": "supported" if inc.confirmed else "plausible",
-                "evidence": [f"{num(primary.observed)} against {num(primary.expected)} expected, z {primary.z:+.1f}"]
-                + inc.confirmed})
-        hypotheses.sort(key=lambda h: h["status"] != "supported")
-        body["hypotheses"] = hypotheses
-        body["trail"] = trail
-        turned = (primary.observed - primary.expected) * (primary.episode_observed - primary.expected) < 0
-        body["uncertain"] = ["Alternative causes were not tested against each other yet (monitor stage)."] + (
-            [f"{primary.metric} changed direction during the incident; the effect so far nets both phases."]
-            if turned else []) + (
-            ["Only one hour of evidence so far."] if primary.hours < 2 and inc.status == "open" else [])
-        lead = hypotheses[0]
-        body["report"] = (
-            f"{primary.metric} {direction} to {num(primary.observed)} from an expected {num(primary.expected)} in "
-            f"{where}, starting {self._when(inc.onset)}.{loss} "
-            + (f"Most likely cause: {lead['cause']}." if lead["status"] == "supported"
-               else "No cause is confirmed yet."))
-        return body
+        """The incident's content: where, how much and why, with the trail (brain/investigate.py)."""
+        return self.investigator.report(inc, tick)
 
     # ------------------------------------------------- explained and pending
     def _write_notes(self, tick: Tick, explained: list[Alert]) -> None:
