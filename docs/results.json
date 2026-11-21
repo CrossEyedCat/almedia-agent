@@ -1,376 +1,4269 @@
-[
-  {
-    "seed": 4,
-    "days": 49.0,
-    "explained_without_alert": 4,
-    "pending_records": 0,
-    "faults": 12,
-    "detected": 12,
-    "detection_rate": 1.0,
-    "mean_delay_h": 0.08333333333333333,
-    "localized_rate": 1.0,
-    "correct_cause_rate": 0.9166666666666666,
-    "false_alarms": 0,
-    "false_alarms_per_day": 0.0,
-    "innocents": 8,
-    "innocents_silent": 8,
-    "innocent_silent_rate": 1.0,
-    "per_fault": [
-      {
-        "kind": "payment_failure",
-        "fault": {
-          "country": "PL",
-          "end": "2026-11-16T02:00:00Z",
-          "platform": "Web",
-          "severity": 0.5906798607948704,
-          "start": "2026-11-15T18:00:00Z"
+{
+  "holdout": [
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110
+  ],
+  "commit": "e08afe3",
+  "warmup_hours": 80.0,
+  "runs": [
+    {
+      "seed": 101,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.25,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-17T09:00:00Z",
+            "severity": 0.4475770644132943,
+            "start": "2026-11-17T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "payment_failure",
-        "fault": {
-          "country": "FR",
-          "end": "2026-11-18T05:00:00Z",
-          "platform": "iOS",
-          "severity": 0.5828411037387501,
-          "start": "2026-11-17T22:00:00Z"
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-11-20T01:00:00Z",
+            "start": "2026-11-19T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "search_regression",
-        "fault": {
-          "country": "DE",
-          "end": "2026-11-20T02:00:00Z",
-          "severity": 0.38334893886292326,
-          "start": "2026-11-19T19:00:00Z"
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "fashion",
+            "end": "2026-11-21T05:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 10.331217123683262,
+            "start": "2026-11-21T01:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "stockout_surge",
-        "fault": {
-          "category": "sports",
-          "end": "2026-11-22T16:00:00Z",
-          "feed_ctr_lift": 0.25,
-          "multiplier": 11.342626880669297,
-          "start": "2026-11-22T08:00:00Z"
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-22T02:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 14.908926487752055,
+            "start": "2026-11-21T21:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "ad_budget_exhausted",
-        "fault": {
-          "after": 0.05,
-          "boost": 3.0,
-          "boost_hours": 3,
-          "country": "DE",
-          "end": "2026-11-23T22:00:00Z",
-          "start": "2026-11-23T14:00:00Z"
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-11-24T00:00:00Z",
+            "start": "2026-11-23T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "stockout_surge",
-        "fault": {
-          "category": "sports",
-          "end": "2026-11-25T12:00:00Z",
-          "feed_ctr_lift": 0.25,
-          "multiplier": 13.492094803882274,
-          "start": "2026-11-25T04:00:00Z"
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-25T09:00:00Z",
+            "platform": "Android",
+            "severity": 0.3735202383760667,
+            "start": "2026-11-25T01:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "stockout_surge",
-        "fault": {
-          "category": "sports",
-          "end": "2026-11-26T09:00:00Z",
-          "feed_ctr_lift": 0.25,
-          "multiplier": 12.950351707674859,
-          "start": "2026-11-26T01:00:00Z"
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "PL",
+            "end": "2026-11-27T03:00:00Z",
+            "start": "2026-11-26T19:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": false
-      },
-      {
-        "kind": "search_regression",
-        "fault": {
-          "country": "PL",
-          "end": "2026-11-29T05:00:00Z",
-          "severity": 0.5426576207729359,
-          "start": "2026-11-28T22:00:00Z"
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-30T22:00:00Z",
+            "platform": "iOS",
+            "severity": 0.41944137705402385,
+            "start": "2026-11-30T14:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 1.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "ad_budget_exhausted",
-        "fault": {
-          "after": 0.05,
-          "boost": 3.0,
-          "boost_hours": 3,
-          "country": "FR",
-          "end": "2026-12-02T07:00:00Z",
-          "start": "2026-12-01T23:00:00Z"
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "electronics",
+            "end": "2026-12-02T10:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.95220974681947,
+            "start": "2026-12-02T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "search_regression",
-        "fault": {
-          "country": "DE",
-          "end": "2026-12-06T12:00:00Z",
-          "severity": 0.5787643003100431,
-          "start": "2026-12-06T08:00:00Z"
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-03T04:00:00Z",
+            "platform": "iOS",
+            "severity": 0.3273830460494195,
+            "start": "2026-12-02T23:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 2.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "payment_failure",
-        "fault": {
-          "country": "ES",
-          "end": "2026-12-07T11:00:00Z",
-          "platform": "Web",
-          "severity": 0.38278147726955203,
-          "start": "2026-12-07T07:00:00Z"
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-05T20:00:00Z",
+            "severity": 0.5006547646703329,
+            "start": "2026-12-05T15:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 1.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "ad_budget_exhausted",
-        "fault": {
-          "after": 0.05,
-          "boost": 3.0,
-          "boost_hours": 3,
-          "country": "FR",
-          "end": "2026-12-09T12:00:00Z",
-          "start": "2026-12-09T04:00:00Z"
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-10T01:00:00Z",
+            "severity": 0.5950758323204003,
+            "start": "2026-12-09T18:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 102,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.16666666666666666,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-16T04:00:00Z",
+            "platform": "Web",
+            "severity": 0.5983096775156349,
+            "start": "2026-11-15T22:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      }
-    ]
-  },
-  {
-    "seed": 8,
-    "days": 49.0,
-    "explained_without_alert": 4,
-    "pending_records": 0,
-    "faults": 12,
-    "detected": 12,
-    "detection_rate": 1.0,
-    "mean_delay_h": 0.4166666666666667,
-    "localized_rate": 1.0,
-    "correct_cause_rate": 0.9166666666666666,
-    "false_alarms": 0,
-    "false_alarms_per_day": 0.0,
-    "innocents": 8,
-    "innocents_silent": 8,
-    "innocent_silent_rate": 1.0,
-    "per_fault": [
-      {
-        "kind": "payment_failure",
-        "fault": {
-          "country": "PL",
-          "end": "2026-11-17T09:00:00Z",
-          "platform": "iOS",
-          "severity": 0.47727085552962345,
-          "start": "2026-11-17T03:00:00Z"
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "PL",
+            "end": "2026-11-17T05:00:00Z",
+            "start": "2026-11-16T21:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 5.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "search_regression",
-        "fault": {
-          "country": "PL",
-          "end": "2026-11-19T09:00:00Z",
-          "severity": 0.442846782110599,
-          "start": "2026-11-19T03:00:00Z"
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-18T03:00:00Z",
+            "severity": 0.531410768765997,
+            "start": "2026-11-17T21:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "payment_failure",
-        "fault": {
-          "country": "FR",
-          "end": "2026-11-22T01:00:00Z",
-          "platform": "Android",
-          "severity": 0.41799321302589726,
-          "start": "2026-11-21T21:00:00Z"
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "PL",
+            "end": "2026-11-21T10:00:00Z",
+            "start": "2026-11-21T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "ad_budget_exhausted",
-        "fault": {
-          "after": 0.05,
-          "boost": 3.0,
-          "boost_hours": 3,
-          "country": "ES",
-          "end": "2026-11-25T00:00:00Z",
-          "start": "2026-11-24T16:00:00Z"
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-22T10:00:00Z",
+            "platform": "Android",
+            "severity": 0.3379853915064893,
+            "start": "2026-11-22T03:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 2.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "ad_budget_exhausted",
-        "fault": {
-          "after": 0.05,
-          "boost": 3.0,
-          "boost_hours": 3,
-          "country": "DE",
-          "end": "2026-11-26T13:00:00Z",
-          "start": "2026-11-26T05:00:00Z"
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "DE",
+            "end": "2026-11-24T05:00:00Z",
+            "platform": "Android",
+            "severity": 0.44820321788725254,
+            "start": "2026-11-24T00:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "ad_budget_exhausted",
-        "fault": {
-          "after": 0.05,
-          "boost": 3.0,
-          "boost_hours": 3,
-          "country": "FR",
-          "end": "2026-11-28T13:00:00Z",
-          "start": "2026-11-28T05:00:00Z"
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-27T03:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 11.751407350318344,
+            "start": "2026-11-26T22:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "stockout_surge",
-        "fault": {
-          "category": "sports",
-          "end": "2026-11-29T01:00:00Z",
-          "feed_ctr_lift": 0.25,
-          "multiplier": 14.313931863337086,
-          "start": "2026-11-28T20:00:00Z"
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-30T23:00:00Z",
+            "severity": 0.3934661452292797,
+            "start": "2026-11-30T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": false
-      },
-      {
-        "kind": "payment_failure",
-        "fault": {
-          "country": "ES",
-          "end": "2026-11-30T21:00:00Z",
-          "platform": "iOS",
-          "severity": 0.5868287731997698,
-          "start": "2026-11-30T13:00:00Z"
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "PL",
+            "end": "2026-12-03T07:00:00Z",
+            "severity": 0.4906165832779703,
+            "start": "2026-12-03T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "stockout_surge",
-        "fault": {
-          "category": "beauty",
-          "end": "2026-12-07T12:00:00Z",
-          "feed_ctr_lift": 0.25,
-          "multiplier": 13.390167638587148,
-          "start": "2026-12-07T06:00:00Z"
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "PL",
+            "end": "2026-12-05T11:00:00Z",
+            "start": "2026-12-05T03:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "search_regression",
-        "fault": {
-          "country": "FR",
-          "end": "2026-12-09T03:00:00Z",
-          "severity": 0.4104549966447032,
-          "start": "2026-12-08T20:00:00Z"
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-12-06T06:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 11.696246702986254,
+            "start": "2026-12-05T23:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "stockout_surge",
-        "fault": {
-          "category": "electronics",
-          "end": "2026-12-10T15:00:00Z",
-          "feed_ctr_lift": 0.25,
-          "multiplier": 13.666251786593453,
-          "start": "2026-12-10T10:00:00Z"
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "fashion",
+            "end": "2026-12-12T00:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 14.673333009416826,
+            "start": "2026-12-11T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 103,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.16666666666666666,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-11-15T20:00:00Z",
+            "start": "2026-11-15T12:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      },
-      {
-        "kind": "search_regression",
-        "fault": {
-          "country": "FR",
-          "end": "2026-12-11T19:00:00Z",
-          "severity": 0.41417368948336214,
-          "start": "2026-12-11T14:00:00Z"
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "DE",
+            "end": "2026-11-17T03:00:00Z",
+            "platform": "Web",
+            "severity": 0.33354228585753476,
+            "start": "2026-11-16T19:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
         },
-        "detected": true,
-        "delay_h": 0.0,
-        "localized": true,
-        "correct_cause": true
-      }
-    ]
-  }
-]
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-18T06:00:00Z",
+            "platform": "Android",
+            "severity": 0.576634834691832,
+            "start": "2026-11-18T01:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 1.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-21T16:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.226392876011335,
+            "start": "2026-11-21T10:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-24T19:00:00Z",
+            "severity": 0.50453296751898,
+            "start": "2026-11-24T15:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-28T09:00:00Z",
+            "platform": "Android",
+            "severity": 0.3725066840430133,
+            "start": "2026-11-28T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 1.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-11-29T08:00:00Z",
+            "start": "2026-11-29T00:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-11-30T23:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 13.067170440799739,
+            "start": "2026-11-30T18:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-12-05T06:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 13.586349974226007,
+            "start": "2026-12-05T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-08T05:00:00Z",
+            "severity": 0.4666777526423759,
+            "start": "2026-12-07T21:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-12-09T11:00:00Z",
+            "start": "2026-12-09T03:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-10T05:00:00Z",
+            "severity": 0.391104786811671,
+            "start": "2026-12-09T23:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 104,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.08333333333333333,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "PL",
+            "end": "2026-11-16T02:00:00Z",
+            "start": "2026-11-15T18:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-19T20:00:00Z",
+            "severity": 0.41647407967712413,
+            "start": "2026-11-19T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-21T07:00:00Z",
+            "platform": "iOS",
+            "severity": 0.5914888988632486,
+            "start": "2026-11-21T00:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-11-22T04:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.772165531329295,
+            "start": "2026-11-21T22:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "fashion",
+            "end": "2026-11-28T07:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 15.179378661830889,
+            "start": "2026-11-28T01:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-29T10:00:00Z",
+            "platform": "Android",
+            "severity": 0.3756329563794075,
+            "start": "2026-11-29T06:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 1.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-12-02T02:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.113805067990892,
+            "start": "2026-12-01T18:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-03T12:00:00Z",
+            "severity": 0.5025101005024148,
+            "start": "2026-12-03T07:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-12-05T01:00:00Z",
+            "start": "2026-12-04T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-05T23:00:00Z",
+            "severity": 0.5360679871535371,
+            "start": "2026-12-05T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-09T02:00:00Z",
+            "platform": "Web",
+            "severity": 0.3220749240345051,
+            "start": "2026-12-08T18:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-12-12T03:00:00Z",
+            "start": "2026-12-11T19:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 105,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.16666666666666666,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-16T00:00:00Z",
+            "platform": "iOS",
+            "severity": 0.3794292003540273,
+            "start": "2026-11-15T19:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "home",
+            "end": "2026-11-17T08:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.735230054866108,
+            "start": "2026-11-17T03:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-20T04:00:00Z",
+            "severity": 0.50143489868954,
+            "start": "2026-11-19T21:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-20T21:00:00Z",
+            "severity": 0.4379096375712228,
+            "start": "2026-11-20T13:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "fashion",
+            "end": "2026-11-25T09:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 14.066320644243149,
+            "start": "2026-11-25T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-11-28T07:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.027993238669797,
+            "start": "2026-11-27T23:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-29T01:00:00Z",
+            "platform": "iOS",
+            "severity": 0.37812713557256494,
+            "start": "2026-11-28T20:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-12-02T10:00:00Z",
+            "start": "2026-12-02T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-04T00:00:00Z",
+            "platform": "Android",
+            "severity": 0.3467932377453727,
+            "start": "2026-12-03T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 2.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-12-06T14:00:00Z",
+            "start": "2026-12-06T06:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-07T20:00:00Z",
+            "severity": 0.35793458589431504,
+            "start": "2026-12-07T12:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-12-10T11:00:00Z",
+            "start": "2026-12-10T03:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 106,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.0,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 0.9166666666666666,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-15T13:00:00Z",
+            "severity": 0.5282653296108526,
+            "start": "2026-11-15T06:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-11-18T13:00:00Z",
+            "start": "2026-11-18T05:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "electronics",
+            "end": "2026-11-20T20:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 10.494470984248725,
+            "start": "2026-11-20T14:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "DE",
+            "end": "2026-11-22T21:00:00Z",
+            "platform": "Web",
+            "severity": 0.42773092033198623,
+            "start": "2026-11-22T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-11-25T07:00:00Z",
+            "start": "2026-11-24T23:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-11-30T18:00:00Z",
+            "start": "2026-11-30T10:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-12-02T07:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 10.93183700099375,
+            "start": "2026-12-02T00:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": false,
+          "incident": "inc-0007",
+          "supported_causes": 0
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-03T22:00:00Z",
+            "severity": 0.37604715201935685,
+            "start": "2026-12-03T14:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-05T22:00:00Z",
+            "platform": "Android",
+            "severity": 0.44190319692294067,
+            "start": "2026-12-05T15:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-08T06:00:00Z",
+            "platform": "iOS",
+            "severity": 0.5606920144075498,
+            "start": "2026-12-07T22:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-12-10T21:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.41309503143975,
+            "start": "2026-12-10T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-11T23:00:00Z",
+            "severity": 0.404718831266464,
+            "start": "2026-12-11T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 107,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.0,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "home",
+            "end": "2026-11-16T00:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 11.889066058140294,
+            "start": "2026-11-15T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-11-16T23:00:00Z",
+            "start": "2026-11-16T15:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-21T00:00:00Z",
+            "platform": "Web",
+            "severity": 0.5648462925530537,
+            "start": "2026-11-20T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-11-23T01:00:00Z",
+            "start": "2026-11-22T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-24T23:00:00Z",
+            "severity": 0.3864545215174492,
+            "start": "2026-11-24T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-11-26T13:00:00Z",
+            "severity": 0.4985664201346356,
+            "start": "2026-11-26T08:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-28T00:00:00Z",
+            "severity": 0.4585416328142414,
+            "start": "2026-11-27T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-02T00:00:00Z",
+            "platform": "Android",
+            "severity": 0.40462787179932347,
+            "start": "2026-12-01T18:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 2
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "fashion",
+            "end": "2026-12-04T19:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.857576641476891,
+            "start": "2026-12-04T13:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-12-06T01:00:00Z",
+            "start": "2026-12-05T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-08T21:00:00Z",
+            "platform": "Android",
+            "severity": 0.46534189665827347,
+            "start": "2026-12-08T13:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "fashion",
+            "end": "2026-12-10T13:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 13.82722283528057,
+            "start": "2026-12-10T05:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 108,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.16666666666666666,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-15T12:00:00Z",
+            "platform": "iOS",
+            "severity": 0.5548903920968753,
+            "start": "2026-11-15T07:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 2.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-17T05:00:00Z",
+            "severity": 0.5001552903998154,
+            "start": "2026-11-17T01:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-11-18T06:00:00Z",
+            "severity": 0.44247639593254906,
+            "start": "2026-11-18T01:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-22T11:00:00Z",
+            "platform": "iOS",
+            "severity": 0.4099149013888539,
+            "start": "2026-11-22T03:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "PL",
+            "end": "2026-11-28T01:00:00Z",
+            "start": "2026-11-27T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "home",
+            "end": "2026-11-30T21:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.668914883967627,
+            "start": "2026-11-30T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "electronics",
+            "end": "2026-12-02T00:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 15.62482973038619,
+            "start": "2026-12-01T18:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "electronics",
+            "end": "2026-12-03T10:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 15.565033489233794,
+            "start": "2026-12-03T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-12-04T23:00:00Z",
+            "start": "2026-12-04T15:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-06T01:00:00Z",
+            "platform": "iOS",
+            "severity": 0.38629081182944425,
+            "start": "2026-12-05T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-10T14:00:00Z",
+            "severity": 0.42761025043316975,
+            "start": "2026-12-10T08:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-12-11T12:00:00Z",
+            "start": "2026-12-11T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 109,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.08333333333333333,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 0.9166666666666666,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-15T11:00:00Z",
+            "severity": 0.5495618334036332,
+            "start": "2026-11-15T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-17T07:00:00Z",
+            "platform": "iOS",
+            "severity": 0.43398880359955416,
+            "start": "2026-11-17T01:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 1.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-18T03:00:00Z",
+            "platform": "Android",
+            "severity": 0.3327966932000633,
+            "start": "2026-11-17T19:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-11-19T12:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 15.316949354623683,
+            "start": "2026-11-19T07:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-24T05:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 13.019481959916185,
+            "start": "2026-11-24T00:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-11-25T03:00:00Z",
+            "start": "2026-11-24T19:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-11-26T10:00:00Z",
+            "start": "2026-11-26T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-12-02T00:00:00Z",
+            "start": "2026-12-01T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-03T10:00:00Z",
+            "severity": 0.5657858363819335,
+            "start": "2026-12-03T06:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-12-06T16:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 14.637502627401684,
+            "start": "2026-12-06T12:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": false,
+          "incident": "inc-0010",
+          "supported_causes": 0
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-07T14:00:00Z",
+            "severity": 0.5359580956913759,
+            "start": "2026-12-07T06:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-12T03:00:00Z",
+            "platform": "Web",
+            "severity": 0.5291810629255549,
+            "start": "2026-12-11T19:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 110,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.3333333333333333,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 1,
+      "false_alarms_per_day": 0.02040816326530612,
+      "false_alarm_incidents": [
+        {
+          "id": "inc-0001",
+          "first_seen": "2026-11-05T20:00:00Z",
+          "segment": {
+            "country": "PL",
+            "platform": "Web"
+          },
+          "metric": "ad_ctr",
+          "status": "resolved"
+        }
+      ],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "PL",
+            "end": "2026-11-15T14:00:00Z",
+            "start": "2026-11-15T06:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "home",
+            "end": "2026-11-17T10:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 13.840673617938494,
+            "start": "2026-11-17T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-11-18T09:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 14.213044950195293,
+            "start": "2026-11-18T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-21T08:00:00Z",
+            "platform": "Android",
+            "severity": 0.5459874840107091,
+            "start": "2026-11-21T00:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-22T02:00:00Z",
+            "severity": 0.49176766576520614,
+            "start": "2026-11-21T22:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "DE",
+            "end": "2026-11-24T03:00:00Z",
+            "platform": "Android",
+            "severity": 0.5860631379652974,
+            "start": "2026-11-23T20:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-25T12:00:00Z",
+            "platform": "Web",
+            "severity": 0.31522927454208266,
+            "start": "2026-11-25T07:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 4.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-28T01:00:00Z",
+            "severity": 0.48867107803242865,
+            "start": "2026-11-27T20:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-12-05T04:00:00Z",
+            "start": "2026-12-04T20:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "electronics",
+            "end": "2026-12-07T23:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 14.680477099471721,
+            "start": "2026-12-07T15:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-12-09T13:00:00Z",
+            "start": "2026-12-09T05:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-10T03:00:00Z",
+            "severity": 0.444069716621616,
+            "start": "2026-12-09T21:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0013",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 4,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.08333333333333333,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 0.9166666666666666,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-16T02:00:00Z",
+            "platform": "Web",
+            "severity": 0.5906798607948704,
+            "start": "2026-11-15T18:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-18T05:00:00Z",
+            "platform": "iOS",
+            "severity": 0.5828411037387502,
+            "start": "2026-11-17T22:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-11-20T02:00:00Z",
+            "severity": 0.38334893886292326,
+            "start": "2026-11-19T19:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-22T16:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 11.342626880669297,
+            "start": "2026-11-22T08:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-11-23T22:00:00Z",
+            "start": "2026-11-23T14:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-25T12:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 13.492094803882274,
+            "start": "2026-11-25T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-26T09:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.950351707674859,
+            "start": "2026-11-26T01:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": false,
+          "incident": "inc-0007",
+          "supported_causes": 0
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-29T05:00:00Z",
+            "severity": 0.5426576207729359,
+            "start": "2026-11-28T22:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-12-02T07:00:00Z",
+            "start": "2026-12-01T23:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-06T12:00:00Z",
+            "severity": 0.5787643003100431,
+            "start": "2026-12-06T08:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-07T11:00:00Z",
+            "platform": "Web",
+            "severity": 0.38278147726955203,
+            "start": "2026-12-07T07:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 1.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-12-09T12:00:00Z",
+            "start": "2026-12-09T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 8,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.4166666666666667,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-17T09:00:00Z",
+            "platform": "iOS",
+            "severity": 0.47727085552962345,
+            "start": "2026-11-17T03:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 5.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-19T09:00:00Z",
+            "severity": 0.442846782110599,
+            "start": "2026-11-19T03:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-22T01:00:00Z",
+            "platform": "Android",
+            "severity": 0.41799321302589726,
+            "start": "2026-11-21T21:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-11-25T00:00:00Z",
+            "start": "2026-11-24T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-11-26T13:00:00Z",
+            "start": "2026-11-26T05:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-11-28T13:00:00Z",
+            "start": "2026-11-28T05:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-29T01:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 14.313931863337086,
+            "start": "2026-11-28T20:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-30T21:00:00Z",
+            "platform": "iOS",
+            "severity": 0.5868287731997699,
+            "start": "2026-11-30T13:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-12-07T12:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 13.390167638587148,
+            "start": "2026-12-07T06:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-09T03:00:00Z",
+            "severity": 0.4104549966447032,
+            "start": "2026-12-08T20:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "electronics",
+            "end": "2026-12-10T15:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 13.666251786593453,
+            "start": "2026-12-10T10:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-11T19:00:00Z",
+            "severity": 0.41417368948336214,
+            "start": "2026-12-11T14:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 9,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.16666666666666666,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "PL",
+            "end": "2026-11-16T20:00:00Z",
+            "start": "2026-11-16T12:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-21T01:00:00Z",
+            "severity": 0.41993680493707175,
+            "start": "2026-11-20T18:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-22T16:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 15.917431295681432,
+            "start": "2026-11-22T08:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-25T13:00:00Z",
+            "severity": 0.5808095520175551,
+            "start": "2026-11-25T07:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-11-27T05:00:00Z",
+            "start": "2026-11-26T21:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-28T00:00:00Z",
+            "severity": 0.4694324742296714,
+            "start": "2026-11-27T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-12-03T01:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 14.692576784015817,
+            "start": "2026-12-02T21:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-12-06T13:00:00Z",
+            "platform": "Android",
+            "severity": 0.4787858663361099,
+            "start": "2026-12-06T08:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-12-07T12:00:00Z",
+            "start": "2026-12-07T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-09T10:00:00Z",
+            "platform": "iOS",
+            "severity": 0.5299401772440474,
+            "start": "2026-12-09T05:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-10T13:00:00Z",
+            "platform": "Web",
+            "severity": 0.365873007434929,
+            "start": "2026-12-10T09:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 2.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "electronics",
+            "end": "2026-12-11T20:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 10.044027966756166,
+            "start": "2026-12-11T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 10,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.08333333333333333,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 0.9166666666666666,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-16T05:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 15.600630825109487,
+            "start": "2026-11-15T21:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-11-17T12:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 10.836108363206934,
+            "start": "2026-11-17T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-11-21T18:00:00Z",
+            "start": "2026-11-21T10:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-11-22T20:00:00Z",
+            "start": "2026-11-22T12:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-23T19:00:00Z",
+            "severity": 0.43344111417983455,
+            "start": "2026-11-23T12:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "electronics",
+            "end": "2026-11-25T11:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 11.4986531163777,
+            "start": "2026-11-25T06:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": false,
+          "incident": "inc-0006",
+          "supported_causes": 0
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-26T23:00:00Z",
+            "platform": "Android",
+            "severity": 0.3785949167911601,
+            "start": "2026-11-26T18:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-11-29T03:00:00Z",
+            "severity": 0.5122697641561089,
+            "start": "2026-11-28T23:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-12-01T22:00:00Z",
+            "start": "2026-12-01T14:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-04T22:00:00Z",
+            "severity": 0.5084562643405247,
+            "start": "2026-12-04T15:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-12-09T10:00:00Z",
+            "platform": "Web",
+            "severity": 0.5387048035785751,
+            "start": "2026-12-09T03:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 1.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-10T06:00:00Z",
+            "platform": "Web",
+            "severity": 0.4735364977797063,
+            "start": "2026-12-09T23:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 11,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.25,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-17T15:00:00Z",
+            "severity": 0.5470098986259979,
+            "start": "2026-11-17T07:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-19T22:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 15.885481835783832,
+            "start": "2026-11-19T14:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "DE",
+            "end": "2026-11-21T05:00:00Z",
+            "platform": "iOS",
+            "severity": 0.44508740907701627,
+            "start": "2026-11-21T00:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 1.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-22T14:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 11.411807390005483,
+            "start": "2026-11-22T09:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-11-24T03:00:00Z",
+            "start": "2026-11-23T19:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-25T19:00:00Z",
+            "severity": 0.46676830168456773,
+            "start": "2026-11-25T11:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "home",
+            "end": "2026-11-28T12:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 10.886147799772564,
+            "start": "2026-11-28T07:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-30T23:00:00Z",
+            "platform": "iOS",
+            "severity": 0.3099224062132286,
+            "start": "2026-11-30T15:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 2.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-01T22:00:00Z",
+            "platform": "Android",
+            "severity": 0.4406724490267454,
+            "start": "2026-12-01T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "PL",
+            "end": "2026-12-03T12:00:00Z",
+            "start": "2026-12-03T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-07T10:00:00Z",
+            "severity": 0.3636670153504595,
+            "start": "2026-12-07T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-12-09T08:00:00Z",
+            "start": "2026-12-09T00:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 12,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.16666666666666666,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-15T21:00:00Z",
+            "platform": "Android",
+            "severity": 0.43608483655598296,
+            "start": "2026-11-15T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-11-18T07:00:00Z",
+            "start": "2026-11-17T23:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-21T17:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 10.386134175541688,
+            "start": "2026-11-21T09:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "fashion",
+            "end": "2026-11-23T01:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 15.229335073151777,
+            "start": "2026-11-22T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-25T03:00:00Z",
+            "severity": 0.5154086177479459,
+            "start": "2026-11-24T20:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-11-27T20:00:00Z",
+            "start": "2026-11-27T12:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-30T13:00:00Z",
+            "severity": 0.45475176200286704,
+            "start": "2026-11-30T06:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "electronics",
+            "end": "2026-12-02T00:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 14.682296807758629,
+            "start": "2026-12-01T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-12-05T10:00:00Z",
+            "start": "2026-12-05T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-06T13:00:00Z",
+            "severity": 0.48956633545074096,
+            "start": "2026-12-06T07:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-08T22:00:00Z",
+            "platform": "Web",
+            "severity": 0.44279913819375705,
+            "start": "2026-12-08T14:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 2.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-12-11T21:00:00Z",
+            "platform": "iOS",
+            "severity": 0.5694471592526037,
+            "start": "2026-12-11T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 13,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.25,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-11-17T11:00:00Z",
+            "start": "2026-11-17T03:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "DE",
+            "end": "2026-11-18T06:00:00Z",
+            "platform": "Web",
+            "severity": 0.5937684867568688,
+            "start": "2026-11-18T01:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-11-19T16:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 15.956564133090176,
+            "start": "2026-11-19T11:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-22T17:00:00Z",
+            "severity": 0.40577537374848005,
+            "start": "2026-11-22T12:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-25T16:00:00Z",
+            "severity": 0.36288470736859035,
+            "start": "2026-11-25T11:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "DE",
+            "end": "2026-11-26T19:00:00Z",
+            "platform": "Web",
+            "severity": 0.32218856213742153,
+            "start": "2026-11-26T12:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "electronics",
+            "end": "2026-11-28T00:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.734697760475592,
+            "start": "2026-11-27T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-02T12:00:00Z",
+            "severity": 0.48789185031596116,
+            "start": "2026-12-02T05:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-12-05T05:00:00Z",
+            "platform": "Android",
+            "severity": 0.38033102227764337,
+            "start": "2026-12-04T22:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 3.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-12-07T15:00:00Z",
+            "start": "2026-12-07T07:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-12-09T05:00:00Z",
+            "start": "2026-12-08T21:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "fashion",
+            "end": "2026-12-11T20:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 15.571276201032301,
+            "start": "2026-12-11T12:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 22,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.16666666666666666,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "fashion",
+            "end": "2026-11-16T20:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 10.619098651186654,
+            "start": "2026-11-16T13:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-11-21T04:00:00Z",
+            "start": "2026-11-20T20:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-22T15:00:00Z",
+            "severity": 0.4532023960673196,
+            "start": "2026-11-22T08:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-25T15:00:00Z",
+            "platform": "Web",
+            "severity": 0.423748972964185,
+            "start": "2026-11-25T09:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-11-26T21:00:00Z",
+            "start": "2026-11-26T13:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-11-27T22:00:00Z",
+            "start": "2026-11-27T14:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "electronics",
+            "end": "2026-11-30T16:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 13.307587659465849,
+            "start": "2026-11-30T12:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-03T05:00:00Z",
+            "severity": 0.5286550534044883,
+            "start": "2026-12-02T21:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-12-04T17:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 13.72494460551622,
+            "start": "2026-12-04T10:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-07T16:00:00Z",
+            "platform": "Web",
+            "severity": 0.5858149912510341,
+            "start": "2026-12-07T08:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 2.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "PL",
+            "end": "2026-12-08T23:00:00Z",
+            "severity": 0.5631339120028596,
+            "start": "2026-12-08T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-12-12T00:00:00Z",
+            "platform": "Android",
+            "severity": 0.44413630233990875,
+            "start": "2026-12-11T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 71,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.4166666666666667,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "fashion",
+            "end": "2026-11-15T15:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 13.26924001911238,
+            "start": "2026-11-15T09:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-17T11:00:00Z",
+            "platform": "iOS",
+            "severity": 0.34788215215939244,
+            "start": "2026-11-17T06:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 3.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "home",
+            "end": "2026-11-20T05:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 15.784458714808157,
+            "start": "2026-11-20T00:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "sports",
+            "end": "2026-11-22T22:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.672774481294415,
+            "start": "2026-11-22T14:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "DE",
+            "end": "2026-11-24T01:00:00Z",
+            "start": "2026-11-23T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-11-26T12:00:00Z",
+            "severity": 0.5033586974017529,
+            "start": "2026-11-26T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-28T10:00:00Z",
+            "severity": 0.5716687462688528,
+            "start": "2026-11-28T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-11-30T13:00:00Z",
+            "platform": "Web",
+            "severity": 0.43127458689677195,
+            "start": "2026-11-30T06:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 2.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-12-08T00:00:00Z",
+            "start": "2026-12-07T16:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-09T11:00:00Z",
+            "severity": 0.5616166178504667,
+            "start": "2026-12-09T04:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-10T10:00:00Z",
+            "platform": "Android",
+            "severity": 0.5157357223203567,
+            "start": "2026-12-10T05:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "FR",
+            "end": "2026-12-12T01:00:00Z",
+            "start": "2026-12-11T17:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    },
+    {
+      "seed": 80,
+      "days": 49.0,
+      "explained_without_alert": 4,
+      "pending_records": 0,
+      "faults": 12,
+      "detected": 12,
+      "detection_rate": 1.0,
+      "mean_delay_h": 0.16666666666666666,
+      "localized_rate": 1.0,
+      "correct_cause_rate": 1.0,
+      "false_alarms": 0,
+      "false_alarms_per_day": 0.0,
+      "false_alarm_incidents": [],
+      "innocents": 8,
+      "innocents_silent": 8,
+      "innocent_silent_rate": 1.0,
+      "per_fault": [
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-18T14:00:00Z",
+            "severity": 0.5367808912579488,
+            "start": "2026-11-18T07:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0001",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "home",
+            "end": "2026-11-20T22:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 12.932296230126283,
+            "start": "2026-11-20T18:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0002",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "ES",
+            "end": "2026-11-22T07:00:00Z",
+            "platform": "iOS",
+            "severity": 0.4719421176911603,
+            "start": "2026-11-22T00:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0003",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "ES",
+            "end": "2026-11-26T09:00:00Z",
+            "start": "2026-11-26T01:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0004",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-11-29T21:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 13.85950565120129,
+            "start": "2026-11-29T15:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0005",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "FR",
+            "end": "2026-11-30T11:00:00Z",
+            "platform": "Android",
+            "severity": 0.5935173718739631,
+            "start": "2026-11-30T07:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0006",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "PL",
+            "end": "2026-12-01T21:00:00Z",
+            "start": "2026-12-01T13:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0007",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "FR",
+            "end": "2026-12-05T07:00:00Z",
+            "severity": 0.49089366507359594,
+            "start": "2026-12-05T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0008",
+          "supported_causes": 1
+        },
+        {
+          "kind": "payment_failure",
+          "fault": {
+            "country": "PL",
+            "end": "2026-12-06T07:00:00Z",
+            "platform": "Android",
+            "severity": 0.4653211692200746,
+            "start": "2026-12-06T02:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 2.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0009",
+          "supported_causes": 1
+        },
+        {
+          "kind": "ad_budget_exhausted",
+          "fault": {
+            "after": 0.05,
+            "boost": 3.0,
+            "boost_hours": 3,
+            "country": "PL",
+            "end": "2026-12-09T09:00:00Z",
+            "start": "2026-12-09T01:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0010",
+          "supported_causes": 1
+        },
+        {
+          "kind": "search_regression",
+          "fault": {
+            "country": "DE",
+            "end": "2026-12-10T13:00:00Z",
+            "severity": 0.5561459925419168,
+            "start": "2026-12-10T09:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0011",
+          "supported_causes": 1
+        },
+        {
+          "kind": "stockout_surge",
+          "fault": {
+            "category": "beauty",
+            "end": "2026-12-12T02:00:00Z",
+            "feed_ctr_lift": 0.25,
+            "multiplier": 14.213384668988086,
+            "start": "2026-12-11T19:00:00Z"
+          },
+          "detected": true,
+          "delay_h": 0.0,
+          "localized": true,
+          "correct_cause": true,
+          "incident": "inc-0012",
+          "supported_causes": 1
+        }
+      ]
+    }
+  ]
+}

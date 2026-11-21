@@ -3,9 +3,10 @@
     python -m sim.score generate --db data/eval.db --faults 12 --innocents 8 --seed 1
         builds a database with random faults and innocent events spread over the history
     (run the brain over that database; write to a separate eval_incidents/ folder)
-    python -m sim.score score --db data/eval.db --incidents eval_incidents/ --out docs/results.md
+    python -m sim.score score --db data/eval.db --incidents eval_incidents/ --out data/eval-results.md
 
-The numbers in docs/results.md come from this script, not from hand-picked runs.
+The numbers in docs/results.md come from this scorer, not from hand-picked runs: scripts/summarize_evaluation.py
+scores many runs with `score()` and writes that page. The report of one run goes to its own file.
 
 Matching rules (kept simple on purpose, so they can be explained on a slide):
 - Faults are payment_failure, stockout_surge, search_regression and ad_budget_exhausted.
@@ -164,7 +165,9 @@ def score(events: list[Event], incidents: list[dict], data_end: pd.Timestamp, da
         cause = named_cause(f, i)
         localized += loc
         correct += cause
-        per_fault.append({"kind": f.kind, "fault": f.scope, "detected": True, "delay_h": delay, "localized": loc, "correct_cause": cause})
+        supported = sum(h.get("status") == "supported" for h in i.get("hypotheses", []))
+        per_fault.append({"kind": f.kind, "fault": f.scope, "detected": True, "delay_h": delay, "localized": loc, "correct_cause": cause,
+                          "incident": i["id"], "supported_causes": supported})
     false_alarms = [i for n, i in enumerate(incidents) if n not in used | in_window]
     silent = 0
     for e in innocents:
@@ -180,9 +183,17 @@ def score(events: list[Event], incidents: list[dict], data_end: pd.Timestamp, da
         "localized_rate": localized / detected if detected else None,
         "correct_cause_rate": correct / detected if detected else None,
         "false_alarms": len(false_alarms), "false_alarms_per_day": len(false_alarms) / days if days else None,
+        "false_alarm_incidents": [{"id": i["id"], "first_seen": i["first_seen"], "segment": i.get("segment") or {},
+                                   "metric": _moved(i), "status": i.get("status")} for i in false_alarms],
         "innocents": ni, "innocents_silent": silent, "innocent_silent_rate": silent / ni if ni else None,
         "per_fault": per_fault,
     }
+
+
+def _moved(incident: dict):
+    """The metric an incident is about: its first driver, else its own `metric` (which may be the outcome)."""
+    drivers = [d for d in incident.get("drivers") or [] if isinstance(d, dict) and d.get("metric")]
+    return drivers[0]["metric"] if drivers else incident.get("metric")
 
 
 def pct(x):
@@ -275,7 +286,8 @@ def main(argv=None) -> int:
     s = sub.add_parser("score")
     s.add_argument("--db", default="data/eval.db")
     s.add_argument("--incidents", default="eval_incidents")
-    s.add_argument("--out", default="docs/results.md")
+    s.add_argument("--out", default="data/eval-results.md",
+                   help="the report of this one run; docs/results.md is written by scripts/summarize_evaluation.py")
     a = ap.parse_args(argv)
     if a.cmd == "generate":
         p = generate(a.db, a.faults, a.innocents, a.seed, a.days)

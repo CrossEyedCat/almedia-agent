@@ -99,6 +99,60 @@ def test_an_incident_before_the_fault_does_not_count_as_detection(truth):
     assert r["detected"] == 0 and r["false_alarms"] == 1
 
 
+def test_false_alarms_are_named_so_a_report_can_list_them(truth):
+    _, events, _, end, days = truth
+    f = payment(events)
+    early = incident(2, f, hours_after=-3)
+    r = sc.score(events, [incident(1, f), early], end, days)
+    assert r["detected"] == 1 and r["false_alarms"] == 1
+    assert r["false_alarm_incidents"] == [{"id": "inc-2", "first_seen": early["first_seen"], "segment": early["segment"],
+                                           "metric": None, "status": None}]
+    assert sc.score(events, [incident(1, f)], end, days)["false_alarm_incidents"] == []
+
+
+def test_false_alarms_that_share_an_id_keep_their_own_metric_and_status(truth):
+    """Two files may carry one id; each false alarm is described from its own incident, the driver before the outcome."""
+    _, events, _, end, days = truth
+    f = payment(events)
+    a = dict(incident(1, f, hours_after=-3), status="resolved", metric="contribution", drivers=[{"metric": "ad_ctr"}])
+    b = dict(incident(1, f, hours_after=-2), status="open", metric="take_rate")
+    r = sc.score(events, [a, b], end, days)
+    assert [(x["id"], x["metric"], x["status"]) for x in r["false_alarm_incidents"]] == [
+        ("inc-1", "ad_ctr", "resolved"), ("inc-1", "take_rate", "open")]
+
+
+def test_a_detected_fault_names_its_incident_and_how_many_causes_the_report_supports(truth):
+    _, events, _, end, days = truth
+    f = payment(events)
+    i = incident(1, f)
+    i["hypotheses"] += [{"cause": "release payments-sdk: routine rollout", "kind": "release", "status": "supported"},
+                        {"cause": "late or missing data", "kind": "freshness", "status": "rejected"}]
+    [p] = [p for p in sc.score(events, [i], end, days)["per_fault"] if p["detected"]]
+    assert p["correct_cause"] and p["incident"] == "inc-1" and p["supported_causes"] == 2
+
+
+def test_the_supported_causes_are_counted_in_the_incident_that_detected_the_fault(truth):
+    _, events, _, end, days = truth
+    f = payment(events)
+    stray = incident(1, f, hours_after=-3)       # first in the list, one supported cause, not the detection
+    hit = incident(2, f)
+    hit["hypotheses"] += [{"cause": "stockouts rose in the category", "kind": "metric", "status": "supported"},
+                          {"cause": "a shift in the mix", "kind": "metric", "status": "plausible"},
+                          {"cause": "late or missing data", "kind": "freshness", "status": "rejected"}]
+    [p] = [p for p in sc.score(events, [stray, hit], end, days)["per_fault"] if p["detected"]]
+    assert p["incident"] == "inc-2" and p["supported_causes"] == 2
+
+
+def test_the_single_run_report_does_not_land_on_the_many_run_page_by_default(truth, tmp_path, monkeypatch):
+    path, events, _, _, _ = truth
+    folder = tmp_path / "inc"
+    folder.mkdir()
+    (folder / "inc-1.json").write_text(json.dumps(incident(1, payment(events))), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert sc.main(["score", "--db", str(path), "--incidents", str(folder)]) == 0
+    assert (tmp_path / "data" / "eval-results.md").is_file() and not (tmp_path / "docs" / "results.md").exists()
+
+
 def test_alarm_during_a_promo_in_its_country_breaks_silence(truth):
     _, events, _, end, days = truth
     promo = next(e for e in events if e.kind == "promo")
