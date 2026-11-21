@@ -1,0 +1,7 @@
+anthropic
+fastapi
+uvicorn
+httpx
+pandas
+pytest
+python-dotenv
