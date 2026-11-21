@@ -21,6 +21,9 @@
         "pacing"
       ],
       "source": "ads",
+      "sources": [
+        "ads"
+      ],
       "formula": null,
       "decomposition": "ad_clicks * ad_cpc",
       "column": "ad_spend"
@@ -45,6 +48,9 @@
         "ads"
       ],
       "source": "ads",
+      "sources": [
+        "ads"
+      ],
       "formula": null,
       "decomposition": "ad_impressions * ad_ctr",
       "column": "ad_clicks"
@@ -66,14 +72,45 @@
       ],
       "direction": "up",
       "systems": [
-        "demand",
         "ads",
         "pacing"
       ],
       "source": "ads",
+      "sources": [
+        "ads"
+      ],
       "formula": null,
-      "decomposition": null,
+      "decomposition": "sessions * ad_load",
       "column": "ad_impressions"
+    },
+    {
+      "id": "ad_load",
+      "kind": "metric",
+      "label": "ad_load",
+      "status": "validated",
+      "unit": "ratio",
+      "description": "Sponsored impressions per session - set by the pacing controller, not by traffic.",
+      "origin": "core",
+      "additive": false,
+      "dimensions": [
+        "country",
+        "platform",
+        "category",
+        "channel"
+      ],
+      "direction": "none",
+      "systems": [
+        "ads",
+        "pacing"
+      ],
+      "source": null,
+      "sources": [
+        "ads",
+        "traffic"
+      ],
+      "formula": "ad_impressions / sessions",
+      "decomposition": null,
+      "column": null
     },
     {
       "id": "ad_ctr",
@@ -95,6 +132,9 @@
         "ads"
       ],
       "source": null,
+      "sources": [
+        "ads"
+      ],
       "formula": "ad_clicks / ad_impressions",
       "decomposition": null,
       "column": null
@@ -120,6 +160,9 @@
         "pacing"
       ],
       "source": null,
+      "sources": [
+        "ads"
+      ],
       "formula": "ad_spend / ad_clicks",
       "decomposition": null,
       "column": null
@@ -142,12 +185,46 @@
       "direction": "down",
       "systems": [
         "inventory",
-        "purchasing"
+        "purchasing",
+        "recommendations"
       ],
       "source": "inventory",
+      "sources": [
+        "inventory"
+      ],
       "formula": null,
       "decomposition": null,
       "column": "stockouts"
+    },
+    {
+      "id": "stockout_rate",
+      "kind": "metric",
+      "label": "stockout_rate",
+      "status": "validated",
+      "unit": "ratio",
+      "description": "Out-of-stock listings met per product view.",
+      "origin": "core",
+      "additive": false,
+      "dimensions": [
+        "country",
+        "platform",
+        "category",
+        "channel"
+      ],
+      "direction": "down",
+      "systems": [
+        "inventory",
+        "purchasing",
+        "recommendations"
+      ],
+      "source": null,
+      "sources": [
+        "inventory",
+        "traffic"
+      ],
+      "formula": "stockouts / product_views",
+      "decomposition": null,
+      "column": null
     },
     {
       "id": "orders",
@@ -167,6 +244,9 @@
       "direction": "up",
       "systems": [],
       "source": "orders",
+      "sources": [
+        "orders"
+      ],
       "formula": null,
       "decomposition": "sessions * conversion_rate",
       "column": "orders"
@@ -189,6 +269,10 @@
       "direction": "up",
       "systems": [],
       "source": null,
+      "sources": [
+        "orders",
+        "traffic"
+      ],
       "formula": "orders / sessions",
       "decomposition": "views_per_session * add_to_cart_rate * checkout_rate * payment_attempt_rate * payment_success_rate * order_rate",
       "column": null
@@ -214,6 +298,9 @@
         "recommendations"
       ],
       "source": null,
+      "sources": [
+        "traffic"
+      ],
       "formula": "product_views / sessions",
       "decomposition": null,
       "column": null
@@ -238,6 +325,9 @@
         "catalog"
       ],
       "source": null,
+      "sources": [
+        "traffic"
+      ],
       "formula": "add_to_cart / product_views",
       "decomposition": null,
       "column": null
@@ -262,6 +352,10 @@
         "checkout"
       ],
       "source": null,
+      "sources": [
+        "orders",
+        "traffic"
+      ],
       "formula": "checkouts / add_to_cart",
       "decomposition": null,
       "column": null
@@ -287,6 +381,10 @@
         "payments"
       ],
       "source": null,
+      "sources": [
+        "orders",
+        "payments"
+      ],
       "formula": "payment_attempts / checkouts",
       "decomposition": null,
       "column": null
@@ -311,6 +409,9 @@
         "payments"
       ],
       "source": "payments",
+      "sources": [
+        "payments"
+      ],
       "formula": "payment_successes / payment_attempts",
       "decomposition": null,
       "column": null
@@ -335,6 +436,10 @@
         "orders"
       ],
       "source": null,
+      "sources": [
+        "orders",
+        "payments"
+      ],
       "formula": "orders / payment_successes",
       "decomposition": null,
       "column": null
@@ -357,6 +462,9 @@
       "direction": "up",
       "systems": [],
       "source": "traffic",
+      "sources": [
+        "traffic"
+      ],
       "formula": null,
       "decomposition": null,
       "column": "product_views"
@@ -379,6 +487,9 @@
       "direction": "up",
       "systems": [],
       "source": "traffic",
+      "sources": [
+        "traffic"
+      ],
       "formula": null,
       "decomposition": null,
       "column": "add_to_cart"
@@ -401,6 +512,9 @@
       "direction": "up",
       "systems": [],
       "source": "orders",
+      "sources": [
+        "orders"
+      ],
       "formula": null,
       "decomposition": null,
       "column": "checkouts"
@@ -423,6 +537,9 @@
       "direction": "none",
       "systems": [],
       "source": "payments",
+      "sources": [
+        "payments"
+      ],
       "formula": null,
       "decomposition": null,
       "column": "payment_attempts"
@@ -445,6 +562,9 @@
       "direction": "up",
       "systems": [],
       "source": "payments",
+      "sources": [
+        "payments"
+      ],
       "formula": null,
       "decomposition": null,
       "column": "payment_successes"
@@ -467,6 +587,10 @@
       "direction": "up",
       "systems": [],
       "source": null,
+      "sources": [
+        "ads",
+        "orders"
+      ],
       "formula": "marketplace_fees + ad_spend - discounts",
       "decomposition": "marketplace_fees + ad_spend - discounts",
       "column": null
@@ -491,6 +615,9 @@
         "billing"
       ],
       "source": "orders",
+      "sources": [
+        "orders"
+      ],
       "formula": null,
       "decomposition": "gmv * take_rate",
       "column": "marketplace_fees"
@@ -515,6 +642,9 @@
         "billing"
       ],
       "source": null,
+      "sources": [
+        "orders"
+      ],
       "formula": "marketplace_fees / gmv",
       "decomposition": null,
       "column": null
@@ -539,6 +669,9 @@
         "pricing"
       ],
       "source": "orders",
+      "sources": [
+        "orders"
+      ],
       "formula": null,
       "decomposition": "gmv * discount_rate",
       "column": "discounts"
@@ -563,6 +696,9 @@
         "pricing"
       ],
       "source": null,
+      "sources": [
+        "orders"
+      ],
       "formula": "discounts / gmv",
       "decomposition": null,
       "column": null
@@ -585,6 +721,9 @@
       "direction": "up",
       "systems": [],
       "source": "orders",
+      "sources": [
+        "orders"
+      ],
       "formula": null,
       "decomposition": "orders * aov",
       "column": "gmv"
@@ -607,6 +746,9 @@
       "direction": "up",
       "systems": [],
       "source": null,
+      "sources": [
+        "orders"
+      ],
       "formula": "gmv / orders",
       "decomposition": null,
       "column": null
@@ -629,6 +771,9 @@
       "direction": "down",
       "systems": [],
       "source": "orders",
+      "sources": [
+        "orders"
+      ],
       "formula": null,
       "decomposition": null,
       "column": "refunds"
@@ -653,6 +798,9 @@
         "demand"
       ],
       "source": "traffic",
+      "sources": [
+        "traffic"
+      ],
       "formula": null,
       "decomposition": null,
       "column": "sessions"
@@ -678,6 +826,9 @@
         "search"
       ],
       "source": "search",
+      "sources": [
+        "search"
+      ],
       "formula": null,
       "decomposition": null,
       "column": "searches"
@@ -702,6 +853,9 @@
         "search"
       ],
       "source": "search",
+      "sources": [
+        "search"
+      ],
       "formula": null,
       "decomposition": null,
       "column": "search_clicks"
@@ -726,6 +880,9 @@
         "search"
       ],
       "source": null,
+      "sources": [
+        "search"
+      ],
       "formula": "search_clicks / searches",
       "decomposition": null,
       "column": null
@@ -751,6 +908,9 @@
         "recommendations"
       ],
       "source": "recommendations",
+      "sources": [
+        "recommendations"
+      ],
       "formula": null,
       "decomposition": null,
       "column": "feed_impressions"
@@ -775,6 +935,9 @@
         "recommendations"
       ],
       "source": "recommendations",
+      "sources": [
+        "recommendations"
+      ],
       "formula": null,
       "decomposition": null,
       "column": "feed_clicks"
@@ -799,6 +962,9 @@
         "recommendations"
       ],
       "source": null,
+      "sources": [
+        "recommendations"
+      ],
       "formula": "feed_clicks / feed_impressions",
       "decomposition": null,
       "column": null
@@ -924,19 +1090,44 @@
       "dimension": "channel"
     },
     {
-      "id": "release:demand",
-      "kind": "context",
-      "label": "releases of demand",
+      "id": "ad_load@country",
+      "kind": "breakdown",
+      "label": "ad_load by country",
       "status": "",
-      "table": "releases",
-      "system": "demand"
+      "metric": "ad_load",
+      "dimension": "country"
     },
     {
-      "id": "calendar",
-      "kind": "context",
-      "label": "promo and holiday calendar",
+      "id": "ad_load@platform",
+      "kind": "breakdown",
+      "label": "ad_load by platform",
       "status": "",
-      "table": "calendar"
+      "metric": "ad_load",
+      "dimension": "platform"
+    },
+    {
+      "id": "ad_load@category",
+      "kind": "breakdown",
+      "label": "ad_load by category",
+      "status": "",
+      "metric": "ad_load",
+      "dimension": "category"
+    },
+    {
+      "id": "ad_load@channel",
+      "kind": "breakdown",
+      "label": "ad_load by channel",
+      "status": "",
+      "metric": "ad_load",
+      "dimension": "channel"
+    },
+    {
+      "id": "freshness:traffic",
+      "kind": "context",
+      "label": "freshness of traffic",
+      "status": "",
+      "table": "ingestion_log",
+      "source": "traffic"
     },
     {
       "id": "ad_ctr@country",
@@ -1051,12 +1242,52 @@
       "system": "purchasing"
     },
     {
+      "id": "release:recommendations",
+      "kind": "context",
+      "label": "releases of recommendations",
+      "status": "",
+      "table": "releases",
+      "system": "recommendations"
+    },
+    {
       "id": "freshness:inventory",
       "kind": "context",
       "label": "freshness of inventory",
       "status": "",
       "table": "ingestion_log",
       "source": "inventory"
+    },
+    {
+      "id": "stockout_rate@country",
+      "kind": "breakdown",
+      "label": "stockout_rate by country",
+      "status": "",
+      "metric": "stockout_rate",
+      "dimension": "country"
+    },
+    {
+      "id": "stockout_rate@platform",
+      "kind": "breakdown",
+      "label": "stockout_rate by platform",
+      "status": "",
+      "metric": "stockout_rate",
+      "dimension": "platform"
+    },
+    {
+      "id": "stockout_rate@category",
+      "kind": "breakdown",
+      "label": "stockout_rate by category",
+      "status": "",
+      "metric": "stockout_rate",
+      "dimension": "category"
+    },
+    {
+      "id": "stockout_rate@channel",
+      "kind": "breakdown",
+      "label": "stockout_rate by channel",
+      "status": "",
+      "metric": "stockout_rate",
+      "dimension": "channel"
     },
     {
       "id": "orders@country",
@@ -1169,14 +1400,6 @@
       "status": "",
       "table": "releases",
       "system": "search"
-    },
-    {
-      "id": "release:recommendations",
-      "kind": "context",
-      "label": "releases of recommendations",
-      "status": "",
-      "table": "releases",
-      "system": "recommendations"
     },
     {
       "id": "add_to_cart_rate@country",
@@ -1299,6 +1522,14 @@
       "system": "payments"
     },
     {
+      "id": "freshness:payments",
+      "kind": "context",
+      "label": "freshness of payments",
+      "status": "",
+      "table": "ingestion_log",
+      "source": "payments"
+    },
+    {
       "id": "payment_success_rate@country",
       "kind": "breakdown",
       "label": "payment_success_rate by country",
@@ -1329,14 +1560,6 @@
       "status": "",
       "metric": "payment_success_rate",
       "dimension": "channel"
-    },
-    {
-      "id": "freshness:payments",
-      "kind": "context",
-      "label": "freshness of payments",
-      "status": "",
-      "table": "ingestion_log",
-      "source": "payments"
     },
     {
       "id": "order_rate@country",
@@ -1409,14 +1632,6 @@
       "status": "",
       "metric": "product_views",
       "dimension": "channel"
-    },
-    {
-      "id": "freshness:traffic",
-      "kind": "context",
-      "label": "freshness of traffic",
-      "status": "",
-      "table": "ingestion_log",
-      "source": "traffic"
     },
     {
       "id": "add_to_cart@country",
@@ -1851,6 +2066,21 @@
       "dimension": "channel"
     },
     {
+      "id": "release:demand",
+      "kind": "context",
+      "label": "releases of demand",
+      "status": "",
+      "table": "releases",
+      "system": "demand"
+    },
+    {
+      "id": "calendar",
+      "kind": "context",
+      "label": "promo and holiday calendar",
+      "status": "",
+      "table": "calendar"
+    },
+    {
       "id": "searches@country",
       "kind": "breakdown",
       "label": "searches by country",
@@ -2136,7 +2366,8 @@
       "target": "ad_spend",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "formula:ad_clicks->ad_impressions",
@@ -2193,15 +2424,6 @@
       "aggregation": "sum"
     },
     {
-      "id": "may_affect:ad_clicks->sessions",
-      "source": "ad_clicks",
-      "target": "sessions",
-      "kind": "may_affect",
-      "status": "assumed",
-      "prior": 0.3,
-      "note": "ad clicks bring visitors"
-    },
-    {
       "id": "context:release:ads->ad_clicks",
       "source": "release:ads",
       "target": "ad_clicks",
@@ -2215,7 +2437,26 @@
       "target": "ad_clicks",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
+    },
+    {
+      "id": "formula:ad_impressions->sessions",
+      "source": "ad_impressions",
+      "target": "sessions",
+      "kind": "formula",
+      "status": "validated",
+      "formula": "sessions * ad_load",
+      "role": "factor"
+    },
+    {
+      "id": "formula:ad_impressions->ad_load",
+      "source": "ad_impressions",
+      "target": "ad_load",
+      "kind": "formula",
+      "status": "validated",
+      "formula": "sessions * ad_load",
+      "role": "factor"
     },
     {
       "id": "breakdown:ad_impressions->ad_impressions@country",
@@ -2254,22 +2495,6 @@
       "aggregation": "sum"
     },
     {
-      "id": "context:release:demand->ad_impressions",
-      "source": "release:demand",
-      "target": "ad_impressions",
-      "kind": "context",
-      "status": "",
-      "via": "releases.system"
-    },
-    {
-      "id": "context:calendar->ad_impressions",
-      "source": "calendar",
-      "target": "ad_impressions",
-      "kind": "context",
-      "status": "",
-      "via": "calendar.country"
-    },
-    {
       "id": "context:release:ads->ad_impressions",
       "source": "release:ads",
       "target": "ad_impressions",
@@ -2291,7 +2516,96 @@
       "target": "ad_impressions",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
+    },
+    {
+      "id": "definition:ad_load->ad_impressions",
+      "source": "ad_load",
+      "target": "ad_impressions",
+      "kind": "definition",
+      "status": "",
+      "formula": "ad_impressions / sessions",
+      "role": "numerator"
+    },
+    {
+      "id": "definition:ad_load->sessions",
+      "source": "ad_load",
+      "target": "sessions",
+      "kind": "definition",
+      "status": "",
+      "formula": "ad_impressions / sessions",
+      "role": "denominator"
+    },
+    {
+      "id": "breakdown:ad_load->ad_load@country",
+      "source": "ad_load",
+      "target": "ad_load@country",
+      "kind": "breakdown",
+      "status": "",
+      "dimension": "country",
+      "aggregation": "ratio_of_sums"
+    },
+    {
+      "id": "breakdown:ad_load->ad_load@platform",
+      "source": "ad_load",
+      "target": "ad_load@platform",
+      "kind": "breakdown",
+      "status": "",
+      "dimension": "platform",
+      "aggregation": "ratio_of_sums"
+    },
+    {
+      "id": "breakdown:ad_load->ad_load@category",
+      "source": "ad_load",
+      "target": "ad_load@category",
+      "kind": "breakdown",
+      "status": "",
+      "dimension": "category",
+      "aggregation": "ratio_of_sums"
+    },
+    {
+      "id": "breakdown:ad_load->ad_load@channel",
+      "source": "ad_load",
+      "target": "ad_load@channel",
+      "kind": "breakdown",
+      "status": "",
+      "dimension": "channel",
+      "aggregation": "ratio_of_sums"
+    },
+    {
+      "id": "context:release:ads->ad_load",
+      "source": "release:ads",
+      "target": "ad_load",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
+    },
+    {
+      "id": "context:release:pacing->ad_load",
+      "source": "release:pacing",
+      "target": "ad_load",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
+    },
+    {
+      "id": "context:freshness:ads->ad_load",
+      "source": "freshness:ads",
+      "target": "ad_load",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
+      "id": "context:freshness:traffic->ad_load",
+      "source": "freshness:traffic",
+      "target": "ad_load",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
     },
     {
       "id": "definition:ad_ctr->ad_clicks",
@@ -2354,6 +2668,15 @@
       "kind": "context",
       "status": "",
       "via": "releases.system"
+    },
+    {
+      "id": "context:freshness:ads->ad_ctr",
+      "source": "freshness:ads",
+      "target": "ad_ctr",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
     },
     {
       "id": "definition:ad_cpc->ad_spend",
@@ -2426,6 +2749,15 @@
       "via": "releases.system"
     },
     {
+      "id": "context:freshness:ads->ad_cpc",
+      "source": "freshness:ads",
+      "target": "ad_cpc",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
       "id": "breakdown:stockouts->stockouts@country",
       "source": "stockouts",
       "target": "stockouts@country",
@@ -2462,24 +2794,6 @@
       "aggregation": "sum"
     },
     {
-      "id": "may_affect:stockouts->add_to_cart_rate",
-      "source": "stockouts",
-      "target": "add_to_cart_rate",
-      "kind": "may_affect",
-      "status": "assumed",
-      "prior": 0.6,
-      "note": "unavailable products cannot be added to the cart"
-    },
-    {
-      "id": "may_affect:stockouts->feed_ctr",
-      "source": "stockouts",
-      "target": "feed_ctr",
-      "kind": "may_affect",
-      "status": "assumed",
-      "prior": 0.3,
-      "note": "a feed full of unavailable products changes what people click"
-    },
-    {
       "id": "context:release:inventory->stockouts",
       "source": "release:inventory",
       "target": "stockouts",
@@ -2496,12 +2810,135 @@
       "via": "releases.system"
     },
     {
+      "id": "context:release:recommendations->stockouts",
+      "source": "release:recommendations",
+      "target": "stockouts",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
+    },
+    {
       "id": "context:freshness:inventory->stockouts",
       "source": "freshness:inventory",
       "target": "stockouts",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
+    },
+    {
+      "id": "definition:stockout_rate->stockouts",
+      "source": "stockout_rate",
+      "target": "stockouts",
+      "kind": "definition",
+      "status": "",
+      "formula": "stockouts / product_views",
+      "role": "numerator"
+    },
+    {
+      "id": "definition:stockout_rate->product_views",
+      "source": "stockout_rate",
+      "target": "product_views",
+      "kind": "definition",
+      "status": "",
+      "formula": "stockouts / product_views",
+      "role": "denominator"
+    },
+    {
+      "id": "breakdown:stockout_rate->stockout_rate@country",
+      "source": "stockout_rate",
+      "target": "stockout_rate@country",
+      "kind": "breakdown",
+      "status": "",
+      "dimension": "country",
+      "aggregation": "ratio_of_sums"
+    },
+    {
+      "id": "breakdown:stockout_rate->stockout_rate@platform",
+      "source": "stockout_rate",
+      "target": "stockout_rate@platform",
+      "kind": "breakdown",
+      "status": "",
+      "dimension": "platform",
+      "aggregation": "ratio_of_sums"
+    },
+    {
+      "id": "breakdown:stockout_rate->stockout_rate@category",
+      "source": "stockout_rate",
+      "target": "stockout_rate@category",
+      "kind": "breakdown",
+      "status": "",
+      "dimension": "category",
+      "aggregation": "ratio_of_sums"
+    },
+    {
+      "id": "breakdown:stockout_rate->stockout_rate@channel",
+      "source": "stockout_rate",
+      "target": "stockout_rate@channel",
+      "kind": "breakdown",
+      "status": "",
+      "dimension": "channel",
+      "aggregation": "ratio_of_sums"
+    },
+    {
+      "id": "may_affect:stockout_rate->add_to_cart_rate",
+      "source": "stockout_rate",
+      "target": "add_to_cart_rate",
+      "kind": "may_affect",
+      "status": "assumed",
+      "prior": 0.6,
+      "note": "unavailable products cannot be added to the cart"
+    },
+    {
+      "id": "may_affect:stockout_rate->feed_ctr",
+      "source": "stockout_rate",
+      "target": "feed_ctr",
+      "kind": "may_affect",
+      "status": "assumed",
+      "prior": 0.3,
+      "note": "a feed full of unavailable products changes what people click"
+    },
+    {
+      "id": "context:release:inventory->stockout_rate",
+      "source": "release:inventory",
+      "target": "stockout_rate",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
+    },
+    {
+      "id": "context:release:purchasing->stockout_rate",
+      "source": "release:purchasing",
+      "target": "stockout_rate",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
+    },
+    {
+      "id": "context:release:recommendations->stockout_rate",
+      "source": "release:recommendations",
+      "target": "stockout_rate",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
+    },
+    {
+      "id": "context:freshness:inventory->stockout_rate",
+      "source": "freshness:inventory",
+      "target": "stockout_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
+      "id": "context:freshness:traffic->stockout_rate",
+      "source": "freshness:traffic",
+      "target": "stockout_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
     },
     {
       "id": "formula:orders->sessions",
@@ -2563,7 +3000,8 @@
       "target": "orders",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "formula:conversion_rate->views_per_session",
@@ -2674,6 +3112,24 @@
       "aggregation": "ratio_of_sums"
     },
     {
+      "id": "context:freshness:orders->conversion_rate",
+      "source": "freshness:orders",
+      "target": "conversion_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
+      "id": "context:freshness:traffic->conversion_rate",
+      "source": "freshness:traffic",
+      "target": "conversion_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
       "id": "definition:views_per_session->product_views",
       "source": "views_per_session",
       "target": "product_views",
@@ -2744,6 +3200,15 @@
       "via": "releases.system"
     },
     {
+      "id": "context:freshness:traffic->views_per_session",
+      "source": "freshness:traffic",
+      "target": "views_per_session",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
       "id": "definition:add_to_cart_rate->add_to_cart",
       "source": "add_to_cart_rate",
       "target": "add_to_cart",
@@ -2806,6 +3271,15 @@
       "via": "releases.system"
     },
     {
+      "id": "context:freshness:traffic->add_to_cart_rate",
+      "source": "freshness:traffic",
+      "target": "add_to_cart_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
       "id": "definition:checkout_rate->checkouts",
       "source": "checkout_rate",
       "target": "checkouts",
@@ -2866,6 +3340,24 @@
       "kind": "context",
       "status": "",
       "via": "releases.system"
+    },
+    {
+      "id": "context:freshness:orders->checkout_rate",
+      "source": "freshness:orders",
+      "target": "checkout_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
+      "id": "context:freshness:traffic->checkout_rate",
+      "source": "freshness:traffic",
+      "target": "checkout_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
     },
     {
       "id": "definition:payment_attempt_rate->payment_attempts",
@@ -2938,6 +3430,24 @@
       "via": "releases.system"
     },
     {
+      "id": "context:freshness:orders->payment_attempt_rate",
+      "source": "freshness:orders",
+      "target": "payment_attempt_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
+      "id": "context:freshness:payments->payment_attempt_rate",
+      "source": "freshness:payments",
+      "target": "payment_attempt_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
       "id": "definition:payment_success_rate->payment_successes",
       "source": "payment_success_rate",
       "target": "payment_successes",
@@ -3005,7 +3515,8 @@
       "target": "payment_success_rate",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "definition:order_rate->orders",
@@ -3070,6 +3581,24 @@
       "via": "releases.system"
     },
     {
+      "id": "context:freshness:orders->order_rate",
+      "source": "freshness:orders",
+      "target": "order_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
+      "id": "context:freshness:payments->order_rate",
+      "source": "freshness:payments",
+      "target": "order_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
       "id": "breakdown:product_views->product_views@country",
       "source": "product_views",
       "target": "product_views@country",
@@ -3111,7 +3640,8 @@
       "target": "product_views",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "breakdown:add_to_cart->add_to_cart@country",
@@ -3155,7 +3685,8 @@
       "target": "add_to_cart",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "breakdown:checkouts->checkouts@country",
@@ -3199,7 +3730,8 @@
       "target": "checkouts",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "breakdown:payment_attempts->payment_attempts@country",
@@ -3243,7 +3775,8 @@
       "target": "payment_attempts",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "breakdown:payment_successes->payment_successes@country",
@@ -3287,7 +3820,8 @@
       "target": "payment_successes",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "formula:contribution->marketplace_fees",
@@ -3351,6 +3885,24 @@
       "status": "",
       "dimension": "channel",
       "aggregation": "sum"
+    },
+    {
+      "id": "context:freshness:ads->contribution",
+      "source": "freshness:ads",
+      "target": "contribution",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
+      "id": "context:freshness:orders->contribution",
+      "source": "freshness:orders",
+      "target": "contribution",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
     },
     {
       "id": "formula:marketplace_fees->gmv",
@@ -3420,7 +3972,8 @@
       "target": "marketplace_fees",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "definition:take_rate->marketplace_fees",
@@ -3483,6 +4036,15 @@
       "kind": "context",
       "status": "",
       "via": "releases.system"
+    },
+    {
+      "id": "context:freshness:orders->take_rate",
+      "source": "freshness:orders",
+      "target": "take_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
     },
     {
       "id": "formula:discounts->gmv",
@@ -3552,7 +4114,8 @@
       "target": "discounts",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "definition:discount_rate->discounts",
@@ -3626,6 +4189,15 @@
       "via": "releases.system"
     },
     {
+      "id": "context:freshness:orders->discount_rate",
+      "source": "freshness:orders",
+      "target": "discount_rate",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
       "id": "formula:gmv->orders",
       "source": "gmv",
       "target": "orders",
@@ -3685,7 +4257,8 @@
       "target": "gmv",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "definition:aov->gmv",
@@ -3742,6 +4315,15 @@
       "aggregation": "ratio_of_sums"
     },
     {
+      "id": "context:freshness:orders->aov",
+      "source": "freshness:orders",
+      "target": "aov",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
       "id": "breakdown:refunds->refunds@country",
       "source": "refunds",
       "target": "refunds@country",
@@ -3783,7 +4365,8 @@
       "target": "refunds",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "breakdown:sessions->sessions@country",
@@ -3843,7 +4426,8 @@
       "target": "sessions",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "breakdown:searches->searches@country",
@@ -3911,7 +4495,8 @@
       "target": "searches",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "breakdown:search_clicks->search_clicks@country",
@@ -3963,7 +4548,8 @@
       "target": "search_clicks",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "definition:search_ctr->search_clicks",
@@ -4037,6 +4623,15 @@
       "via": "releases.system"
     },
     {
+      "id": "context:freshness:search->search_ctr",
+      "source": "freshness:search",
+      "target": "search_ctr",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
+    },
+    {
       "id": "breakdown:feed_impressions->feed_impressions@country",
       "source": "feed_impressions",
       "target": "feed_impressions@country",
@@ -4102,7 +4697,8 @@
       "target": "feed_impressions",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "breakdown:feed_clicks->feed_clicks@country",
@@ -4154,7 +4750,8 @@
       "target": "feed_clicks",
       "kind": "context",
       "status": "",
-      "via": "ingestion_log.source"
+      "via": "ingestion_log.source",
+      "inherited": false
     },
     {
       "id": "definition:feed_ctr->feed_clicks",
@@ -4220,12 +4817,30 @@
       "note": "feed clicks open product pages"
     },
     {
+      "id": "may_affect:feed_ctr->add_to_cart_rate",
+      "source": "feed_ctr",
+      "target": "add_to_cart_rate",
+      "kind": "may_affect",
+      "status": "assumed",
+      "prior": 0.3,
+      "note": "a feed that sends viewers to products they cannot buy lowers add-to-cart"
+    },
+    {
       "id": "context:release:recommendations->feed_ctr",
       "source": "release:recommendations",
       "target": "feed_ctr",
       "kind": "context",
       "status": "",
       "via": "releases.system"
+    },
+    {
+      "id": "context:freshness:recommendations->feed_ctr",
+      "source": "freshness:recommendations",
+      "target": "feed_ctr",
+      "kind": "context",
+      "status": "",
+      "via": "ingestion_log.source",
+      "inherited": true
     }
   ],
   "top_outcomes": [
@@ -4333,7 +4948,20 @@
                   "metric": "ad_impressions",
                   "role": "factor",
                   "repeated": false,
-                  "children": []
+                  "children": [
+                    {
+                      "metric": "sessions",
+                      "role": "factor",
+                      "repeated": true,
+                      "children": []
+                    },
+                    {
+                      "metric": "ad_load",
+                      "role": "factor",
+                      "repeated": false,
+                      "children": []
+                    }
+                  ]
                 },
                 {
                   "metric": "ad_ctr",

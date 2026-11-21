@@ -30,7 +30,7 @@ def test_edge_kinds_and_context(graph):
     kinds = {e.kind for e in graph.edges}
     assert kinds == {"formula", "definition", "breakdown", "may_affect", "context"}
     causes = {e.src for e in graph.possible_causes("add_to_cart_rate")}
-    assert {"stockouts", "discount_rate"} <= causes
+    assert {"stockout_rate", "discount_rate", "feed_ctr"} <= causes
     assert all(graph.status[e.id] == "assumed" for e in graph.edges if e.kind == "may_affect")
     ctx = {n.id for n in graph.context_of("payment_success_rate")}
     assert {"release:payments", "freshness:payments"} <= ctx

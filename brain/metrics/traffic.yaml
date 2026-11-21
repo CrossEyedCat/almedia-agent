@@ -65,3 +65,6 @@ metrics:
       - metric: views_per_session
         prior: 0.4
         note: feed clicks open product pages
+      - metric: add_to_cart_rate
+        prior: 0.3
+        note: a feed that sends viewers to products they cannot buy lowers add-to-cart

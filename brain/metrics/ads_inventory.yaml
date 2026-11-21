@@ -1,4 +1,6 @@
 # Advertising (platform ad revenue) and inventory.
+# Sponsored products are shown on the marketplace itself, so ad impressions follow traffic:
+# ad_impressions = sessions x ad_load separates a traffic surge from a pacing change.
 # Assumption to confirm with the simulator: `stockouts` counts out-of-stock listings that
 # customers tried to view or were shown in an hour.
 metrics:
@@ -19,18 +21,24 @@ metrics:
     systems: [ads]
     source: ads
     direction: up
-    may_affect:
-      - metric: sessions
-        prior: 0.3
-        note: ad clicks bring visitors
 
   - name: ad_impressions
     description: Sponsored product impressions.
     unit: count
     column: ad_impressions
-    systems: [demand, ads, pacing]
+    decomposition: sessions * ad_load
+    systems: [ads, pacing]
     source: ads
     direction: up
+
+  - name: ad_load
+    description: Sponsored impressions per session - set by the pacing controller, not by traffic.
+    unit: ratio
+    formula: ad_impressions / sessions
+    atomic: true
+    bounds: [0, null]
+    systems: [ads, pacing]
+    direction: none
 
   - name: ad_ctr
     description: Clicks per sponsored impression.
@@ -54,8 +62,17 @@ metrics:
     description: Out-of-stock listings customers ran into.
     unit: count
     column: stockouts
-    systems: [inventory, purchasing]
+    systems: [inventory, purchasing, recommendations]
     source: inventory
+    direction: down
+
+  - name: stockout_rate
+    description: Out-of-stock listings met per product view.
+    unit: ratio
+    formula: stockouts / product_views
+    atomic: true
+    bounds: [0, null]
+    systems: [inventory, purchasing, recommendations]
     direction: down
     may_affect:
       - metric: add_to_cart_rate

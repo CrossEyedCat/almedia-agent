@@ -134,6 +134,10 @@ def spec_from_dict(raw: dict, origin: str = "core") -> MetricSpec:
             raise SpecError(f"{name}: may_affect prior must be within [0, 1]")
         links.append(CauseLink(metric=str(item["metric"]), prior=prior, note=str(item.get("note", ""))))
 
+    for flag in ("atomic", "additive"):
+        if flag in raw and raw[flag] is not None and not isinstance(raw[flag], bool):
+            raise SpecError(f"{name}: {flag} must be true or false, got {raw[flag]!r}")
+
     direction = raw.get("direction", "none")
     if direction not in ("up", "down", "none"):
         raise SpecError(f"{name}: direction must be up, down or none")
@@ -151,7 +155,7 @@ def spec_from_dict(raw: dict, origin: str = "core") -> MetricSpec:
         sql=sql,
         formula=formula,
         decomposition=decomposition,
-        atomic=bool(raw.get("atomic", False)),
+        atomic=raw.get("atomic") is True,
         additive=raw.get("additive"),
         bounds=bounds,
         systems=tuple(systems),
