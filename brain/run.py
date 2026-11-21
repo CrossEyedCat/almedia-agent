@@ -77,7 +77,10 @@ def live(monitor: Monitor, book: Book, poll: float, max_ticks: int | None = None
     while max_ticks is None or ticks < max_ticks:
         try:
             if extension is not None:
-                extension.poll()   # new metric definitions in the incoming folder; answers itself, never raises
+                try:
+                    extension.poll()   # new metric definitions in the incoming folder; it answers them itself
+                except Exception:      # whatever happens there must not cost the monitor its tick
+                    traceback.print_exc()
             newest = Clock(monitor.store).newest_hour()
             if newest is not None and (newest != last_seen or idle >= 4):   # also re-read when nothing new came
                 tick = monitor.tick()
