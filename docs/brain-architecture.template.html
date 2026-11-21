@@ -1,0 +1,159 @@
+<title>Monitoring Brain Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap">
+<style>
+/* Layout: one left-aligned reading column; figures sit on colour blocks and scroll sideways on phones.
+   Tokens follow the project's console style (ui/static/console.css): warm neutrals, one amber accent, flat surfaces. */
+:root {
+  --bg: #FAF7F2; --block: #F0EBE2; --line: #D9D1C3; --edge: #A89F8F; --ink: #1C1917; --muted: #57534E;
+  --accent: #B45309; --hot: #B42318; --ok: #1F6F5C;
+  --ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12100D; --block: #1C1915; --line: #332E27; --edge: #5E574B; --ink: #F5F1EA; --muted: #A8A196;
+    --accent: #F59E0B; --hot: #FF8A7A; --ok: #6FD0BD; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12100D; --block: #1C1915; --line: #332E27; --edge: #5E574B; --ink: #F5F1EA; --muted: #A8A196;
+  --accent: #F59E0B; --hot: #FF8A7A; --ok: #6FD0BD; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 400 15px/1.6 var(--ui); font-variant-numeric: tabular-nums; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 40px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 48px; }
+header { display: grid; gap: 12px; }
+.eyebrow { font: 500 12px/1.4 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+h1 { margin: 0; font-size: 32px; font-weight: 700; line-height: 1.15; text-wrap: balance; }
+h2 { margin: 0; font-size: 21px; font-weight: 700; line-height: 1.25; text-wrap: balance; }
+p { margin: 0; max-width: 70ch; }
+.lede { font-size: 17px; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 24px; margin: 0; padding: 0; list-style: none; font: 400 13px/1.5 var(--mono); color: var(--muted); }
+.facts b { color: var(--ink); font-weight: 700; }
+section { display: grid; gap: 16px; min-width: 0; }
+figure { margin: 0; display: grid; gap: 10px; min-width: 0; }
+.fig { overflow-x: auto; background: var(--block); border-radius: 8px; padding: 16px; }
+figcaption { font-size: 14px; color: var(--muted); max-width: 80ch; }
+code { font: 400 0.9em var(--mono); }
+ul.read { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 80ch; }
+
+svg.d { display: block; width: 100%; min-width: 900px; height: auto; color: var(--ink); font-family: var(--ui); }
+.d .box { fill: var(--bg); stroke: var(--edge); stroke-width: 1.2; }
+.d .box-a { fill: var(--bg); stroke: var(--ink); stroke-width: 2; }
+.d .box-o { fill: none; stroke: var(--muted); stroke-width: 1.3; stroke-dasharray: 5 4; }
+.d .tt { fill: var(--ink); font: 700 12.5px var(--mono); }
+.d .tm { fill: var(--muted); font-size: 11.5px; }
+.d .ts { fill: var(--muted); font-size: 11px; }
+.d .mono { fill: var(--ink); font: 400 11.5px var(--mono); }
+.d .tw { fill: var(--hot); font-size: 11.5px; font-weight: 500; }
+.d .lbl { fill: var(--muted); font-size: 11px; font-style: italic; }
+.d .edge { stroke: var(--ink); stroke-width: 1.3; fill: none; }
+.d .mk { fill: var(--ink); }
+.d .mk-m { fill: var(--accent); }
+.d .mk-c { fill: var(--ok); }
+.d .n { fill: var(--bg); stroke: var(--edge); stroke-width: 1.2; }
+.d .n-root { fill: var(--ink); stroke: var(--ink); stroke-width: 1.2; }
+.d .n-root + .nt { fill: var(--bg); font-weight: 700; }
+.d .n-shared { fill: var(--bg); stroke: var(--ink); stroke-width: 2.4; }
+.d .n-cause { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 3; }
+.d .n-ref { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 2 4; }
+.d .n-ctx { fill: none; stroke: var(--ok); stroke-width: 1.4; stroke-dasharray: 2 3; }
+.d .nt { fill: var(--ink); font: 400 11.5px var(--mono); }
+.d .nt-s { font-size: 10.5px; }
+.d .e-f { stroke: var(--edge); stroke-width: 1.4; fill: none; }
+.d .e-m { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 3; fill: none; }
+.d .e-c { stroke: var(--ok); stroke-width: 1.4; stroke-dasharray: 2 3; fill: none; }
+.d .op { fill: var(--muted); font: 700 12px var(--mono); }
+.d .sg { fill: var(--accent); font: 700 14px var(--mono); }
+
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+th { font-size: 12px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); background: var(--block); }
+tr:last-child td { border-bottom: none; }
+td.num { text-align: right; font-family: var(--mono); }
+td:first-child code { white-space: nowrap; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.pair > div { background: var(--block); border-radius: 8px; padding: 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.pair .big { font: 700 28px/1.1 var(--ui); }
+.pair .what { font-weight: 500; }
+.pair .why { font-size: 14px; color: var(--muted); }
+footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 4px; }
+@media (max-width: 560px) { h1 { font-size: 27px; } .lede { font-size: 16px; } }
+</style>
+
+<main class="wrap">
+<header>
+  <div class="eyebrow">Eye of the System · brain · HackLab #2 Berlin · state of {{STATE}}</div>
+  <h1>Monitoring Brain Architecture</h1>
+  <p class="lede">The brain is the part of the system that understands the marketplace. It keeps a graph of metrics and how they depend on each other, computes any metric for any segment from the simulator's data, and will use both to notice a change, trace it to a cause and report it without being asked.</p>
+  <ul class="facts">
+    <li><b>{{N_METRICS}}</b> metrics, <b>{{N_EDGES}}</b> typed edges</li>
+    <li><b>8</b> modules, <b>{{N_LINES}}</b> lines</li>
+    <li><b>{{N_TESTS}}</b> tests</li>
+    <li>foundation built; monitor, investigator and extension agent planned</li>
+  </ul>
+</header>
+
+<section>
+  <h2>From data to incident</h2>
+  <p>Two things meet in the middle: the model of the business on top and the data path below. Solid boxes exist and are tested; dashed boxes are the next milestones.</p>
+  <figure>
+    <div class="fig">{{FIG_PIPELINE}}</div>
+    <figcaption>The brain reads four tables of the simulator through a read-only connection. The table with the injected faults is refused by SQLite itself, so no query, written by us or contributed with a new metric, can read the answer. All data is simulated.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>The metric graph</h2>
+  <p>Drawn from the graph the code loads, not by hand. Every line downward is an exact identity, so a change at the top can be split into the parts each factor explains.</p>
+  <figure>
+    <div class="fig">{{FIG_GRAPH}}</div>
+    <figcaption>{{N_FORMULA}} formula edges are shown in full, all {{N_MAY}} possible-cause edges, and 3 of the {{N_CONTEXT}} context edges. Not drawn: {{N_DEFINITION}} definition edges (how each rate is computed from its two counts) and {{N_BREAKDOWN}} breakdown edges (every metric by country, platform, category and channel).</figcaption>
+  </figure>
+  <ul class="read">
+    <li><b>Formula edges</b> carry a role: <code>contribution = marketplace_fees + ad_spend − discounts</code>, and everything below is a product. The six boxes in the bottom row are the step rates of the funnel; a fault in one step shows up in exactly one of them.</li>
+    <li><b><code>gmv</code> and <code>sessions</code> feed two parents.</b> The graph is a DAG, so the effect of a factor on the outcome is summed over all paths: <code>gmv</code> raises fees and raises discounts, with opposite signs at the top.</li>
+    <li><b>Possible causes</b> are hypotheses with a sign: more stock-outs should lower the add-to-cart rate. They stay assumed until an incident tests them; a question mark means the direction is unknown.</li>
+    <li><b>Context</b> links a metric to releases of the systems behind it, to the freshness of its data sources and to the promo calendar. A derived metric inherits the sources of its parts.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>One tick of the planned loop</h2>
+  <p>The order of the steps is the algorithm. Each step uses what the foundation already provides: the sources of a metric, sums that can be turned into any metric, and the typed edges.</p>
+  <figure>
+    <div class="fig">{{FIG_TICK}}</div>
+    <figcaption>Why step rates in cells and not the top numbers: with a payment fault in one country and platform, total orders moved by 0.8 units of noise in a measurement on the simulator's data, while the payment success rate in the affected cell moved by 17.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>What "validated" means</h2>
+  <p>The graph is checked against the data every time it loads. The report separates two kinds of result, measured here on 28 days of simulator data.</p>
+  <div class="pair">
+    <div><span class="big">{{N_DATA_CHECKS}}</span><span class="what">checks on data</span><span class="why">They can fail: a metric has values in at least 95 % of the hours, values stay within bounds, a contributed SQL agrees with its formula.</span></div>
+    <div><span class="big">{{N_DEF_CHECKS}}</span><span class="what">hold by definition</span><span class="why">No data can break them: <code>orders = sessions × (orders / sessions)</code>. They show the definitions are consistent and are not presented as evidence.</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Modules</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Module</th><th>Lines</th><th>Job</th><th>Main entry points</th><th>Tests</th></tr></thead>
+      <tbody>
+{{MODULE_ROWS}}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <span>Generated by <code>docs/build_brain_architecture.py</code> from the graph the brain loads.</span>
+  <span>Planned parts follow sections 3.3 to 3.5 of the project README; the numbers come from the review recorded in its section 3.8.</span>
+</footer>
+</main>

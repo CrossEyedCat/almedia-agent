@@ -106,6 +106,8 @@ unit: ratio
 
 ### 3.2 Metric graph
 
+A picture of the brain - the data path, the graph as loaded from the code and the planned loop - is in [`docs/brain-architecture.html`](docs/brain-architecture.html) (open it in a browser; rebuild with `python docs/build_brain_architecture.py`).
+
 - **Nodes:** metrics, breakdown views (`orders@country`) and context sources (`release:<system>`, `freshness:<source>`, `calendar`).
 - **Edges, each with its own reasoning:**
   - `formula` — an exact identity used for decomposition (`gmv = orders × aov`). The formula graph is a DAG, not a tree: `gmv` feeds `marketplace_fees` with a plus and `discounts` with a minus, `sessions` feeds `orders` and `ad_impressions`.
