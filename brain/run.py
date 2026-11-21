@@ -18,6 +18,7 @@ import argparse
 import os
 import sys
 import time
+import traceback
 from pathlib import Path
 
 import pandas as pd
@@ -72,16 +73,20 @@ def live(monitor: Monitor, book: Book, poll: float, max_ticks: int | None = None
     last_seen, idle, ticks = None, 0, 0
     print("monitor is watching; Ctrl+C stops it", flush=True)
     while max_ticks is None or ticks < max_ticks:
-        newest = Clock(monitor.store).newest_hour()
-        if newest is not None and (newest != last_seen or idle >= 4):   # also re-read when nothing new came
-            tick = monitor.tick()
-            written = book.update(tick)
-            if not quiet and (written or newest != last_seen):
-                print(describe(tick, written), flush=True)
-            last_seen, idle = newest, 0
-            ticks += 1
-        else:
-            idle += 1
+        try:
+            newest = Clock(monitor.store).newest_hour()
+            if newest is not None and (newest != last_seen or idle >= 4):   # also re-read when nothing new came
+                tick = monitor.tick()
+                written = book.update(tick)
+                if not quiet and (written or newest != last_seen):
+                    print(describe(tick, written), flush=True)
+                last_seen, idle = newest, 0
+                ticks += 1
+            else:
+                idle += 1
+        except Exception:   # a locked file or a busy database must not end the monitor: say so and try again
+            traceback.print_exc()
+            print("tick failed; trying again", file=sys.stderr, flush=True)
         time.sleep(poll)
 
 

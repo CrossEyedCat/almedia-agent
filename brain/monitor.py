@@ -98,6 +98,7 @@ class Tick:
     late: dict = field(default_factory=dict)        # hour -> sources not arrived
     held: dict = field(default_factory=dict)        # hour -> metrics not judged because of that
     judged_series: int = 0
+    events: list = field(default_factory=list)      # calendar rows visible at this tick
 
 
 def compatible(a: dict, b: dict) -> bool:
@@ -105,11 +106,16 @@ def compatible(a: dict, b: dict) -> bool:
     return all(b[d] == v for d, v in a.items() if d in b)
 
 
+def nested(a: dict, b: dict) -> bool:
+    """One place lies inside the other (or they are the same place)."""
+    return a.items() <= b.items() or b.items() <= a.items()
+
+
 def leading(alerts: list[Alert]) -> list[Alert]:
     """Per metric, the strongest alert of each place: a fault in one cell also shows, diluted, in
     every series that contains the cell, and weaker in every series that splits it."""
     out: list[Alert] = []
-    for a in sorted(alerts, key=lambda a: -a.score):
+    for a in sorted(alerts, key=lambda a: (-a.score, -len(a.segment))):   # on a tie the narrower place leads
         if not any(k.metric == a.metric and compatible(a.segment, k.segment) for k in out):
             out.append(a)
     return out
@@ -199,6 +205,7 @@ class Monitor:
         self._rates: dict[tuple, tuple] = {}          # (metric, cut) -> (rate, usable) of the last tick
         self._kinds: dict[str, str] = {}
         self._loaded_until: pd.Timestamp | None = None
+        self.open_episodes: list[tuple] = []      # (metric, segment, onset) of incidents that are still open
         self._watch_seen: set[tuple] = set()      # (release, metric) that has alerted, by scan or watch
         self._watch_closed: set[tuple] = set()    # ... and whose episode is over: never raised again
 
@@ -262,8 +269,9 @@ class Monitor:
         if w.counts:
             kind = next((name for shift, name in ((0.0, "proportion"), (1.0, "excess"))
                          if self._binomial_fits(w, shift)), "ratio")
-        if self.cubes[()].rows >= self.config.min_history_hours:
-            self._kinds[w.metric] = kind
+        total = self.cubes[()].data[w.denominator]
+        if total.size and int(np.isfinite(total).any(axis=1).sum()) >= self.config.min_history_hours:
+            self._kinds[w.metric] = kind    # decided for good only on enough hours of real data
         return kind
 
     def _binomial_fits(self, w: Watched, shift: float, max_dispersion: float = 1.5) -> bool:
@@ -297,7 +305,7 @@ class Monitor:
         j0 = max(0, rows - cfg.reread_hours)
         judged_hours = [self.cubes[()].hour(r) for r in range(j0, rows)]
         tick.late = clock.late(judged_hours, self.sources)
-        events = self._calendar(now)
+        events = tick.events = self._calendar(now)
         for cube in self.cubes.values():
             cal = self._calendar_mask(cube, events)
             for w in self.watched:
@@ -328,6 +336,13 @@ class Monitor:
         # baseline: visible history before the hours being judged
         b0 = max(0, j0 - cfg.lookback_hours)
         usable = np.isfinite(N[b0:j0]) & np.isfinite(D[b0:j0]) & (D[b0:j0] > 0) & ~flags[b0:j0] & ~cal[b0:j0]
+        for metric, segment, onset in self.open_episodes:
+            # while an incident is open its hours are not history, flagged or not: at night a running
+            # fault is too thin to flag, and would otherwise drift into its own baseline
+            if metric == w.metric and set(segment) == set(cube.dims):
+                k = cube._kidx.get(tuple(segment[d] for d in cube.dims))
+                if k is not None:
+                    usable[max(cube.row(onset) - b0, 0):, k] = False
         sum_n = np.where(usable, N[b0:j0], 0.0).sum(axis=0)
         sum_d = np.where(usable, D[b0:j0], 0.0).sum(axis=0)
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -507,7 +522,7 @@ class Monitor:
         found = self._series(metric, segment)
         return float(found[2][0][found[1]]) if found else None
 
-    def window(self, metric: str, segment: dict, start, end, skip=()) -> dict | None:
+    def window(self, metric: str, segment: dict, start, end, skip=(), as_rate: float | None = None) -> dict | None:
         """One targeted look: the metric in a watched series over [start, end) against its baseline.
         Used to follow a link of the graph from a metric that moved to one it may affect, where a
         single question is asked and the bar can be far lower than for the hourly scan."""
@@ -532,5 +547,15 @@ class Monitor:
             score, z = ratio_surprise(np.array([sum_n]), np.array([sum_d]), np.array([base]), np.array([scale[k]]))
         else:
             score, z = binomial_surprise(np.array([sum_n]), np.array([sum_d]), np.array([base]))
-        return {"metric": metric, "observed": sum_n / sum_d + shift, "expected": float(rate[k]),
-                "numerator": sum_n + shift * sum_d, "denominator": sum_d, "score": float(score[0]), "z": float(z[0])}
+        out = {"metric": metric, "observed": sum_n / sum_d + shift, "expected": float(rate[k]),
+               "numerator": sum_n + shift * sum_d, "denominator": sum_d, "score": float(score[0]), "z": float(z[0])}
+        if as_rate is not None:
+            # "telling": how surprising this much data would be if the rate were `as_rate`; a window
+            # too thin to show that rate cannot show that it has gone either
+            hyp = (as_rate - shift) * sum_d
+            if kind == "ratio":
+                telling, _ = ratio_surprise(np.array([hyp]), np.array([sum_d]), np.array([base]), np.array([scale[k]]))
+            else:
+                telling, _ = binomial_surprise(np.array([round(hyp)]), np.array([sum_d]), np.array([base]))
+            out["telling"] = float(telling[0])
+        return out
