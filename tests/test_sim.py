@@ -352,3 +352,14 @@ def test_a_fault_ended_before_it_starts_is_cancelled_and_the_same_fault_can_be_i
     inject.search_regression(con, "ES", s)                                    # the same settings again: allowed
     con.close()
     pd.testing.assert_frame_equal(key(facts(clean_db)), key(facts(path)))
+
+
+# ------------------------------------------------------------ published totals
+def test_default_database_has_the_published_totals(tmp_path):
+    """The numbers in docs/contracts/README.md. They differ if numpy or scipy behave differently, or if the generator
+    changed on purpose (then update this test and that file together)."""
+    path = backfill(str(tmp_path / "default.db"), 28 * 24)                    # default start and seed 42
+    con = sqlite3.connect(path)
+    row = con.execute("SELECT COUNT(*), SUM(sessions), SUM(orders), ROUND(SUM(gmv), 2), ROUND(SUM(ad_spend), 2) FROM facts_hourly").fetchone()
+    con.close()
+    assert row == (120960, 3081260, 181185, 11631523.55, 64859.08)
