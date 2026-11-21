@@ -176,3 +176,63 @@ def test_a_fault_written_into_the_past_is_still_seen(scenario, tmp_path):
         con.close()
     found = by_metric(monitor.tick(as_of=END_OF_DATA))
     assert found["payment_success_rate"].onset == END_OF_DATA - 5 * H
+
+
+# ------------------------------------------------------------- a release is a reason to look closer
+NIGHT = T("2026-11-02T02:00:00Z")   # 03:00 in Warsaw: the smallest cell at its quietest hour
+
+
+def _night_fault(con):
+    inject.payment_failure(con, "PL", "iOS", NIGHT, 0.4, end=NIGHT + 6 * H)
+
+
+def test_a_small_night_fault_is_too_weak_for_the_hourly_scan_alone(scenario):
+    # the reason for the release watch: about 25 payment attempts in six hours
+    from brain.monitor import Config
+    monitor = scenario(_night_fault)
+    monitor.config = Config(release_watch_hours=0)
+    seen = set()
+    for k in range(0, 13):
+        seen |= {a.metric for a in monitor.tick(as_of=NIGHT + k * H).alerts}
+    assert "payment_success_rate" not in seen
+
+
+def test_after_a_release_its_metrics_are_tested_in_its_scope_since_the_release(scenario):
+    monitor = scenario(_night_fault)
+    found, when = None, None
+    for k in range(0, 13):
+        tick = monitor.tick(as_of=NIGHT + k * H)
+        hit = by_metric(tick).get("payment_success_rate")
+        if hit and found is None:
+            found, when = hit, k
+    assert found is not None, "not raised within the fault and six hours after it"
+    assert found.segment == {"country": "PL", "platform": "iOS"}
+    assert found.onset == NIGHT and found.trigger == "release"
+    assert found.observed < 0.8 < found.expected
+    assert when <= 12
+
+
+def test_the_release_watch_goes_quiet_when_the_evidence_stops_growing(scenario):
+    monitor = scenario(_night_fault)
+    ticks = [monitor.tick(as_of=NIGHT + k * H) for k in range(0, 20)]
+    assert any("payment_success_rate" in by_metric(t) for t in ticks)
+    assert ticks[-1].alerts == []
+
+
+def test_harmless_releases_raise_nothing(scenario):
+    def releases(con):
+        rows = [("2026-10-31T10:00:00Z", "payments-sdk", "PL", "iOS", "payments-sdk rollout (PL, iOS)"),
+                ("2026-11-01T03:00:00Z", "search", "FR", None, "search rollout (FR)"),
+                ("2026-11-01T19:00:00Z", "pacing", "DE", None, "pacing rollout (DE)"),
+                ("2026-11-02T08:00:00Z", "payments-sdk", "ES", "Web", "payments-sdk rollout (ES, Web)"),
+                ("2026-11-02T22:00:00Z", "search", "PL", "Android", "search rollout (PL, Android)"),
+                ("2026-11-03T05:00:00Z", "payments-sdk", "DE", "Android", "payments-sdk rollout (DE, Android)"),
+                ("2026-11-03T15:00:00Z", "pacing", "FR", "iOS", "pacing rollout (FR, iOS)")]
+        con.executemany("INSERT INTO releases VALUES (?, ?, ?, ?, ?)", rows)
+        con.commit()
+    monitor = scenario(releases)
+    raised = []
+    for k in range(4 * 24, DAYS * 24 + 1):
+        tick = monitor.tick(as_of=T(START) + k * H)
+        raised += [(tick.now, a.metric, a.segment, a.trigger) for a in tick.alerts]
+    assert raised == []
