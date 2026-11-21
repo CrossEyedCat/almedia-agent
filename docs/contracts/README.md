@@ -37,7 +37,7 @@ python -m sim.live --speed 2                  # one simulated hour every 2 s
 python -m sim.inject payment_failure --country DE --platform Android --now
 python -m sim.inject end --id 1               # rollback
 uvicorn ui.app:app --port 8000                # console; /data browses the tables read only
-python -m sim.score generate && python -m sim.score score   # needs incidents/*.json from brain/
+python -m sim.score generate && python -m sim.score score   # one run: needs the brain's replay in eval_incidents/, writes data/eval-results.md
 ```
 
 See `docs/system-overview.html` for the whole picture (world, console, scoring; the monitor links to its own page).
