@@ -35,6 +35,7 @@ metrics:
     may_affect:
       - metric: views_per_session
         prior: 0.5
+        sign: 1
         note: relevant search results lead customers to product pages
 
   - name: feed_impressions
@@ -64,7 +65,9 @@ metrics:
     may_affect:
       - metric: views_per_session
         prior: 0.4
+        sign: 1
         note: feed clicks open product pages
       - metric: add_to_cart_rate
         prior: 0.3
+        sign: -1
         note: a feed that sends viewers to products they cannot buy lowers add-to-cart

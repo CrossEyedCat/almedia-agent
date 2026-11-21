@@ -26,7 +26,8 @@
       ],
       "formula": null,
       "decomposition": "ad_clicks * ad_cpc",
-      "column": "ad_spend"
+      "column": "ad_spend",
+      "outcome": false
     },
     {
       "id": "ad_clicks",
@@ -53,7 +54,8 @@
       ],
       "formula": null,
       "decomposition": "ad_impressions * ad_ctr",
-      "column": "ad_clicks"
+      "column": "ad_clicks",
+      "outcome": false
     },
     {
       "id": "ad_impressions",
@@ -81,7 +83,8 @@
       ],
       "formula": null,
       "decomposition": "sessions * ad_load",
-      "column": "ad_impressions"
+      "column": "ad_impressions",
+      "outcome": false
     },
     {
       "id": "ad_load",
@@ -110,7 +113,8 @@
       ],
       "formula": "ad_impressions / sessions",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "ad_ctr",
@@ -137,7 +141,8 @@
       ],
       "formula": "ad_clicks / ad_impressions",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "ad_cpc",
@@ -165,7 +170,8 @@
       ],
       "formula": "ad_spend / ad_clicks",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "stockouts",
@@ -194,7 +200,8 @@
       ],
       "formula": null,
       "decomposition": null,
-      "column": "stockouts"
+      "column": "stockouts",
+      "outcome": false
     },
     {
       "id": "stockout_rate",
@@ -202,7 +209,7 @@
       "label": "stockout_rate",
       "status": "validated",
       "unit": "ratio",
-      "description": "Out-of-stock listings met per product view.",
+      "description": "Out-of-stock listings met per product view (for display; moves with traffic, so it is not used as a cause).",
       "origin": "core",
       "additive": false,
       "dimensions": [
@@ -224,7 +231,8 @@
       ],
       "formula": "stockouts / product_views",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "orders",
@@ -249,7 +257,8 @@
       ],
       "formula": null,
       "decomposition": "sessions * conversion_rate",
-      "column": "orders"
+      "column": "orders",
+      "outcome": false
     },
     {
       "id": "conversion_rate",
@@ -275,7 +284,8 @@
       ],
       "formula": "orders / sessions",
       "decomposition": "views_per_session * add_to_cart_rate * checkout_rate * payment_attempt_rate * payment_success_rate * order_rate",
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "views_per_session",
@@ -303,7 +313,8 @@
       ],
       "formula": "product_views / sessions",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "add_to_cart_rate",
@@ -330,7 +341,8 @@
       ],
       "formula": "add_to_cart / product_views",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "checkout_rate",
@@ -358,7 +370,8 @@
       ],
       "formula": "checkouts / add_to_cart",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "payment_attempt_rate",
@@ -388,7 +401,8 @@
       ],
       "formula": "payment_attempts / checkouts",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "payment_success_rate",
@@ -416,7 +430,8 @@
       ],
       "formula": "payment_successes / payment_attempts",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "order_rate",
@@ -444,7 +459,8 @@
       ],
       "formula": "orders / payment_successes",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "product_views",
@@ -469,7 +485,8 @@
       ],
       "formula": null,
       "decomposition": null,
-      "column": "product_views"
+      "column": "product_views",
+      "outcome": false
     },
     {
       "id": "add_to_cart",
@@ -494,7 +511,8 @@
       ],
       "formula": null,
       "decomposition": null,
-      "column": "add_to_cart"
+      "column": "add_to_cart",
+      "outcome": false
     },
     {
       "id": "checkouts",
@@ -519,7 +537,8 @@
       ],
       "formula": null,
       "decomposition": null,
-      "column": "checkouts"
+      "column": "checkouts",
+      "outcome": false
     },
     {
       "id": "payment_attempts",
@@ -547,7 +566,8 @@
       ],
       "formula": null,
       "decomposition": null,
-      "column": "payment_attempts"
+      "column": "payment_attempts",
+      "outcome": false
     },
     {
       "id": "payment_successes",
@@ -575,7 +595,8 @@
       ],
       "formula": null,
       "decomposition": null,
-      "column": "payment_successes"
+      "column": "payment_successes",
+      "outcome": false
     },
     {
       "id": "contribution",
@@ -601,7 +622,8 @@
       ],
       "formula": "marketplace_fees + ad_spend - discounts",
       "decomposition": "marketplace_fees + ad_spend - discounts",
-      "column": null
+      "column": null,
+      "outcome": true
     },
     {
       "id": "marketplace_fees",
@@ -628,7 +650,8 @@
       ],
       "formula": null,
       "decomposition": "gmv * take_rate",
-      "column": "marketplace_fees"
+      "column": "marketplace_fees",
+      "outcome": false
     },
     {
       "id": "take_rate",
@@ -655,7 +678,8 @@
       ],
       "formula": "marketplace_fees / gmv",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "discounts",
@@ -682,7 +706,8 @@
       ],
       "formula": null,
       "decomposition": "gmv * discount_rate",
-      "column": "discounts"
+      "column": "discounts",
+      "outcome": false
     },
     {
       "id": "discount_rate",
@@ -709,7 +734,8 @@
       ],
       "formula": "discounts / gmv",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "gmv",
@@ -734,7 +760,8 @@
       ],
       "formula": null,
       "decomposition": "orders * aov",
-      "column": "gmv"
+      "column": "gmv",
+      "outcome": false
     },
     {
       "id": "aov",
@@ -759,7 +786,8 @@
       ],
       "formula": "gmv / orders",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "refunds",
@@ -784,7 +812,8 @@
       ],
       "formula": null,
       "decomposition": null,
-      "column": "refunds"
+      "column": "refunds",
+      "outcome": false
     },
     {
       "id": "sessions",
@@ -811,7 +840,8 @@
       ],
       "formula": null,
       "decomposition": null,
-      "column": "sessions"
+      "column": "sessions",
+      "outcome": false
     },
     {
       "id": "searches",
@@ -839,7 +869,8 @@
       ],
       "formula": null,
       "decomposition": null,
-      "column": "searches"
+      "column": "searches",
+      "outcome": false
     },
     {
       "id": "search_clicks",
@@ -866,7 +897,8 @@
       ],
       "formula": null,
       "decomposition": null,
-      "column": "search_clicks"
+      "column": "search_clicks",
+      "outcome": false
     },
     {
       "id": "search_ctr",
@@ -893,7 +925,8 @@
       ],
       "formula": "search_clicks / searches",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "feed_impressions",
@@ -921,7 +954,8 @@
       ],
       "formula": null,
       "decomposition": null,
-      "column": "feed_impressions"
+      "column": "feed_impressions",
+      "outcome": false
     },
     {
       "id": "feed_clicks",
@@ -948,7 +982,8 @@
       ],
       "formula": null,
       "decomposition": null,
-      "column": "feed_clicks"
+      "column": "feed_clicks",
+      "outcome": false
     },
     {
       "id": "feed_ctr",
@@ -975,7 +1010,8 @@
       ],
       "formula": "feed_clicks / feed_impressions",
       "decomposition": null,
-      "column": null
+      "column": null,
+      "outcome": false
     },
     {
       "id": "ad_spend@country",
@@ -2810,6 +2846,26 @@
       "aggregation": "sum"
     },
     {
+      "id": "may_affect:stockouts->add_to_cart_rate",
+      "source": "stockouts",
+      "target": "add_to_cart_rate",
+      "kind": "may_affect",
+      "status": "assumed",
+      "prior": 0.6,
+      "sign": -1,
+      "note": "unavailable products cannot be added to the cart"
+    },
+    {
+      "id": "may_affect:stockouts->feed_ctr",
+      "source": "stockouts",
+      "target": "feed_ctr",
+      "kind": "may_affect",
+      "status": "assumed",
+      "prior": 0.3,
+      "sign": 0,
+      "note": "a feed full of unavailable products changes what people click"
+    },
+    {
       "id": "context:release:inventory->stockouts",
       "source": "release:inventory",
       "target": "stockouts",
@@ -2895,24 +2951,6 @@
       "status": "",
       "dimension": "channel",
       "aggregation": "ratio_of_sums"
-    },
-    {
-      "id": "may_affect:stockout_rate->add_to_cart_rate",
-      "source": "stockout_rate",
-      "target": "add_to_cart_rate",
-      "kind": "may_affect",
-      "status": "assumed",
-      "prior": 0.6,
-      "note": "unavailable products cannot be added to the cart"
-    },
-    {
-      "id": "may_affect:stockout_rate->feed_ctr",
-      "source": "stockout_rate",
-      "target": "feed_ctr",
-      "kind": "may_affect",
-      "status": "assumed",
-      "prior": 0.3,
-      "note": "a feed full of unavailable products changes what people click"
     },
     {
       "id": "context:release:inventory->stockout_rate",
@@ -4242,6 +4280,7 @@
       "kind": "may_affect",
       "status": "assumed",
       "prior": 0.4,
+      "sign": 1,
       "note": "deeper discounts make more viewers add to cart"
     },
     {
@@ -4676,6 +4715,7 @@
       "kind": "may_affect",
       "status": "assumed",
       "prior": 0.5,
+      "sign": 1,
       "note": "relevant search results lead customers to product pages"
     },
     {
@@ -4878,6 +4918,7 @@
       "kind": "may_affect",
       "status": "assumed",
       "prior": 0.4,
+      "sign": 1,
       "note": "feed clicks open product pages"
     },
     {
@@ -4887,6 +4928,7 @@
       "kind": "may_affect",
       "status": "assumed",
       "prior": 0.3,
+      "sign": -1,
       "note": "a feed that sends viewers to products they cannot buy lowers add-to-cart"
     },
     {
@@ -4910,6 +4952,7 @@
   "top_outcomes": [
     "contribution"
   ],
+  "unplaced_roots": [],
   "trees": [
     {
       "metric": "contribution",

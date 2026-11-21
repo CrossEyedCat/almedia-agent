@@ -9,11 +9,13 @@ Contract (README §3.1) plus a few optional fields the graph uses:
     decomposition  -- an identity used for investigation (e.g. gmv = orders * aov);
                       defaults to the formula unless the metric is atomic
     atomic         -- true: do not decompose this metric along its formula
+    outcome        -- true: a top business outcome, the root of a tree (declared, never guessed)
     additive       -- sums over segments equal the total (inferred when omitted)
     bounds         -- [min, max] sanity range, either side may be null
     systems        -- release systems that can affect it (payments, search, ...)
     source         -- the data source whose freshness it depends on
-    may_affect     -- possible effects: [{metric, prior, note}]
+    may_affect     -- possible effects: [{metric, prior, sign, note}]; sign +1 / -1 says which way
+                      the effect moves when this metric rises, 0 = unknown
     direction      -- up (higher is better), down, or none
     tolerance      -- relative tolerance for identity checks
 """
@@ -32,6 +34,7 @@ DIMENSIONS = ("country", "platform", "category", "channel")
 KNOWN_FIELDS = {
     "name", "description", "unit", "dimensions", "column", "sql", "formula", "decomposition",
     "atomic", "additive", "bounds", "systems", "source", "may_affect", "direction", "tolerance",
+    "outcome",
 }
 
 
@@ -44,6 +47,7 @@ class CauseLink:
     metric: str
     prior: float = 0.5
     note: str = ""
+    sign: int = 0
 
 
 @dataclass(frozen=True)
@@ -65,6 +69,7 @@ class MetricSpec:
     direction: str = "none"
     tolerance: float = 1e-6
     origin: str = "core"
+    outcome: bool = False
     raw: dict = field(default_factory=dict, compare=False, repr=False)
 
     @property
@@ -132,9 +137,13 @@ def spec_from_dict(raw: dict, origin: str = "core") -> MetricSpec:
         prior = float(item.get("prior", 0.5))
         if not 0.0 <= prior <= 1.0:
             raise SpecError(f"{name}: may_affect prior must be within [0, 1]")
-        links.append(CauseLink(metric=str(item["metric"]), prior=prior, note=str(item.get("note", ""))))
+        sign = item.get("sign", 0)
+        if isinstance(sign, bool) or sign not in (-1, 0, 1):
+            raise SpecError(f"{name}: may_affect sign must be -1, 0 or 1, got {sign!r}")
+        links.append(CauseLink(metric=str(item["metric"]), prior=prior, note=str(item.get("note", "")),
+                               sign=int(sign)))
 
-    for flag in ("atomic", "additive"):
+    for flag in ("atomic", "additive", "outcome"):
         if flag in raw and raw[flag] is not None and not isinstance(raw[flag], bool):
             raise SpecError(f"{name}: {flag} must be true or false, got {raw[flag]!r}")
 
@@ -164,6 +173,7 @@ def spec_from_dict(raw: dict, origin: str = "core") -> MetricSpec:
         direction=direction,
         tolerance=float(raw.get("tolerance", 1e-6)),
         origin=origin,
+        outcome=raw.get("outcome") is True,
         raw=dict(raw),
     )
 

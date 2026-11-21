@@ -173,8 +173,9 @@ def test_ads_split_traffic_from_pacing(graph):
 
 
 def test_feed_to_availability_path(graph):
-    assert "release:recommendations" in {n.id for n in graph.context_of("stockout_rate")}
-    assert {e.dst for e in graph.out_edges("stockout_rate", "may_affect")} == {"add_to_cart_rate", "feed_ctr"}
+    assert "release:recommendations" in {n.id for n in graph.context_of("stockouts")}
+    # cause links moved from stockout_rate to stockouts: the ratio follows traffic (see tests/test_plan_fixes.py)
+    assert {e.dst for e in graph.out_edges("stockouts", "may_affect")} == {"add_to_cart_rate", "feed_ctr"}
 
 
 # --- windows, segments, status propagation, CLI ---------------------------------------------------

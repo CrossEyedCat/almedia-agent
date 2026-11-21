@@ -65,19 +65,23 @@ metrics:
     systems: [inventory, purchasing, recommendations]
     source: inventory
     direction: down
+    # Cause links start here, at the level, not at stockout_rate: the ratio is driven by its
+    # denominator (traffic), so it would "explain" any traffic change, a promo included.
+    may_affect:
+      - metric: add_to_cart_rate
+        prior: 0.6
+        sign: -1
+        note: unavailable products cannot be added to the cart
+      - metric: feed_ctr
+        prior: 0.3
+        sign: 0
+        note: a feed full of unavailable products changes what people click
 
   - name: stockout_rate
-    description: Out-of-stock listings met per product view.
+    description: Out-of-stock listings met per product view (for display; moves with traffic, so it is not used as a cause).
     unit: ratio
     formula: stockouts / product_views
     atomic: true
     bounds: [0, null]
     systems: [inventory, purchasing, recommendations]
     direction: down
-    may_affect:
-      - metric: add_to_cart_rate
-        prior: 0.6
-        note: unavailable products cannot be added to the cart
-      - metric: feed_ctr
-        prior: 0.3
-        note: a feed full of unavailable products changes what people click

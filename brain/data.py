@@ -65,6 +65,11 @@ class Store:
         if bad:
             raise ContractError(f"{p}: {bad} rows of {FACTS} have ts like {example!r}; "
                                 f"the contract is UTC hour starts like 2026-11-01T13:00:00Z")
+        stamps = [r[0] for r in self.conn.execute(f"SELECT DISTINCT ts FROM {FACTS}")]
+        parsed = pd.to_datetime(pd.Series(stamps, dtype="object"), format=TS_FORMAT, errors="coerce", utc=True)
+        if parsed.isna().any():
+            raise ContractError(f"{p}: {FACTS} has impossible timestamps such as "
+                                f"{stamps[int(parsed.isna().to_numpy().argmax())]!r}")
         self.columns = cols
         self.measures = [c for c in cols if c not in ("ts",) + DIMENSIONS]
         self.conn.set_authorizer(_authorize)

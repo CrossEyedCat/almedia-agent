@@ -163,7 +163,7 @@ class MetricGraph:
                        "sources": sorted(self._sources[s.name]),
                        "formula": s.formula.text if s.formula else None,
                        "decomposition": s.investigative_formula.text if s.investigative_formula else None,
-                       "column": s.column},
+                       "column": s.column, "outcome": s.outcome},
             )
             self.status.setdefault(s.name, "unvalidated")
 
@@ -182,7 +182,8 @@ class MetricGraph:
                 self._add_edge(s.name, bid, "breakdown", dimension=dim,
                                aggregation="sum" if self.additive[s.name] else "ratio_of_sums")
             for link in s.may_affect:
-                e = self._add_edge(s.name, link.metric, "may_affect", prior=link.prior, note=link.note)
+                e = self._add_edge(s.name, link.metric, "may_affect", prior=link.prior, sign=link.sign,
+                                   note=link.note)
                 self.status[e.id] = "assumed"
             for system in s.systems:
                 cid = f"release:{system}"
@@ -244,9 +245,20 @@ class MetricGraph:
     def context_of(self, metric: str) -> list[Node]:
         return [self.nodes[e.src] for e in self.in_edges(metric, "context")]
 
-    def top_outcomes(self) -> list[str]:
-        """Metrics that nothing decomposes into, but that decompose into others."""
+    def _structural_roots(self) -> list[str]:
         return [m for m in self.specs if not self.formula_parents(m) and self.formula_children(m)]
+
+    def top_outcomes(self) -> list[str]:
+        """Declared outcomes (`outcome: true`). Only when none is declared does the structure decide:
+        metrics that nothing decomposes into but that decompose into others."""
+        declared = [m for m, s in self.specs.items() if s.outcome]
+        return declared or self._structural_roots()
+
+    def unplaced_roots(self) -> list[str]:
+        """Metrics with their own decomposition that no outcome tree reaches: a contributed metric lands
+        here until the extension agent finds its place."""
+        outcomes = set(self.top_outcomes())
+        return [m for m in self._structural_roots() if m not in outcomes]
 
     def outside_tree(self) -> list[str]:
         reachable: set[str] = set()
@@ -329,6 +341,7 @@ class MetricGraph:
             "edges": [{"id": e.id, "source": e.src, "target": e.dst, "kind": e.kind,
                        "status": self.status.get(e.id, ""), **e.attrs} for e in self.edges],
             "top_outcomes": self.top_outcomes(),
+            "unplaced_roots": self.unplaced_roots(),
             "trees": [tree_dict(self.tree(r)) for r in self.top_outcomes()],
             "dimensions": list(DIMENSIONS),
         }

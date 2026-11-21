@@ -59,28 +59,42 @@ class Evaluator:
         except NotComputable:
             return False
 
-    def frame(self, metrics, start=None, end=None, segment: dict | None = None,
-              group_by=(), by_hour: bool = False) -> pd.DataFrame:
-        """One row per (hour?, group) with a column per requested metric. With by_hour, a start
-        and an end, and no group_by, every hour of the window is present (NaN where data is missing)."""
-        metrics = list(dict.fromkeys(metrics))
+    def sums(self, metrics, start=None, end=None, segment: dict | None = None,
+             group_by=(), by_hour: bool = False) -> pd.DataFrame:
+        """Sums of the base columns the given metrics are built from: one row per (hour?, group).
+        With by_hour, a start and an end, and no group_by, every hour of the window is present
+        (NaN where data is missing). This is the table an expected state is built from."""
         cols: set[str] = set()
-        for m in metrics:
+        for m in dict.fromkeys(metrics):
             cols |= self.base_columns(m)
         raw = self.store.sums(sorted(cols), start, end, segment, group_by, by_hour)
         if by_hour and not group_by and start is not None and end is not None:
             hours = pd.date_range(pd.Timestamp(iso_hour(start)), pd.Timestamp(iso_hour(end)),
                                   freq="h", inclusive="left")
             raw = raw.set_index("ts").reindex(hours).rename_axis("ts").reset_index()
-        keys = (["ts"] if by_hour else []) + list(group_by)
-        out = raw[keys].copy()
+        return raw
+
+    def derive(self, sums: pd.DataFrame, metrics) -> pd.DataFrame:
+        """Turn any table of base-column sums into metrics: the actual state, an expected state
+        (for example averages of the same hours in earlier weeks) or a mix of the two. Because
+        every metric is derived from the same sums, all formulas hold in the result, which the
+        attribution in the investigator relies on. Non-measure columns are kept as keys."""
+        metrics = list(dict.fromkeys(metrics))
+        needed: set[str] = set()
+        for m in metrics:
+            needed |= self.base_columns(m)
+        missing = sorted(needed - set(sums.columns))
+        if missing:
+            raise KeyError(f"the sums table lacks base columns {missing}")
+        keys = [c for c in sums.columns if c not in self.store.measures]
+        out = sums[keys].copy()
         cache: dict[str, pd.Series] = {}
 
         def compute(name: str):
             if name not in cache:
                 s = self.graph.specs[name]
                 if s.column:
-                    cache[name] = raw[s.column]
+                    cache[name] = sums[s.column]
                 else:
                     cache[name] = s.formula.evaluate(_LazyEnv(compute))
             return cache[name]
@@ -88,6 +102,12 @@ class Evaluator:
         for m in metrics:
             out[m] = compute(m)
         return out
+
+    def frame(self, metrics, start=None, end=None, segment: dict | None = None,
+              group_by=(), by_hour: bool = False) -> pd.DataFrame:
+        """One row per (hour?, group) with a column per requested metric (the actual state)."""
+        metrics = list(dict.fromkeys(metrics))
+        return self.derive(self.sums(metrics, start, end, segment, group_by, by_hour), metrics)
 
     def expression(self, formula: Formula, start=None, end=None, segment=None,
                    group_by=(), by_hour: bool = False) -> pd.DataFrame:

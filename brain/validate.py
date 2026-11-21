@@ -11,6 +11,12 @@ Checks per metric:
   bounds       hourly values stay inside the declared range
 Graph-wide (status "warn"): release systems and data sources in the database that no metric
 is linked to, and linked sources with no freshness records.
+
+Every check has a basis. "definition": it follows from the metric definitions alone and no data
+can make it fail (orders = sessions * (orders / sessions); sums of columns of one table add up) -
+it proves the YAML is consistent, nothing about the business. "data": it can fail on the data
+(coverage, bounds, a contributed SQL against its formula, an identity between independent columns).
+The report keeps the two apart so that "validated" is not read as more than it is.
 """
 from __future__ import annotations
 
@@ -23,8 +29,10 @@ from brain.data import TS_FORMAT, Store, iso_hour
 from brain.evaluator import DataMissing, Evaluator, NotComputable
 from brain.graph import MetricGraph
 from brain.metric_spec import DIMENSIONS
+from brain.signature import holds_by_construction, signatures
 
 EPS = 1e-9
+MIN_COVERAGE = 0.95  # share of the window's hours that must have a value
 
 
 @dataclass
@@ -34,6 +42,7 @@ class Check:
     status: str  # pass | fail | skip | warn
     detail: str
     worst: float | None = None
+    basis: str = "data"  # data | definition
 
 
 def rel_error(a, b) -> tuple[float, int]:
@@ -99,6 +108,7 @@ def validate_graph(graph: MetricGraph, store: Store, days: int = 7, start=None, 
             if not s.sql:
                 checks.append(Check(m, "coverage", "fail", str(e)))
     comp = set(computable)
+    sig = signatures(graph)
 
     total = ev.frame(computable, start, end, by_hour=True)
     per_dim = {d: ev.frame(computable, start, end, group_by=(d,), by_hour=True) for d in DIMENSIONS}
@@ -112,8 +122,10 @@ def validate_graph(graph: MetricGraph, store: Store, days: int = 7, start=None, 
 
         # coverage
         finite = int(np.isfinite(pd.to_numeric(total[m], errors="coerce")).sum())
-        checks.append(Check(m, "coverage", "pass" if finite else "fail",
-                            f"{finite} of {len(total)} hours have a value"))
+        enough = len(total) > 0 and finite >= MIN_COVERAGE * len(total)
+        checks.append(Check(m, "coverage", "pass" if enough else "fail",
+                            f"{finite} of {len(total)} hours have a value"
+                            + ("" if enough else f" (at least {MIN_COVERAGE:.0%} required)")))
 
         # identity along the investigative formula
         inv = s.investigative_formula
@@ -134,10 +146,12 @@ def validate_graph(graph: MetricGraph, store: Store, days: int = 7, start=None, 
                     if n and err > worst:
                         worst, where = err, label
                 ok = compared > 0 and worst <= s.tolerance
+                by_construction = holds_by_construction(graph, m, sig)
                 checks.append(Check(m, "identity", "pass" if ok else "fail",
                                     f"{m} = {inv.text}: max relative error {worst:.2e}"
-                                    + (f" ({where})" if where else "") + f" over {compared} rows",
-                                    worst))
+                                    + (f" ({where})" if where else "") + f" over {compared} rows"
+                                    + ("; holds by construction" if by_construction else ""),
+                                    worst, basis="definition" if by_construction else "data"))
                 for e in graph.out_edges(m, "formula"):
                     graph.status[e.id] = "validated" if ok else "failed"
 
@@ -166,7 +180,7 @@ def validate_graph(graph: MetricGraph, store: Store, days: int = 7, start=None, 
                 checks.append(Check(m, "additivity", "pass" if ok else "fail",
                                     "segments sum to the total for " + ", ".join(s.dimensions) if ok else
                                     (f"segments by {bad_dim} differ from the total by {worst:.2e}" if compared
-                                     else "no rows to compare"), worst))
+                                     else "no rows to compare"), worst, basis="definition"))
 
         # bounds
         if s.bounds is not None:
@@ -217,8 +231,11 @@ def _context_checks(graph: MetricGraph, store: Store) -> list[Check]:
 def summarize(checks: list[Check]) -> str:
     by_status = {s: [c for c in checks if c.status == s] for s in ("pass", "fail", "skip", "warn")}
     metrics = sorted({c.metric for c in checks if c.metric != "*"})
-    lines = [f"Validation: {len(by_status['pass'])} passed, {len(by_status['fail'])} failed, "
-             f"{len(by_status['skip'])} skipped, {len(by_status['warn'])} warnings across {len(metrics)} metrics"]
+    on_data = [c for c in by_status["pass"] if c.basis == "data"]
+    by_definition = [c for c in by_status["pass"] if c.basis == "definition"]
+    lines = [f"Validation: {len(on_data)} checks on data passed, {len(by_status['fail'])} failed, "
+             f"{len(by_status['skip'])} skipped, {len(by_status['warn'])} warnings across {len(metrics)} metrics; "
+             f"{len(by_definition)} more hold by construction (consistent definitions, not evidence from data)"]
     for c in by_status["fail"]:
         lines.append(f"  ✗ {c.metric} [{c.check}] {c.detail}")
     for c in by_status["warn"]:

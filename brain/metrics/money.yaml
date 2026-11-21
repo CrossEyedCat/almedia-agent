@@ -6,6 +6,7 @@ metrics:
     description: Marketplace contribution per hour - fees and ad revenue minus platform-funded discounts.
     unit: eur
     formula: marketplace_fees + ad_spend - discounts
+    outcome: true
     direction: up
 
   - name: marketplace_fees
@@ -46,6 +47,7 @@ metrics:
     may_affect:
       - metric: add_to_cart_rate
         prior: 0.4
+        sign: 1
         note: deeper discounts make more viewers add to cart
 
   - name: gmv
