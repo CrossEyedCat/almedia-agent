@@ -64,7 +64,14 @@ It is generated from the code: `python docs/build_system_overview.py`.
    shows them in grey and keeps them out of the open count and the node colours. Until the console and scorer ship this,
    the brain keeps them in `incidents/notes/`, which both ignore.
 5. **Result of adding a metric**: the brain writes `<name>.result.json` next to the YAML in `$INCOMING_METRICS_DIR`
-   (a `message`, a `status`) and re-exports the graph to `$GRAPH_JSON`. The console reads it with `GET /api/metric/{name}`.
+   and re-exports the graph to `$GRAPH_JSON`. The console reads it with `GET /api/metric/{name}`. Fields: `name`,
+   `status` (`validated`, `tentative` or `rejected`), `message` (one sentence for a person), `placed` (where it sits in
+   the graph and why), `checks` (a list of `check`, `status`, `detail`, in the order they ran), `links_proposed` (the
+   links it has now and the identities that were not applied, each with its reason), `formula`, `formula_source`
+   (`given` or `inferred`), `alias_of` and `source` (the file) are always present; `formula` and `formula_source` are
+   null when the definition was rejected before a formula was known. `data` (the hours it was checked on) is there only
+   when the data were read: a result rejected at the read, SQL or formula-search step has none. The console needs only
+   `status` and `message`; the rest is evidence. A YAML that is empty or still being written has no result yet.
 6. **Injections start at the latest hour** (`now`), so the newest hour is rewritten; the brain re-reads the last hours on every tick.
 7. **Answers to the open questions** (from B): the monitor starts with `python -m brain.run`; `contribution` and the column
    list are right; each metric may carry a `domain` field; `incoming_metrics/*.yaml` is picked up.

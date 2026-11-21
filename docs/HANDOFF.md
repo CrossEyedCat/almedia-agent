@@ -42,7 +42,7 @@ countries or an hour apart. `docs/pitch-script.md` has a 3-minute script and a s
 
 - Results are on synthetic data and are not an independent holdout (seeds 4 to 8 were used while the brain was built).
 - Cause confirmed in 22 of 24 faults; the misses are stockout_surge in sports.
-- New metrics: the console writes `incoming_metrics/*.yaml` and shows `<name>.result.json`; the watcher and result file are B's side (issue #3).
+- New metrics: built on B's side since `54ef95b` (`brain/extension.py`, README 3.3). The search covers one or two column metrics without constants; cause links for a new metric are not proposed.
 - Low-traffic hours are noisy by nature (`docs/data-granularity.md`); a fault that lasts one night hour can be missed.
 - The demo clock is wall-clock based in the running version; a multi-hour recovery cannot be compressed into seconds there.
 - Open issues are the honest to-do list: #2, #3, #5, #6, #8, #9, #10, #11, #13, #14 (many are fixed in open pull requests; do not close an issue before its pull request is merged).
