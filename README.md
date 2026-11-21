@@ -178,7 +178,125 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 | Freeze | Sun 12:00 | — | — | no new features |
 | Ship | Sun 12:00–14:30 | demo rehearsals, 3-min video, slides | README "how it works", algorithm notes, numbers from the scoring harness | submitted by 14:30 |
 
-## 6. Submission checklist
+## 6. Task checklist for two
+
+**A** = world & showcase, **B** = brain, **A+B** = together. Tick items in this file as you finish them and commit — the list is our shared status board.
+
+### M0 Setup — Sat 11:00–12:30
+
+- [ ] **A+B** Accept the repo invite, clone, create the venv, `pip install -r requirements.txt`.
+- [ ] **A+B** Each claims the free Claude API credits (event page → *Infrastructure Tools & Credits*) and puts the key in their own `.env`.
+- [ ] **A+B** Fix the scenario list: S1–S4 are mandatory, S5 and S6 only if time allows.
+- [ ] **A+B** Fix the dimensions: countries, platforms, categories, channels (§2).
+- [ ] **A+B** Freeze the three contracts in §3.1: column names, units, timestamp format (UTC, hour start, `2026-11-01T13:00:00Z`), database path `data/market.db`.
+- [ ] **A+B** Define the top outcome: `contribution = marketplace_fees + ad_revenue − platform_funded_discounts − payment_costs` (or simpler — decide now, it is the root of the tree).
+- [ ] **A+B** Agree the simulated clock: history start date, 4 weeks of backfill, demo speed (e.g. 1 simulated hour every 2 s).
+- [ ] **A+B** Agree who edits what: A only `sim/` and `ui/`, B only `brain/`; shared files (README, `docs/contracts/`) only after telling the other.
+- [ ] **A** Put contract fixtures in `docs/contracts/`: `facts_hourly.sql` (table DDL), `metric_example.yaml`.
+- [ ] **B** Put `docs/contracts/incident_example.json` there, with realistic values for S1.
+- [ ] **B** A stub in `brain/` that opens `data/market.db` and prints row counts per table — proof that the data contract works.
+
+### M1 Clean world + graph v1 — Sat 12:30–15:00
+
+**A — simulator v1**
+- [ ] `sim/world.py`: base rates per country × platform × category × channel.
+- [ ] Seasonality: hour-of-day curve, weekend effect, slow trend, noise (Poisson for counts, binomial for conversions).
+- [ ] A consistent funnel: sessions → searches / feed impressions → product views → add to cart → checkouts → payment attempts → payment successes → orders → GMV. Every step is a rate, so the graph formulas hold exactly.
+- [ ] Money: GMV, discounts (seller- and platform-funded), marketplace fees, refunds, ad impressions, clicks and spend, payment costs.
+- [ ] Write `facts_hourly`, `ingestion_log` (everything on time for now), and empty `releases`, `calendar`, `ground_truth`.
+- [ ] `python -m sim.run --backfill 28d` finishes in under 30 s.
+- [ ] **Handoff to B by ~13:30:** a small database (2 weeks, 2 countries) committed to `docs/contracts/sample.db` or shared directly.
+
+**B — graph v1**
+- [ ] `brain/graph.py`: node and edge types (`formula`, `breakdown`, `may_affect`, `context`) with metadata (formula text, dimension, prior strength, status).
+- [ ] Core metric definitions in `brain/metrics/*.yaml` following the contract — about 15 metrics from `contribution` down to the funnel rates.
+- [ ] Evaluator: compute any metric for any segment and time window from the database.
+- [ ] Validation on load: every formula recomputed against its components; breakdowns of additive metrics sum to the parent.
+- [ ] Tree view in the terminal: `python -m brain.graph --tree`.
+- [ ] **Handoff to A by ~13:30:** `incident_example.json` and a `graph.json` export (nodes and edges) for the UI.
+
+### M2 First fault — Sat 15:00–19:00
+
+**A — injection and live mode**
+- [ ] `sim/inject.py`: `payment_failure(country, platform, start, severity)` — writes the SDK release to `releases` and the truth to `ground_truth`.
+- [ ] Live mode: the clock moves forward, appends hours, applies injections: `python -m sim.run --live --speed 2s`.
+- [ ] A small injection CLI for testing: `python -m sim.inject payment_failure --country DE --platform Android`.
+
+**B — monitor v1**
+- [ ] Baseline: hour-of-week median over the past 3 weeks × level factor from the last 24 h.
+- [ ] Completeness gate: hours whose sources are missing in `ingestion_log` are pending, not judged.
+- [ ] Detector: robust z-score on the residual + CUSUM persistence + minimum impact in € per hour.
+- [ ] Watch list: top outcomes and their formula children every tick; breakdowns on a rotating budget.
+- [ ] Loop: `python -m brain.run` polls the database every tick and logs detections.
+
+**A+B checkpoint (dinner):** live simulator with S1 → the brain detects it; write down the detection delay in simulated hours.
+
+### M3 Investigation — Sat 19:00–00:00
+
+**A — UI v1**
+- [ ] `ui/` FastAPI app: `/api/graph`, `/api/incidents`, `/api/incidents/{id}` and one static page.
+- [ ] Graph view (e.g. Cytoscape.js from a CDN): edge types in different colours, the incident path highlighted.
+- [ ] Alert feed: status, metric, segment, impact, first and last seen.
+
+**B — investigator v1**
+- [ ] Contribution decomposition along `formula` edges (additive for sums, log-ratio for products and ratios).
+- [ ] Drill-down: pick the dimension with the best explanatory power and surprise, then the segment; recurse up to depth 3.
+- [ ] Context checks: releases, calendar events and data freshness that overlap in time and scope.
+- [ ] Trail: every query and its result is recorded as a step.
+- [ ] Incident JSON written to `incidents/` per the contract.
+
+**A+B checkpoint:** the S1 incident in the UI says DE × Android, `payment_success_rate`, release `payments-sdk`, with numbers.
+
+### M4 Extension and innocent changes — Sun 00:00–06:00 (sleep in shifts)
+
+**A — more of the world, more UI**
+- [ ] S2: planned promo in FR in `calendar` + matching traffic and order uplift.
+- [ ] S3: the payments source arrives 2 h late in `ingestion_log`.
+- [ ] Buttons in the UI: payment fault, promo, data delay, add metric.
+- [ ] Report view: evidence numbers, hypotheses with status, trail, what remains uncertain.
+- [ ] "Add metric" endpoint: POST a metric YAML, hand it to the brain, show the result.
+
+**B — extension and reasoning**
+- [ ] Extension agent: parse formula → link parents → read dimensions from SQL → validate on history → propose `may_affect` links (LLM + lagged correlation) → status.
+- [ ] Calendar-aware expectation: a planned event shifts the baseline and is explained, not alerted.
+- [ ] Hypothesis scoring with `supported` / `plausible` / `rejected`.
+- [ ] Symptom vs first cause rule.
+
+**A+B checkpoint:** S2 gives no alert (explained), S3 is held, S4 is placed and validated and visible in the graph.
+
+**Sleep:** A 00:30–04:30, B 04:30–08:30 (or swap). Whoever is awake keeps the other's part untouched.
+
+### M5 Polish — Sun 08:00–12:00
+
+**A**
+- [ ] S5 (feed pushing out-of-stock products), only if everything above works.
+- [ ] Scoring harness: N random injections + random innocent events → detection rate, false alarms per simulated day, correct-cause rate, mean detection delay → `docs/results.md`.
+- [ ] Demo script `docs/demo.md`: exact clicks and timing, plus a fallback if something hangs.
+
+**B**
+- [ ] Lifecycle `open → ongoing → resolved`; dedup by fingerprint; updates instead of new alerts.
+- [ ] LLM narration from structured evidence, template fallback, 20 s timeout.
+- [ ] Unattended run of one simulated day with mixed events: no crash, no duplicate alerts.
+
+**A+B** From 12:00 only bug fixes.
+
+### Ship — Sun 12:00–14:30
+
+- [ ] **A+B** Two full demo rehearsals against a 3-minute timer.
+- [ ] **A** Record the screen and one of us speaking to camera; cut to ≤ 3:00; upload to YouTube as unlisted; open the link in a private window to check access.
+- [ ] **B** README "How it works": algorithm summary and the numbers from `docs/results.md`; complete the library list (§10).
+- [ ] **A+B** Slides for 5 minutes: problem, graph, autonomous loop, demo screenshot, results, what failed, what next.
+- [ ] **B** Make the repo public: `gh repo edit CrossEyedCat/almedia-agent --visibility public --accept-visibility-change-consequences`; check it from a logged-out browser.
+- [ ] **A** Submit the form with the registration email **by 14:30**; screenshot the confirmation.
+- [ ] **A+B** Be at the venue for the 18:00 pitches.
+
+### Always
+
+- [ ] Small commits; `git pull --rebase` before every push; never commit `.env` or `data/`.
+- [ ] Blocked for more than 30 minutes → tell the other and cut scope.
+- [ ] Keep this checklist honest: tick what is really done.
+
+## 7. Submission checklist
 
 Submit at https://tally.so/r/GexoxQ with the email used for registration.
 
@@ -186,7 +304,7 @@ Submit at https://tally.so/r/GexoxQ with the email used for registration.
 - [ ] This repository public, with documentation.
 - [ ] Short slides for a 5-minute stage pitch if we win the track.
 
-## 7. Repository layout
+## 8. Repository layout
 
 ```
 sim/         marketplace simulator, injections, ground truth
@@ -198,7 +316,7 @@ data/        SQLite database (not committed)
 incidents/   incident JSON output (not committed)
 ```
 
-## 8. Getting started
+## 9. Getting started
 
 ```powershell
 py -3.13 -m venv .venv
@@ -211,6 +329,6 @@ Put the API key in `.env` (never commit it):
 ANTHROPIC_API_KEY=...
 ```
 
-## 9. Third-party libraries
+## 10. Third-party libraries
 
 anthropic, fastapi, uvicorn, httpx, pandas, pytest, python-dotenv — used as published packages under their own licenses. More are added here as they come in.
