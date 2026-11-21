@@ -217,3 +217,19 @@ def test_live_mode_appends_hours_and_picks_up_a_fault_scheduled_for_the_next_hou
     pd.testing.assert_frame_equal(a[~(new & target)], b[~(new & target)])       # nothing else moved
     ok = lambda df: df[new & target].payment_successes.sum() / df[new & target].payment_attempts.sum()
     assert ok(b) < 0.7 * ok(a)
+
+
+# --------------------------------------------------------------- no stacking
+def test_the_same_injection_cannot_be_recorded_twice(tmp_path):
+    path = fresh_copy(tmp_path, hours=2 * 24)
+    con = db.connect(path)
+    start = pd.Timestamp("2026-10-26T10:00:00Z")
+    inject.payment_failure(con, "DE", "Web", start, severity=0.4)
+    before = con.execute("SELECT COUNT(*) FROM ground_truth").fetchone()[0], con.execute("SELECT COUNT(*) FROM releases").fetchone()[0]
+    with pytest.raises(inject.AlreadyInjected):
+        inject.payment_failure(con, "DE", "Web", start, severity=0.4)
+    after = con.execute("SELECT COUNT(*) FROM ground_truth").fetchone()[0], con.execute("SELECT COUNT(*) FROM releases").fetchone()[0]
+    inject.payment_failure(con, "DE", "Web", start, severity=0.5)         # different settings: allowed
+    inject.payment_failure(con, "FR", "Web", start, severity=0.4)         # different segment: allowed
+    con.close()
+    assert before == after == (1, 1)

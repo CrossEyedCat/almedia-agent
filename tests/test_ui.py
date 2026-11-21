@@ -92,3 +92,16 @@ def test_metric_name_cannot_escape_the_folder(client, tmp_path):
     r = client.post("/api/metric", json={"yaml_text": "name: ../../evil\nformula: a / b\n"})
     assert r.status_code == 200 and r.json()["name"] == "evil"
     assert (tmp_path / "incoming" / "evil.yaml").exists()
+
+
+def test_clicking_the_same_button_twice_does_not_stack(client):
+    body = {"kind": "payment_failure", "country": "DE", "platform": "Web", "severity": 0.4}
+    assert client.post("/api/inject", json=body).status_code == 200
+    r = client.post("/api/inject", json=body)
+    assert r.status_code == 409 and "already scheduled" in r.json()["detail"]
+    assert len(client.get("/api/state").json()["injected"]) == 1
+
+
+def test_the_page_marks_the_controls_as_demo(client):
+    html = client.get("/").text
+    assert 'class="demo-tag"' in html and "not part of the monitor" in html

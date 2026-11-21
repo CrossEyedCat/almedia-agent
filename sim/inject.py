@@ -35,7 +35,13 @@ def replay(con: sqlite3.Connection, start: pd.Timestamp) -> int:
     return count
 
 
+class AlreadyInjected(ValueError):
+    """The same injection (kind and parameters, same start) is already on record. Repeating it would stack."""
+
+
 def _record(con, inj: Injection, description: str) -> None:
+    if con.execute("SELECT 1 FROM ground_truth WHERE kind = ? AND scope = ?", (inj.kind, inj.to_scope_json())).fetchone():
+        raise AlreadyInjected(f"{inj.kind} with the same settings and start is already scheduled")
     con.execute("INSERT INTO ground_truth VALUES (?, ?, ?, ?)", (_fmt(inj.start), inj.kind, inj.to_scope_json(), description))
     con.commit()
 

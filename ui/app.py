@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from sim import db, inject
+from sim.inject import AlreadyInjected
 from sim.world import CHANNELS, COUNTRIES, PLATFORMS
 from sim.schema import SOURCES
 
@@ -99,28 +100,34 @@ def do_inject(req: Inject):
         raise HTTPException(409, "no database yet")
     con = db.connect(MARKET_DB)
     try:
-        last = db.last_hour(con)
-        start = last + pd.Timedelta(hours=1) if req.when == "now" else last - pd.Timedelta(hours=5)
-        end = start + pd.Timedelta(hours=req.hours)
-        if req.kind == "payment_failure":
-            if req.country not in COUNTRIES or req.platform not in PLATFORMS:
-                raise HTTPException(422, "country and platform must be valid")
-            if not 0 < req.severity < 1:
-                raise HTTPException(422, "severity must be between 0 and 1")
-            n = inject.payment_failure(con, req.country, req.platform, start, req.severity)
-        elif req.kind == "promo":
-            if req.country not in COUNTRIES:
-                raise HTTPException(422, "country must be valid")
-            n = inject.promo(con, req.country, start, end)
-        elif req.kind == "data_delay":
-            if req.source not in SOURCES:
-                raise HTTPException(422, f"source must be one of {SOURCES}")
-            n = inject.data_delay(con, req.source, start, end, req.delay_hours)
-        else:
-            raise HTTPException(422, "unknown kind")
-        return {"ok": True, "kind": req.kind, "start": start.strftime("%Y-%m-%dT%H:00:00Z"), "replayed_hours": n}
+        return _inject(con, req)
+    except AlreadyInjected as exc:
+        raise HTTPException(409, str(exc))
     finally:
         con.close()
+
+
+def _inject(con, req: "Inject"):
+    last = db.last_hour(con)
+    start = last + pd.Timedelta(hours=1) if req.when == "now" else last - pd.Timedelta(hours=5)
+    end = start + pd.Timedelta(hours=req.hours)
+    if req.kind == "payment_failure":
+        if req.country not in COUNTRIES or req.platform not in PLATFORMS:
+            raise HTTPException(422, "country and platform must be valid")
+        if not 0 < req.severity < 1:
+            raise HTTPException(422, "severity must be between 0 and 1")
+        n = inject.payment_failure(con, req.country, req.platform, start, req.severity)
+    elif req.kind == "promo":
+        if req.country not in COUNTRIES:
+            raise HTTPException(422, "country must be valid")
+        n = inject.promo(con, req.country, start, end)
+    elif req.kind == "data_delay":
+        if req.source not in SOURCES:
+            raise HTTPException(422, f"source must be one of {SOURCES}")
+        n = inject.data_delay(con, req.source, start, end, req.delay_hours)
+    else:
+        raise HTTPException(422, "unknown kind")
+    return {"ok": True, "kind": req.kind, "start": start.strftime("%Y-%m-%dT%H:00:00Z"), "replayed_hours": n}
 
 
 class NewMetric(BaseModel):
