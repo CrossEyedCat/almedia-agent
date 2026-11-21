@@ -8,11 +8,12 @@ import sqlite3
 import sys
 from pathlib import Path
 
-import numpy as np
+import pandas as pd
 import pytest
 
 import brain.extension
-from brain.data import Store
+from brain.clock import HOUR
+from brain.data import Store, iso_hour
 from brain.extension import Extension
 from brain.formula import parse
 from brain.graph import MetricGraph
@@ -513,25 +514,6 @@ class FixedMonitor(Monitor):
     rewatch = None
 
 
-class RewatchingMonitor(Monitor):
-    """brain/monitor.py plus the change the extension needs from it (see the hand-over report): take up the rates
-    that joined the graph after the start. Kept here until that change is in the monitor itself."""
-
-    def rewatch(self) -> list[str]:
-        known = {w.metric for w in self.watched}
-        self.watched = watch_list(self.graph)
-        self.sources = sorted({s for w in self.watched for s in w.sources})
-        cubes = list(self.cubes.values()) + ([self.leaf] if hasattr(self, "leaf") else [])
-        missing = sorted({c for w in self.watched for c in (w.numerator, w.denominator)} - set(cubes[0].columns))
-        for cube in cubes:
-            for c in missing:
-                cube.columns.append(c)
-                cube.data[c] = np.full((cube.rows, len(cube.keys)), np.nan)
-        if missing:
-            self._loaded_until = None      # the new columns have no history yet: the next tick loads the lookback
-        return [w.metric for w in self.watched if w.metric not in known]
-
-
 def test_an_accepted_rate_is_ready_for_the_monitor_and_the_answer_says_whether_it_is_watched(market, tmp_path):
     store, graph = Store(market), MetricGraph.load()
     monitor = FixedMonitor(graph, store, Config())
@@ -546,9 +528,9 @@ def test_an_accepted_rate_is_ready_for_the_monitor_and_the_answer_says_whether_i
     store.conn.close()
 
 
-def test_with_the_proposed_monitor_change_the_new_rate_is_judged_from_the_next_tick(market, tmp_path):
+def test_the_new_rate_is_judged_from_the_next_tick(market, tmp_path):
     store, graph = Store(market), MetricGraph.load()
-    monitor = RewatchingMonitor(graph, store, Config())
+    monitor = Monitor(graph, store, Config())
     judged_before = monitor.tick().judged_series
     ext = Extension(graph, store, tmp_path / "incoming", monitor=monitor, quiet=True)
     drop(ext.incoming, "refund_rate", page_yaml())
@@ -565,6 +547,53 @@ def test_with_the_proposed_monitor_change_the_new_rate_is_judged_from_the_next_t
     [r] = look(ext)
     assert r["status"] == "rejected" and "refund_rate" not in {w.metric for w in monitor.watched}
     assert monitor.tick().judged_series == judged_before
+    store.conn.close()
+
+
+def test_a_fault_in_a_rate_that_arrived_at_run_time_is_raised_and_reported(tmp_path):
+    """refund_rate is handed over while the monitor runs; later refunds jump in one country. The new rate is
+    judged like the ones the monitor started with: one incident that names the rate and the place. The rate
+    is outside the outcome tree, so the report carries no cost rather than an invented one."""
+    db = backfill(str(tmp_path / "market.db"), 240)
+    con = sqlite3.connect(db)
+    try:
+        last = pd.Timestamp(con.execute("SELECT MAX(ts) FROM facts_hourly").fetchone()[0])
+        start = last - 5 * HOUR
+        con.execute("UPDATE facts_hourly SET refunds = MIN(orders, refunds * 4 + 1) WHERE country = 'PL' AND ts >= ?",
+                    (iso_hour(start),))
+        con.commit()
+    finally:
+        con.close()
+    store, graph = Store(db), MetricGraph.load()
+    monitor = Monitor(graph, store, Config())
+    book = Book(monitor, tmp_path / "incidents", fresh=True)
+    ext = Extension(graph, store, tmp_path / "incoming", monitor=monitor, quiet=True)
+    assert not monitor.tick(as_of=start - HOUR).alerts              # running, and quiet, before the file arrives
+    drop(ext.incoming, "refund_rate", page_yaml())
+    [r] = look(ext)
+    assert r["status"] == "validated" and "watched from the next tick" in r["message"]
+    assert not monitor.tick(as_of=start).alerts                     # the last clean hour, now with the new rate
+
+    raised_at = None
+    t = start + HOUR
+    while t <= last + HOUR:
+        tick = monitor.tick(as_of=t)
+        assert {a.metric for a in tick.alerts} <= {"refund_rate"}   # nothing else moved
+        if book.update(tick) and raised_at is None:
+            raised_at = t
+        t += HOUR
+    assert raised_at == start + HOUR                                # on the first affected hour
+
+    [path] = sorted((tmp_path / "incidents").glob("inc-*.json"))
+    body = json.loads(path.read_text(encoding="utf-8"))
+    assert body["status"] in ("open", "ongoing") and body["segment"] == {"country": "PL"}
+    assert [d["metric"] for d in body["drivers"]] == ["refund_rate"]
+    assert body["change"]["window"]["start"] == iso_hour(start)
+    assert not body.get("impact") and "explained_share" not in body   # no path to the outcome: no cost is claimed
+    assert not [h for h in body["hypotheses"] if h["status"] == "supported"]   # no release or event fits
+    assert {h["kind"] for h in body["hypotheses"]} >= {"metric", "freshness"}
+    assert [s["action"] for s in body["trail"]][:3] == ["watch", "compare", "drill"]
+    assert body["report"].startswith("refund_rate rose") and " in PL" in body["report"]
     store.conn.close()
 
 
