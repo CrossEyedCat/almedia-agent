@@ -176,6 +176,7 @@ REJECTED = {
                     "sql: SELECT ts, country, SUM(refunds) * 1.0 / SUM(orders) AS value FROM facts_hourly "
                     "GROUP BY ts, country\n", "declares dimensions"),
     "not_a_metric": ("- refunds\n- orders\n", "mapping"),
+    "several": ("metrics:\n  - name: one\n    formula: refunds / orders\n", "one metric per file"),
 }
 
 
@@ -202,16 +203,16 @@ def test_each_rejection_has_its_own_message_and_the_loop_goes_on(ext):
 
 
 def test_a_query_that_never_ends_is_stopped_and_rejected(market, tmp_path):
+    endless = "FROM facts_hourly a, facts_hourly b, facts_hourly c"         # 43,200 ** 3 rows to walk through
     store = Store(market)
     with pytest.raises(TimeoutError):
-        store.read_sql("WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 1000000000) "
-                       "SELECT COUNT(*) AS n FROM c", timeout=0.2)
+        store.read_sql(f"SELECT COUNT(*) AS n {endless}", timeout=0.2)
     assert len(store.read_sql("SELECT ts FROM facts_hourly LIMIT 3", timeout=5)) == 3     # the limit is per query
     with pytest.raises(OverflowError):
         store.read_sql("SELECT ts FROM facts_hourly", max_rows=1000)
+    assert len(store.read_sql("SELECT ts FROM facts_hourly LIMIT 7", max_rows=1000)) == 7
     ext = Extension(MetricGraph.load(), store, tmp_path / "incoming", quiet=True, sql_timeout=0.2)
-    drop(ext.incoming, "endless", "name: endless\nsql: >\n  WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 "
-                                  "FROM c WHERE x < 1000000000)\n  SELECT '2026-11-01T00:00:00Z' AS ts, COUNT(*) AS value FROM c\n")
+    drop(ext.incoming, "endless", f"name: endless\nsql: SELECT a.ts AS ts, COUNT(*) AS value {endless} GROUP BY a.ts\n")
     [r] = look(ext)
     assert r["status"] == "rejected" and "longer than" in r["message"]
     store.conn.close()
@@ -224,8 +225,9 @@ def test_an_empty_or_half_written_file_is_tried_again_never_rejected(ext):
     ext.incoming.mkdir(parents=True)
     path.write_bytes(b"")                                   # the console has opened the file and written nothing yet
     assert look(ext, 3) == []
-    path.write_bytes(text[:57].encode())                    # cut in the middle of a line
-    assert look(ext, 3) == []
+    for cut in (3, text.index("description") + 5, text.rindex("category, channel]")):
+        path.write_bytes(text[:cut].encode())               # cut inside a key or inside a list: not a definition yet
+        assert look(ext, 3) == []
     assert not (ext.incoming / "refund_rate.result.json").exists()
     # cut at a line end after the first lines of the query: readable YAML with half a query. One look sees it,
     # the next look sees the whole file; the half is never judged
@@ -269,6 +271,34 @@ def test_a_file_changed_into_a_bad_definition_withdraws_its_metric(ext):
     assert [t["metric"] for t in exported["trees"]] == ["contribution"]
 
 
+def test_a_metric_built_on_a_withdrawn_one_is_judged_again(ext):
+    drop(ext.incoming, "refund_rate", page_yaml())
+    drop(ext.incoming, "refunds_per_view", definition("refunds_per_view", formula="refund_rate * conversion_rate"))
+    look(ext, 4)
+    assert answer(ext, "refunds_per_view")["status"] == "validated"
+    drop(ext.incoming, "refund_rate", "name: refund_rate\ndescription: the formula was taken out\n")
+    look(ext, 6)
+    assert answer(ext, "refund_rate")["status"] == "rejected"
+    r = answer(ext, "refunds_per_view")
+    assert r["status"] == "rejected" and "unknown metrics ['refund_rate']" in r["message"]
+    assert [m for m, s in ext.graph.specs.items() if s.origin != "core"] == []
+
+
+def test_an_error_of_ours_is_tried_again_then_answered_and_the_loop_goes_on(ext, monkeypatch):
+    calls = []
+
+    def broken(path, raw):
+        calls.append(path.name)
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(ext, "_judge", broken)
+    drop(ext.incoming, "refund_rate", page_yaml())
+    assert look(ext, 3) == [] and len(calls) == 2            # the second and the third look tried it
+    [r] = look(ext, 1)
+    assert r["status"] == "rejected" and "could not be checked" in r["message"] and "database is locked" in r["message"]
+    assert look(ext, 3) == [] and len(calls) == 3            # answered: not tried on every poll for ever
+
+
 def test_two_files_cannot_define_the_same_name(ext):
     drop(ext.incoming, "refund_rate", page_yaml())
     drop(ext.incoming, "zz_copy", page_yaml().replace("Share of orders refunded", "The same name again"))
@@ -287,6 +317,11 @@ def test_a_query_that_returns_part_of_the_rows_is_tentative(ext, counts):
     assert r["status"] == "tentative" and rows["status"] == "warn"
     assert str(counts["rows"]) in rows["detail"] and "part" in r["message"]
     assert ext.graph.status["refund_rate_de"] == "tentative"
+    # a tentative metric does not change how another metric decomposes: the identity stays a proposal
+    assert ext.graph.out_edges("refunds", "formula") == []
+    assert [l["status"] for l in r["links_proposed"] if l.get("identity")] == ["proposed"]
+    exported = json.loads(Path(ext.graph_out).read_text(encoding="utf-8"))
+    assert [n["status"] for n in exported["nodes"] if n["id"] == "refund_rate_de"] == ["tentative"]
 
 
 def test_an_ambiguous_place_is_said_so(ext):
@@ -312,6 +347,12 @@ def test_a_place_inside_the_outcome_tree_is_proposed_not_applied(ext):
     assert link["status"] == "proposed"
     assert ext.graph.out_edges("sessions", "formula") == []
     assert "proposed" in r["placed"]
+    # it is still drawn: a tree of its own under the outcome's, with what it is defined from
+    exported = json.loads(Path(ext.graph_out).read_text(encoding="utf-8"))
+    assert [t["metric"] for t in exported["trees"]] == ["contribution", "sessions_per_search"]
+    assert [(c["metric"], c["role"], c["repeated"]) for c in exported["trees"][1]["children"]] == \
+        [("sessions", "numerator", True), ("searches", "denominator", False)]
+    assert exported["trees"][0] == MetricGraph.load().to_dict()["trees"][0]      # the outcome's tree is as it was
 
 
 # -------------------------------------------------------------------------------------- the export
@@ -410,7 +451,7 @@ def test_live_mode_looks_at_the_incoming_folder_on_every_poll(market, tmp_path):
     incoming, graph_out = tmp_path / "incoming", tmp_path / "graph.json"
     drop(incoming, "refund_rate", page_yaml())
     (incoming / "gone.result.json").write_text('{"status": "rejected", "message": "from the last run"}')
-    code = run_main(["--db", market, "--incidents", str(tmp_path / "incidents"), "--incoming", str(incoming),
+    code = run_main(["--db", str(market), "--incidents", str(tmp_path / "incidents"), "--incoming", str(incoming),
                      "--graph-out", str(graph_out), "--fresh", "--max-ticks", "2", "--poll", "0.01", "--quiet"])
     assert code == 0
     assert not (incoming / "gone.result.json").exists() and (incoming / "refund_rate.yaml").exists()
@@ -424,7 +465,7 @@ def test_replay_does_not_touch_the_incoming_folder(market, tmp_path, monkeypatch
     incoming = tmp_path / "incoming"
     drop(incoming, "refund_rate", page_yaml())
     monkeypatch.setenv("INCOMING_METRICS_DIR", str(incoming))
-    assert run_main(["--replay", "--db", market, "--incidents", str(tmp_path / "incidents"), "--fresh", "--quiet",
+    assert run_main(["--replay", "--db", str(market), "--incidents", str(tmp_path / "incidents"), "--fresh", "--quiet",
                      "--from", "2026-11-03T00:00:00Z", "--to", "2026-11-03T02:00:00Z"]) == 0
     assert sorted(p.name for p in incoming.iterdir()) == ["refund_rate.yaml"]
 
