@@ -41,32 +41,33 @@ def _record(con, inj: Injection, description: str) -> None:
 
 
 def payment_failure(con, country: str, platform: str, start: pd.Timestamp, severity: float = 0.35,
-                    end: pd.Timestamp | None = None) -> int:
+                    end: pd.Timestamp | None = None, replay_now: bool = True) -> int:
     """A payment SDK release breaks payments for one country and platform (scenario S1)."""
     inj = Injection("payment_failure", start, end, {"country": country, "platform": platform, "severity": severity})
     _record(con, inj, f"payment success rate drops {severity:.0%} for {country} {platform} after a payments-sdk release")
     con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
                 (_fmt(start), "payments-sdk", country, platform, f"payments-sdk 4.2 rollout ({country}, {platform})"))
     con.commit()
-    return replay(con, start)
+    return replay(con, start) if replay_now else 0
 
 
 def promo(con, country: str, start: pd.Timestamp, end: pd.Timestamp, traffic_lift: float = 0.4,
-          conversion_lift: float = 0.2, extra_discount: float = 0.03) -> int:
+          conversion_lift: float = 0.2, extra_discount: float = 0.03, replay_now: bool = True) -> int:
     """A planned promotion: more traffic and orders, listed in the calendar (scenario S2)."""
     inj = Injection("promo", start, end, {"country": country, "traffic_lift": traffic_lift,
                                           "conversion_lift": conversion_lift, "extra_discount": extra_discount})
     _record(con, inj, f"planned promo in {country}: harmless uplift in traffic and orders")
     con.execute("INSERT INTO calendar VALUES (?, ?, ?, ?, ?)", (_fmt(start), _fmt(end), country, "promo", f"{country} promo"))
     con.commit()
-    return replay(con, start)
+    return replay(con, start) if replay_now else 0
 
 
-def data_delay(con, source: str, start: pd.Timestamp, end: pd.Timestamp, delay_hours: float = 2) -> int:
+def data_delay(con, source: str, start: pd.Timestamp, end: pd.Timestamp, delay_hours: float = 2,
+               replay_now: bool = True) -> int:
     """One source arrives late; the facts stay correct, only ingestion_log shows it (scenario S3)."""
     inj = Injection("data_delay", start, end, {"source": source, "delay_hours": delay_hours})
     _record(con, inj, f"{source} data arrives {delay_hours:g} h late")
-    return replay(con, start)
+    return replay(con, start) if replay_now else 0
 
 
 def main(argv=None) -> int:
