@@ -94,7 +94,10 @@ def test_the_outcome_is_the_metric_and_the_moved_rate_is_the_contribution(run):
     (inc,) = files(book)
     assert inc["metric"] == "contribution"
     assert [c["node"] for c in inc["contributions"]] == ["payment_success_rate"]
-    assert inc["contributions"][0]["share_of_delta"] == pytest.approx(1.0)
+    assert inc["contributions"][0]["share_of_delta"] == pytest.approx(1.0)   # the only moved rate: all of the effect
+    # the incident's share of everything that is off in that cell and window, the other rates' ordinary
+    # movement against their own baselines included
+    assert 0.5 < inc["explained_share"] <= 1.0
     assert inc["change"]["observed"] < inc["change"]["expected"]
     assert inc["impact"]["contribution_eur"] < 0 and inc["impact"]["orders"] < 0
     assert -60 < inc["change"]["delta_pct"] < -25   # a 40 % payment failure in that cell

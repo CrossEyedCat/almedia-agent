@@ -27,9 +27,11 @@ from brain.clock import HOUR, Clock
 from brain.data import Store, iso_hour
 from brain.evaluator import Evaluator
 from brain.graph import MetricGraph
+from brain.metric_spec import DIMENSIONS
 from brain.stats import binomial_surprise, ratio_surprise, robust_scale, scaled_residual
 
 MIN_DISPERSION_HOURS = 48
+CELL_PRIOR_VOLUME = 20.0   # a finest cell's own history counts against this much of the pooled rate
 
 CUTS: tuple[tuple[str, ...], ...] = (
     (), ("country",), ("platform",), ("category",), ("channel",),
@@ -201,6 +203,7 @@ class Monitor:
         self.sources = sorted({s for w in self.watched for s in w.sources})
         columns = sorted({c for w in self.watched for c in (w.numerator, w.denominator)})
         self.cubes = {cut: Cube(cut, columns) for cut in config.cuts}
+        self.leaf = Cube(DIMENSIONS, columns)         # the finest cells: not judged, kept for localization
         self._flags: dict[tuple, np.ndarray] = {}     # (metric, cut) -> bad hours [hour, series]
         self._rates: dict[tuple, tuple] = {}          # (metric, cut) -> (rate, usable) of the last tick
         self._kinds: dict[str, str] = {}
@@ -216,7 +219,7 @@ class Monitor:
             start = now - cfg.lookback_hours * HOUR
         else:
             start = max(min(self._loaded_until, now) - cfg.reread_hours * HOUR, self.cubes[()].t0)
-        for cut, cube in self.cubes.items():
+        for cut, cube in list(self.cubes.items()) + [(self.leaf.dims, self.leaf)]:
             frame = self.store.sums(cube.columns, start, now, group_by=cut, by_hour=True)
             cube.update(frame, start, now)
         self._loaded_until = now
@@ -448,8 +451,8 @@ class Monitor:
             (iso_hour(now), iso_hour(now - cfg.release_watch_hours * HOUR)))
         out: list[Alert] = []
         for r in rows.to_dict("records"):
-            if "rollback" in (r["description"] or "").lower():
-                continue   # by the contract a rollback row ends a release
+            if isinstance(r["description"], str) and "rollback" in r["description"].lower():
+                continue   # by the contract a rollback row ends a release (the column may be NULL)
             scope = {d: r[d] for d in ("country", "platform") if isinstance(r[d], str) and r[d]}
             start = pd.Timestamp(r["ts"])
             for w in self.watched:
@@ -458,7 +461,7 @@ class Monitor:
                 key = (r["ts"], r["system"], tuple(sorted(scope.items())), w.metric)
                 if key in self._watch_closed:
                     continue
-                if any(a.metric == w.metric and compatible(a.segment, scope) for a in tick.alerts + out):
+                if any(a.metric == w.metric and compatible(a.segment, scope) for a in tick.alerts):
                     self._watch_seen.add(key)
                     continue   # the scan already has it
                 skip = [h for h, srcs in tick.late.items() if srcs & set(w.sources)]
@@ -496,7 +499,13 @@ class Monitor:
                 if w.calendar:
                     alert.explained_by = self._covering_event(alert, events)
                 out.append(alert)
-        return out
+        # Two releases can ask about the same metric in overlapping places (a routine one hours before the
+        # real one). The older one's sum is the diluted one: of such alerts the strongest is kept.
+        kept: list[Alert] = []
+        for a in sorted(out, key=lambda a: (-a.score, a.onset)):
+            if not any(k.metric == a.metric and compatible(k.segment, a.segment) for k in kept):
+                kept.append(a)
+        return kept
 
     @staticmethod
     def _covering_event(alert: Alert, events: list[dict]) -> dict | None:
@@ -521,6 +530,69 @@ class Monitor:
         """The baseline rate of a metric in a watched series, from the last tick."""
         found = self._series(metric, segment)
         return float(found[2][0][found[1]]) if found else None
+
+    def hourly(self, metric: str, segment: dict, start, end, skip=()) -> list[dict]:
+        """The metric in a watched series hour by hour over [start, end), each hour against the
+        baseline: which way it went and how surely. Hours without data or still held are left out."""
+        found = self._series(metric, segment)
+        w = next((x for x in self.watched if x.metric == metric), None)
+        if not found or w is None:
+            return []
+        cube, k, (rate, _, scale, kind) = found
+        r0, r1 = max(cube.row(start), 0), min(cube.row(end), cube.rows)
+        shift = 1.0 if kind == "excess" else 0.0
+        d = cube.data[w.denominator][r0:r1, k]
+        n = cube.data[w.numerator][r0:r1, k] - shift * d
+        base = np.full(len(d), float(rate[k]) - shift)
+        if kind == "ratio":
+            score, z = ratio_surprise(n, d, base, np.full(len(d), scale[k]))
+        else:
+            score, z = binomial_surprise(n, d, base)
+        held = {cube.row(h) for h in skip}
+        return [{"hour": cube.hour(r0 + i), "observed": float(n[i] / d[i] + shift), "expected": float(rate[k]),
+                 "score": float(score[i]), "z": float(z[i])}
+                for i in range(len(d)) if np.isfinite(score[i]) and (r0 + i) not in held]
+
+    def has_series(self, metric: str, segment: dict) -> bool:
+        return self._series(metric, segment) is not None
+
+    def cells(self, metric: str, start, end, skip=()) -> dict | None:
+        """The metric in every finest cell: counts in [start, end) and the rate each cell had before
+        `start`. A cell's own history is thin, so its rate leans on the pooled rate of all cells for
+        the first CELL_PRIOR_VOLUME of its denominator. For the investigator's localization."""
+        w = next((x for x in self.watched if x.metric == metric), None)
+        cube = self.leaf
+        if w is None or cube.t0 is None or not cube.keys:
+            return None
+        kind = self._kind(w)
+        shift = 1.0 if kind == "excess" else 0.0
+        r0, r1 = max(cube.row(start), 0), min(cube.row(end), cube.rows)
+        b0 = max(0, r0 - self.config.lookback_hours)
+        D = cube.data[w.denominator]
+        N = cube.data[w.numerator] - shift * D
+        both = np.isfinite(N) & np.isfinite(D)
+        for h in skip:
+            if 0 <= cube.row(h) < cube.rows:
+                both[cube.row(h), :] = False
+        n = np.where(both, N, 0.0)
+        d = np.where(both, D, 0.0)
+        hist_n, hist_d = n[b0:r0].sum(axis=0), d[b0:r0].sum(axis=0)
+        if hist_d.sum() <= 0:
+            return None
+        pooled = hist_n.sum() / hist_d.sum()
+        prior = 0.0 if kind == "ratio" else CELL_PRIOR_VOLUME
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rate = np.where(hist_d + prior > 0, (hist_n + prior * pooled) / (hist_d + prior), pooled)
+        unit_var = 1.0
+        if kind == "ratio":
+            with np.errstate(divide="ignore", invalid="ignore"):
+                resid = np.where(d[b0:r0] > 0, (n[b0:r0] - rate * d[b0:r0]) / np.sqrt(d[b0:r0]), np.nan)
+            scale = robust_scale(resid.ravel())
+            if not np.isfinite(scale):
+                return None
+            unit_var = float(scale) ** 2
+        return {"dims": cube.dims, "keys": list(cube.keys), "num": n[r0:r1].sum(axis=0), "den": d[r0:r1].sum(axis=0),
+                "rate": rate, "history_den": hist_d, "kind": kind, "shift": shift, "unit_var": unit_var}
 
     def window(self, metric: str, segment: dict, start, end, skip=(), as_rate: float | None = None) -> dict | None:
         """One targeted look: the metric in a watched series over [start, end) against its baseline.

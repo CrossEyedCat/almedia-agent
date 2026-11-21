@@ -146,3 +146,26 @@ def test_the_live_loop_survives_a_failing_tick(clean_db, tmp_path, capsys):
     brain_run.live(monitor, book, poll=0.01, max_ticks=1, quiet=True)
     assert calls["n"] >= 2
     assert "disk hiccup" in capsys.readouterr().err
+
+
+def test_the_watch_after_a_release_does_not_move_the_onset_back():
+    # a harmless release hours before a fault: the watch asks its question from the release on, but that
+    # is when the question was asked, not when the change began
+    from types import SimpleNamespace
+    from brain.incidents import earliest_onset
+    onset = T("2026-11-03T12:00:00Z")
+    scan = SimpleNamespace(onset=onset - 1 * H, trigger="scan")
+    watch = SimpleNamespace(onset=onset - 5 * H, trigger="release")
+    assert earliest_onset(onset, [watch]) == onset
+    assert earliest_onset(onset, [watch, scan]) == onset - 1 * H
+
+
+def test_a_fault_whose_two_phases_cancel_still_resolves(run):
+    # an ad budget spent three times as fast for 3 hours, then gone for 5: over the whole episode the rate
+    # is about what it always was, which must not be taken for "the fault would not show, keep it open"
+    start = FAULT - 4 * H     # 08:00 UTC: with this day's traffic the two phases cancel to within a few percent
+    book, _ = run(lambda con: inject.ad_budget_exhausted(con, "FR", start, start + 8 * H, boost_hours=3), first=-4, last=11)
+    (inc,) = files(book)
+    driver = inc["drivers"][0]
+    assert driver["metric"] == "ad_load"
+    assert inc["status"] == "resolved", (inc["status"], inc["last_seen"])
