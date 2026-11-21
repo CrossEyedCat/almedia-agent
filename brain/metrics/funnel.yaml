@@ -49,7 +49,7 @@ metrics:
     formula: payment_attempts / checkouts
     atomic: true
     bounds: [0, null]
-    systems: [checkout, payments]
+    systems: [checkout, payments, payments-sdk]
     direction: none
 
   - name: payment_success_rate
@@ -58,7 +58,7 @@ metrics:
     formula: payment_successes / payment_attempts
     atomic: true
     bounds: [0, 1]
-    systems: [payments]
+    systems: [payments, payments-sdk]
     source: payments
     direction: up
 
@@ -96,6 +96,7 @@ metrics:
     description: Payment attempts.
     unit: count
     column: payment_attempts
+    systems: [payments, payments-sdk]
     source: payments
     direction: none
 
@@ -103,5 +104,6 @@ metrics:
     description: Successful payments.
     unit: count
     column: payment_successes
+    systems: [payments, payments-sdk]
     source: payments
     direction: up
