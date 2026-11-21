@@ -106,39 +106,48 @@ unit: ratio
 
 ### 3.2 Metric graph
 
-- **Nodes:** metrics (`orders`, `checkout_rate`, `payment_success_rate`, `gmv`, `contribution`, …) and context sources (releases, calendar, data freshness, inventory).
+- **Nodes:** metrics, breakdown views (`orders@country`) and context sources (`release:<system>`, `freshness:<source>`, `calendar`).
 - **Edges, each with its own reasoning:**
-  - `formula` — exact arithmetic (`orders = checkouts × payment_success_rate`); supports contribution decomposition.
-  - `breakdown` — split by a dimension (`orders` by `country`); supports drill-down; additive metrics must sum to the parent, ratios split into mix and rate effects.
-  - `may_affect` — a possible cause (`stockouts → feed_conversion`); a hypothesis edge with a prior strength, checked with timing and lagged correlation.
-  - `context` — links metrics to releases, promos and freshness by system, country and platform.
-- **Tree view:** a spanning tree over `formula` edges from the top outcome (`contribution`) for people to browse.
+  - `formula` — an exact identity used for decomposition (`gmv = orders × aov`). The formula graph is a DAG, not a tree: `gmv` feeds `marketplace_fees` with a plus and `discounts` with a minus, `sessions` feeds `orders` and `ad_impressions`.
+  - `definition` — how a derived metric is computed when that differs from its decomposition (`take_rate = marketplace_fees / gmv`).
+  - `breakdown` — split by a dimension; additive metrics sum, ratios are always ratios of sums.
+  - `may_affect` — a possible cause with a prior and a sign (which way the effect moves when the cause rises). It stays `assumed` until it is tested inside an incident; it is never "validated" by correlation on history (see 3.8).
+  - `context` — releases, the promo calendar and data freshness. Freshness is inherited through formulas: a metric is as fresh as its least fresh source.
+- **Declared outcome:** `contribution` carries `outcome: true`. A contributed metric never becomes a second root by accident; until it is placed it is listed under `unplaced_roots`.
+- **Tree view:** a spanning tree over `formula` edges from the declared outcome, for people to browse. The algorithms work on the DAG.
+- **What "validated" means:** every check has a basis. `definition` — it follows from the metric definitions alone and no data can make it fail (`orders = sessions × (orders / sessions)`); it shows the definitions are consistent. `data` — it can fail on the data (coverage, bounds, a contributed SQL against its formula). The validation report keeps the two apart.
 
-### 3.3 Extension agent
+### 3.3 Extension agent (M4)
 
-1. Parse the formula when given (symbolic parse); otherwise an LLM proposes one from the description and SQL.
-2. Link to existing metrics whose names appear in the formula; read the dimensions from the SQL.
-3. Validate numerically: recompute the formula from its components on history, check that breakdowns add up, check the value range.
-4. Propose `may_affect` links (LLM suggestion + lagged correlation on history); keep them `tentative` until the data supports them.
-5. Register with a status (`validated` / `tentative` / `rejected`) and start monitoring.
+Deterministic first: a new metric gets a formula and a place without a language model.
 
-### 3.4 Monitoring (proposed algorithm)
+1. **Run the SQL** in the sandbox (contract tables only, time and row limits) and read its grain from the result columns.
+2. **Find the formula.** Use the given one, or search formulas over existing metrics (a single metric, `a / b`, `a × b`, `a ± b`, with a constant) that reproduce the SQL values at its grain: about 4,000 candidates, under a second.
+3. **Check what the SQL really defines.** Compare row sets in both directions: a SQL that returns only part of the rows is a filtered metric and is registered as scoped or `tentative`, not as valid everywhere. Roll-up test: split every fact row in two and rerun the SQL; a function of sums does not change, an average of rows does.
+4. **Recognise aliases.** Each definition has a numeric signature (its value on random column values). A new metric with the signature of an existing one is reported as an alias, not added as a node.
+5. **Find its place.** Search identities that link the new metric to existing ones (`x = y × m`, `x = y + m`, `m = x / y`, …). Rank them (a parent inside the outcome tree first, then fewer hops to the outcome) and keep the others as alternatives. When several fit equally the status is `ambiguous` and the report says so.
+6. **Cause links.** Proposed links (rules or a language model) are admitted only if they pass structural checks (no cycle, not already arithmetic, not a duplicate) and they stay `assumed`.
+7. **Re-validate the whole graph** (0.7 s on 28 days) and start monitoring the metric at its grain.
 
-- **What to watch:** every tick, the top outcomes and their direct formula children; breakdowns are scanned on a rotating budget, prioritised by business impact (sensitivity of the top outcome to the node) × detectability (signal vs noise).
-- **Expected behaviour:** hour-of-week seasonal baseline (median of past weeks) scaled to the recent level; planned events from the calendar shift the expectation instead of raising alerts.
-- **Data completeness gate:** hours whose sources have not fully arrived are marked pending, not judged.
-- **Detection:** robust z-score on the residual + a persistence check (CUSUM) + a minimum business impact, so small blips do not start investigations.
+### 3.4 Monitoring (M2)
 
-### 3.5 Investigation (proposed algorithm)
+- **Clock and completeness.** `now` and the meaning of `arrived_at` are part of the data contract. An hour of a metric is judged only when every source the metric depends on has arrived; until then it is *pending*: neither healthy nor an alert.
+- **What to watch.** The leaf factors of the formula graph — the step rates of the funnel, sessions and the other volume leaves — in every country × platform cell and in total: 12 cells × about 10 factors, one query of a few milliseconds per tick. Top outcomes are used for impact and reporting, not for detection: a fault in one cell is diluted in them (3.8).
+- **Expected state.** Built for the base columns at the watched grain from the same hour-of-week in previous weeks; every metric is then derived from those expected sums (`Evaluator.derive`). Expected values therefore obey the same formulas and add up over segments. A separate median baseline per metric does not.
+- **Planned events.** A calendar event that overlaps a deviation in time and scope explains it: reported as explained, not alerted.
+- **Detection.** For a rate, a binomial test of successes given attempts against the expected rate, with its spread calibrated on clean history. For a volume, a robust z-score of the seasonal residual. Then persistence over consecutive hours and a minimum business impact in EUR, so small blips do not start investigations.
 
-- **Best-first search over the graph** with a query budget.
-- **Formula step:** decompose the change into each component's contribution (additive for sums, log-ratio for products and ratios) and follow the largest.
-- **Breakdown step:** choose the dimension whose split concentrates the change best (explanatory power and surprise, Adtributor-style), then the segment within it.
-- **Context step:** check data freshness, releases and calendar events that overlap in time and segment.
-- **Competing explanations:** each hypothesis gets an evidence score (share of the delta explained, timing match, segment match, consistency across metrics).
-- **Stop rule:** the leading hypothesis explains most of the change, nothing further upstream explains it better, or the budget runs out.
-- **Symptom vs first cause:** a node is reported as a first cause only when its own change explains its children's change and no upstream node explains it.
-- Each hypothesis is labelled `supported`, `plausible` or `rejected`.
+### 3.5 Investigation (M3)
+
+- **Two coherent states.** Actual and expected sums for the incident window at the finest grain; everything below compares these two.
+- **Attribution.** One function gives, for every leaf factor, the part of the outcome change it explains, in EUR. It walks the formula DAG and sums over all paths; sums split exactly, products use the logarithmic mean Divisia index (LMDI, an exact decomposition), with a Shapley split as the fallback for zeros and other formula shapes. It never just follows the largest child: `gmv` reaches `contribution` through fees and through discounts with opposite signs.
+- **Localization.** For the leading factor, every element of every combination of dimensions is scored (479 elements for 4 countries, 3 platforms, 5 categories and 3 channels) by how well "one common shift of the rate inside this element" explains the data. The best element is accepted when it clearly beats the runner-up. The scan is exhaustive because it is cheap here; no greedy order of dimensions is needed.
+- **Mix versus rate.** Attribution runs per cell and is then summed, so a shift in the mix of segments is not booked as a change of a rate.
+- **Context.** Data freshness first. Then every release and calendar event that starts no later than an hour after the onset and whose scope (country, platform) contains the localized segment is a candidate; `systems` tags rank the candidates.
+- **Hypotheses.** Candidates are leaf factors in a cell, events and `may_affect` parents. A `may_affect` hypothesis is tested inside the incident: the cause must itself be anomalous in the same segment, in the same or an earlier hour, and move the way its sign predicts. Each hypothesis gets a score (share of the change explained, timing, scope match, consistency) and a label: `supported`, `plausible` or `rejected`.
+- **First cause versus symptom.** First-cause candidates are leaf factors and events; a metric above them is a symptom of its factors.
+- **Stop rule.** The leading hypothesis explains most of the change and beats the runner-up by a margin, or nothing is left to test, or the query budget is spent.
+- **Honesty check.** A plain ranking of the most anomalous factor and cell is kept as a baseline in the scoring harness; the graph has to beat it.
 
 ### 3.6 Reporting and lifecycle
 
@@ -150,9 +159,25 @@ unit: ratio
 
 The core loop runs without it, so the demo cannot fail on an API call.
 
-- Proposing formulas and `may_affect` links for new metrics.
 - Writing the narrative from the structured evidence; a template is the fallback.
-- Optionally, choosing between equally scored next steps and explaining why.
+- Suggesting descriptions and possible cause links for new metrics; suggestions pass the structural checks of 3.3 and stay `assumed`.
+- Not needed to find a formula or a place for a new metric: that is a deterministic search (3.3).
+
+### 3.8 What the algorithm choices are based on
+
+After M1 the plan was checked against open implementations and published research, and against measurements on the simulator's data (all data here is simulated). The numbers below were measured during that review on a 28-day history with the payment fault S1 in DE × Android.
+
+| Decision | Based on | Measured here |
+|---|---|---|
+| A rate is always a ratio of sums; numerator and denominator are first-class metrics | [dbt MetricFlow ratio metrics](https://docs.getdbt.com/docs/build/ratio) | — |
+| The graph is specified and typed, not learned from the series; cause links are not validated by lagged correlation | [Pham et al. 2024](https://arxiv.org/abs/2408.13729): root-cause analysis on learned causal graphs is close to random; [Fan et al. 2024](https://arxiv.org/abs/2406.02191): aggregation over time hides the lags | effects land in the same hour; 390 of 1,260 metric pairs correlate above 0.5 through shared traffic |
+| Detect on step rates in country × platform cells, not on top outcomes | [Adtributor](https://files.usenix.org/s3fs-public/cdn/nsdi14-paper-bhagwan.pdf), [PSqueeze](https://ar5iv.labs.arxiv.org/html/2305.03331), [RiskLoc](https://arxiv.org/pdf/2205.10004) | deviation in units of noise: total orders −0.8, orders in the cell −2.9, payment success rate in the cell −17.2 |
+| One expected state for the base columns, metrics derived from it | RiskLoc and PSqueeze define the forecast of a derived measure from the forecasts of its fundamental measures; [hierarchical forecasting](https://otexts.com/fpp3/hierarchical.html) | separate medians break the identities by 1.5 % on average (up to 7 %) and segments miss the total by 2.5 % (up to 11 %) |
+| Localize by scoring every element of every cuboid for a common shift | HotSpot, Squeeze / PSqueeze, RiskLoc ([open implementations](https://github.com/shaido987/riskloc)), [ThirdEye](https://www.linkedin.com/blog/engineering/analytics/analyzing-anomalies-with-thirdeye) | exact cell found in 33 of 36 one-hour windows, against 12 of 36 for a one-dimension-at-a-time drill-down |
+| Attribution over all paths of the formula DAG; LMDI for products | [Ang 2005](https://ideas.repec.org/a/eee/enepol/v33y2005i7p867-871.html) | along one path the payment rate "explains" 146 % of the change; over all paths 91 % |
+| Completeness from arrival time against a defined clock | [The Dataflow Model](https://www.vldb.org/pvldb/vol8/p1792-Akidau.pdf), [dbt source freshness](https://docs.getdbt.com/reference/resource-properties/freshness) | "source row missing" never fires: a late source still gets its row, only `arrived_at` moves |
+| New metrics: canonical comparison, alias detection, placement by search | [Uber uMetric](https://www.uber.com/blog/umetric/); random evaluation of formulas (polynomial identity testing) | formula for `refund_rate` found from its SQL result in 0.5 s without a language model |
+| Contributed SQL runs with a table whitelist inside SQLite, plus time and row limits | [SQLite security guide](https://www.sqlite.org/security.html) | none of about 80 bypass attempts read the scoring table |
 
 ## 4. Team split
 
@@ -223,11 +248,11 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [x] A small injection CLI for testing: `python -m sim.inject payment_failure --country DE --platform Android`.
 
 **B — monitor v1**
-- [ ] Baseline: hour-of-week median over the past 3 weeks × level factor from the last 24 h.
-- [ ] Completeness gate: hours whose sources are missing in `ingestion_log` are pending, not judged.
-- [ ] Detector: robust z-score on the residual + CUSUM persistence + minimum impact in € per hour.
-- [ ] Watch list: top outcomes and their formula children every tick; breakdowns on a rotating budget.
-- [ ] Loop: `python -m brain.run` polls the database every tick and logs detections.
+- [ ] Clock and completeness: `now` and the meaning of `arrived_at` agreed with A in `docs/contracts/`; a reader for arrivals; an hour is pending until every source the metric depends on (`graph.sources`) has arrived.
+- [ ] Expected state: the same hour-of-week over the past 3 weeks for the base columns at country × platform grain; metrics derived from it with `Evaluator.derive`, so identities and sums over segments hold.
+- [ ] Watch list: leaf factors of the formula graph (step rates, sessions and other volume leaves) in every country × platform cell and in total; one query per tick.
+- [ ] Detector: binomial test for rates, robust z-score for volumes, persistence over consecutive hours, minimum impact in €.
+- [ ] Loop: `python -m brain.run` polls the database every tick (one snapshot per tick, trailing hours re-read) and logs detections.
 
 **A+B checkpoint (dinner):** live simulator with S1 → the brain detects it; write down the detection delay in simulated hours.
 
@@ -239,9 +264,9 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [x] Alert feed: status, metric, segment, impact, first and last seen.
 
 **B — investigator v1**
-- [ ] Contribution decomposition along `formula` edges (additive for sums, log-ratio for products and ratios).
-- [ ] Drill-down: pick the dimension with the best explanatory power and surprise, then the segment; recurse up to depth 3.
-- [ ] Context checks: releases, calendar events and data freshness that overlap in time and scope.
+- [ ] Attribution: one function over the formula DAG, all paths summed (exact for sums, LMDI for products, Shapley fallback); result in € of the outcome.
+- [ ] Localization: score every element of every combination of dimensions (479) for the leading factor; accept the best when it clearly beats the runner-up.
+- [ ] Context checks: data freshness first, then every release and calendar event that overlaps the localized segment in time and scope, ranked by `systems` tags.
 - [ ] Trail: every query and its result is recorded as a step.
 - [ ] Incident JSON written to `incidents/` per the contract.
 
@@ -257,10 +282,10 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [ ] "Add metric" endpoint: POST a metric YAML, hand it to the brain, show the result.
 
 **B — extension and reasoning**
-- [ ] Extension agent: parse formula → link parents → read dimensions from SQL → validate on history → propose `may_affect` links (LLM + lagged correlation) → status.
-- [ ] Calendar-aware expectation: a planned event shifts the baseline and is explained, not alerted.
-- [ ] Hypothesis scoring with `supported` / `plausible` / `rejected`.
-- [ ] Symptom vs first cause rule.
+- [ ] Extension agent, no language model needed: run the SQL with time and row limits → find or check the formula by search over existing metrics → compare row sets both ways and test the roll-up → detect aliases by signature → find the place (alternatives kept, `ambiguous` when several fit) → re-validate → monitor.
+- [ ] Calendar-aware expectation: a planned event that overlaps a deviation in time and scope explains it; reported, not alerted.
+- [ ] Hypothesis scoring with `supported` / `plausible` / `rejected`; a `may_affect` link is tested inside the incident (cause anomalous in the same segment, same or earlier hour, direction matches its sign).
+- [ ] First-cause rule: candidates are leaf factors in a cell and events; a metric above them is a symptom.
 
 **A+B checkpoint:** S2 gives no alert (explained), S3 is held, S4 is placed and validated and visible in the graph.
 
