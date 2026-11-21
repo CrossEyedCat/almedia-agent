@@ -166,7 +166,7 @@ REJECTED = {
     "bad_name": ("name: Refund Rate\nformula: refunds / orders\n", "bad metric name"),
     "core_name": ("name: orders\nformula: refunds / sessions\n", "already exists"),
     "unknown_input": ("name: return_rate\nformula: returns / orders\n", "unknown metrics"),
-    "no_definition": ("name: mystery\ndescription: nobody said how to compute it\n", "needs a formula or a SQL query"),
+    "no_definition": ("name: mystery\ndescription: nobody said how to compute it\n", "it needs a formula or a SQL query"),
     "hidden_table": ("name: peek\nsql: SELECT injected_at AS ts, 1.0 AS value FROM ground_truth\n", "contract tables"),
     "broken_sql": ("name: typo_rate\nsql: SELECT ts, SUM(refundz) AS value FROM facts_hourly GROUP BY ts\n", "SQL failed"),
     "wrong_formula": (definition("refund_share", "SUM(refunds) * 1.0 / NULLIF(SUM(orders), 0)",
@@ -194,6 +194,7 @@ def test_each_rejection_has_its_own_message_and_the_loop_goes_on(ext):
         assert any(c["status"] == "fail" for c in r["checks"]), (stem, r["checks"])
     messages = [answer(ext, stem)["message"] for stem in REJECTED]
     assert len(set(messages)) == len(messages)
+    assert answer(ext, "core_name")["message"].startswith("orders rejected: the name already exists in the graph (a core")
     assert "refundz" in answer(ext, "broken_sql")["message"]
     assert "returns" in answer(ext, "unknown_input")["message"]
     # the bad files did not stop the good one, and none of them reached the graph
@@ -324,18 +325,50 @@ def test_a_query_that_returns_part_of_the_rows_is_tentative(ext, counts):
     assert [n["status"] for n in exported["nodes"] if n["id"] == "refund_rate_de"] == ["tentative"]
 
 
-def test_an_ambiguous_place_is_said_so(ext):
+def test_a_difference_goes_under_its_whole_and_the_remainder_reading_is_only_kept(ext):
     drop(ext.incoming, "failed_payments", definition("failed_payments", formula="payment_attempts - payment_successes",
                                                      unit="count"))
     [r] = look(ext)
-    assert r["status"] == "tentative" and "ambiguous" in r["message"] and "ambiguous" in r["placed"]
-    identities = {l["identity"] for l in r["links_proposed"] if l.get("identity")}
-    assert {"payment_attempts = payment_successes + failed_payments",
-            "payment_successes = payment_attempts - failed_payments"} <= identities
-    # neither is applied: the two core metrics keep no decomposition
-    assert ext.graph.out_edges("payment_attempts", "formula") == []
+    assert r["status"] == "validated", r
+    by_identity = {l["identity"]: l for l in r["links_proposed"] if l.get("identity") and l["target"] == "failed_payments"}
+    assert by_identity["payment_attempts = payment_successes + failed_payments"]["applied"] is True
+    kept = by_identity["payment_successes = payment_attempts - failed_payments"]
+    assert kept["status"] == "alternative" and "what is left" in kept["reason"]
+    assert {e.dst for e in ext.graph.out_edges("payment_attempts", "formula")} == {"payment_successes", "failed_payments"}
     assert ext.graph.out_edges("payment_successes", "formula") == []
+    assert by_check(r)["rollup"]["status"] == "pass" and "added up" in by_check(r)["rollup"]["detail"]
+
+
+def test_an_identity_with_the_outcome_is_kept_as_an_alternative(ext):
+    drop(ext.incoming, "platform_revenue", definition("platform_revenue", formula="marketplace_fees + ad_spend", unit="eur"))
+    [r] = look(ext)
+    assert r["status"] == "validated"
+    [link] = [l for l in r["links_proposed"] if l.get("identity") == "contribution = platform_revenue - discounts"]
+    assert link["status"] == "alternative" and "already decomposes" in link["reason"]
+    assert ext.graph.specs["contribution"].formula.text == "marketplace_fees + ad_spend - discounts"
+    assert {e.dst for e in ext.graph.out_edges("platform_revenue", "formula")} == {"marketplace_fees", "ad_spend"}
+    exported = json.loads(Path(ext.graph_out).read_text(encoding="utf-8"))
+    assert [t["metric"] for t in exported["trees"]] == ["contribution", "platform_revenue"]
+    assert all(c["repeated"] for c in exported["trees"][1]["children"])
+
+
+def test_an_ambiguous_place_is_said_so(market, tmp_path):
+    """Two metrics on one column are the same thing twice: a rate of refunds fits under either reading of the base."""
+    core = [spec_from_dict(raw) for raw in (
+        {"name": "orders", "column": "orders", "unit": "count", "source": "orders"},
+        {"name": "purchases", "column": "orders", "unit": "count", "source": "orders"},
+        {"name": "refunds", "column": "refunds", "unit": "count", "source": "orders"})]
+    store = Store(market)
+    ext = Extension(MetricGraph.from_specs(core), store, tmp_path / "incoming", graph_out=tmp_path / "graph.json", quiet=True)
+    drop(ext.incoming, "refund_rate", page_yaml())
+    [r] = look(ext)
+    store.conn.close()
+    assert r["status"] == "tentative" and "ambiguous" in r["message"] and "ambiguous" in r["placed"]
+    fitting = {l["identity"]: l["status"] for l in r["links_proposed"] if l.get("identity")}
+    assert fitting == {"refunds = orders * refund_rate": "ambiguous", "refunds = purchases * refund_rate": "ambiguous"}
+    assert ext.graph.out_edges("refunds", "formula") == []                 # neither is applied
     assert by_check(r)["placement"]["status"] == "warn"
+    assert ext.graph.status["refund_rate"] == "tentative"
 
 
 def test_a_place_inside_the_outcome_tree_is_proposed_not_applied(ext):

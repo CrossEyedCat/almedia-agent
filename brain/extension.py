@@ -30,12 +30,13 @@ What is done with a definition, in this order; every step leaves a check with it
               formula on the totals, for every dimension; segments with a numerator and a zero
               denominator have no value of their own and are counted
   coverage    brain/validate.py on the whole graph with the metric in it (also bounds, when declared)
-  placement   identities that hold for any data and have the new metric as a part of an existing one
-              (x = y * m, x = y + m, x = y - m), found by signature. One that fits a metric with no
-              decomposition of its own, outside the outcome tree, is applied: that metric now
-              decomposes into the new one. Several: ambiguous, none is applied, the status is
-              tentative. Inside the outcome tree, or for a metric that is itself tentative: proposed,
-              left to a person. The rest are kept as alternatives with the reason
+  placement   identities that hold for any data and link the new metric m to two existing ones, found
+              by signature. A product or a sum (x = y * m, x = y + m) makes x a whole and m a part of
+              it; when x has no decomposition of its own and is outside the outcome tree, it is
+              applied: x now decomposes into m, and m is registered as a leaf. Two such places:
+              ambiguous, none is applied, the status is tentative. x inside the outcome tree, or m
+              itself tentative: proposed, left to a person. A difference (x = y - m, x = m - y) and
+              an x that already decomposes are kept as alternatives with the reason
   monitoring  a ratio of two column metrics is registered as an atomic rate, the shape the monitor
               watches. The monitor builds its watch list and its columns once, at start; when it has
               a `rewatch()` it is called after every change of the graph and the message says
@@ -130,7 +131,7 @@ def _check(name: str, status: str, detail: str) -> dict:
 
 def _words(items) -> str:
     items = [str(i) for i in items]
-    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+    return ", ".join(items[:-1]) + " and " + items[-1] if len(items) > 1 else "".join(items)
 
 
 # ------------------------------------------------------------------------------------ formula search
@@ -204,28 +205,32 @@ def compare(reading: Reading, calc: np.ndarray, tol: float) -> dict:
 
 
 # ------------------------------------------------------------------------------------- placement
+# (identity, decomposition of x, how y and the new metric m combine, role of m, x is the whole)
+# A product or a sum makes x the whole and m a part of it: that can become x's decomposition. A difference
+# makes x what is left of something: it is true, it is reported, and it is never applied.
 _FORMS = (
-    ("{x} = {y} * {m}", "{y} * {m}", lambda y, m: y * m, "a factor"),
-    ("{x} = {y} + {m}", "{y} + {m}", lambda y, m: y + m, "a term"),
-    ("{x} = {y} - {m}", "{y} - {m}", lambda y, m: y - m, "a term"),
+    ("{x} = {y} * {m}", "{y} * {m}", lambda y, m: y * m, "a factor", True),
+    ("{x} = {y} + {m}", "{y} + {m}", lambda y, m: y + m, "a term", True),
+    ("{x} = {y} - {m}", "{y} - {m}", lambda y, m: y - m, "a term", False),
+    ("{x} = {m} - {y}", "{m} - {y}", lambda y, m: m - y, "a term", False),
 )
 
 
 def identities(base: MetricGraph, sig: dict[str, np.ndarray], name: str) -> list[dict]:
-    """Identities that hold for any data and make the new metric a part of an existing one. Found on
-    the numeric signatures, so no data is read and nothing is fitted."""
+    """Identities that hold for any data and link the new metric to two existing ones. Found on the
+    numeric signatures, so no data is read and nothing is fitted."""
     names = [m for m in base.specs if m in sig]
     if not names:
         return []
     table = np.array([sig[m] for m in names])
     out = []
-    for text, decomposition, fn, role in _FORMS:
+    for text, decomposition, fn, role, whole in _FORMS:
         made = fn(table, sig[name])                                    # row j: y_j combined with the new metric
         hit = np.isclose(table[:, None, :], made[None, :, :], rtol=1e-9, atol=0.0).all(axis=2)
         for i, j in zip(*np.nonzero(hit)):
             if i != j and np.all(np.isfinite(made[j])):
                 x, y = names[i], names[j]
-                out.append({"parent": x, "other": y, "role": role,
+                out.append({"parent": x, "other": y, "role": role, "whole": whole,
                             "identity": text.format(x=x, y=y, m=name),
                             "decomposition": decomposition.format(y=y, m=name)})
     return out
@@ -463,23 +468,23 @@ class Extension:
         if not isinstance(name, str) or not NAME_RE.match(name):
             raise Rejected("read", f"bad metric name {name!r}: use lower_snake_case, starting with a letter")
         if not (raw.get("formula") or raw.get("sql")):
-            raise Rejected("read", f"{name} needs a formula or a SQL query; the file gives neither")
+            raise Rejected("read", "it needs a formula or a SQL query; the file gives neither")
         if raw.get("sql") is not None and not isinstance(raw["sql"], str):
-            raise Rejected("read", f"{name}: sql must be one query as text, got a {type(raw['sql']).__name__}")
+            raise Rejected("read", f"sql must be one query as text, got a {type(raw['sql']).__name__}")
         if name in base.specs:
             owner = next((f"defined by {a.source}" for a in others.values() if a.spec.name == name), "a core metric")
-            raise Rejected("read", f"{name} already exists in the graph ({owner}); a new metric needs a new name")
+            raise Rejected("read", f"the name already exists in the graph ({owner}); a new metric needs a new name")
         try:
             spec = spec_from_dict(raw, origin="contributed")
         except SpecError as e:
-            raise Rejected("read", str(e)) from None
+            raise Rejected("read", str(e).removeprefix(f"{name}: ")) from None
         if spec.column:
-            raise Rejected("read", f"{name}: a contributed metric is defined by a formula or a query, not by a raw column")
+            raise Rejected("read", "a contributed metric is defined by a formula or a query, not by a raw column")
         for label, f in (("formula", spec.formula), ("decomposition", spec.decomposition)):
             missing = [n for n in (f.names if f else ()) if n not in base.specs]
             if missing:
                 near = [m for n in missing for m in difflib.get_close_matches(n, list(base.specs), n=1)]
-                raise Rejected("read", f"{name}: {label} uses unknown metrics {missing}"
+                raise Rejected("read", f"the {label} uses unknown metrics {missing}"
                                        + (f" (closest in the graph: {_words(near)})" if near else ""))
         checks.append(_check("read", "pass", f"definition read: {_words(sorted(raw))}"))
 
@@ -506,7 +511,7 @@ class Extension:
                 evaluator = Evaluator(trial, self.store)
                 calc = self._formula_values(evaluator, reading, name)
             except (GraphError, NotComputable) as e:
-                raise Rejected("formula", str(e)) from None
+                raise Rejected("formula", str(e).removeprefix(f"{name}: ")) from None
             stats = compare(reading, calc, spec.tolerance)
             if not spec.sql or not (stats["bad"] or stats["sql_value_only"] or stats["only_sql_rows"]):
                 break
@@ -539,7 +544,7 @@ class Extension:
             raise Rejected("formula", f"{formula.text} cannot be computed from the columns of facts_hourly", **extra)
         twin = next((m for m in base.specs if m in sig and same(sig[m], sig[name])), None)
         if twin is not None:
-            raise Rejected("alias", f"{name} is an alias of {twin}: {formula.text} gives the same value as {twin} for "
+            raise Rejected("alias", f"it is an alias of {twin}: {formula.text} gives the same value as {twin} for "
                                     f"any data, so no new node was added", alias_of=twin,
                            placed=f"not placed: {name} is the existing metric {twin} under another name", **extra)
         checks.append(_check("alias", "pass", f"no existing metric has this definition: its signature on {N_POINTS} random "
@@ -559,10 +564,10 @@ class Extension:
         try:
             trial, validation = self._adopt(accepted)
         except GraphError as e:
-            raise Rejected("placement", str(e), **extra) from None
+            raise Rejected("placement", str(e).removeprefix(f"{name}: "), **extra) from None
         for c in validation:
             if c.metric == name and c.status == "fail":
-                raise Rejected(c.check, f"{name}: {c.detail}", **extra)
+                raise Rejected(c.check, c.detail, **extra)
             if c.metric == name and c.check in ("coverage", "bounds"):
                 checks.append(_check(c.check, c.status, f"{c.detail} (last {VALIDATE_DAYS} days, all segments together)"))
         proven = next((c.detail for c in validation if applied and c.metric == applied["parent"] and c.check == "identity"), "")
@@ -767,6 +772,9 @@ class Extension:
                 c.update(status="alternative", reason=f"{parent.name} already decomposes as {own.text}")
             elif parent.atomic:
                 c.update(status="alternative", reason=f"{parent.name} is declared atomic")
+            elif not c["whole"]:
+                c.update(status="alternative", reason=f"it makes {parent.name} what is left of another metric, not a "
+                                                      f"whole made of parts")
             elif leaf is None:
                 c.update(status="alternative", reason=f"the definition of {name} says how it decomposes itself")
             else:
@@ -838,12 +846,13 @@ class Extension:
     def _placed_sentence(self, final: MetricSpec, found: list[dict], applied: dict | None) -> str:
         name, g = final.name, self.graph
         kind = "formula" if final.investigative_formula is not None else "definition"
-        outcomes = _words(g.top_outcomes()) or "none"
+        outcomes = _words(g.top_outcomes())
+        beside = f"outside the tree of the outcome {outcomes}" if outcomes else "in a tree of its own"
         parts = []
         if applied is not None:
             parent = applied["parent"]
             reach = f"{parent} is under the outcome {outcomes}" if parent not in g.outside_tree() else \
-                f"{parent} is not under the outcome {outcomes}, so the two are drawn as a tree of their own"
+                f"{parent} is not under the outcome {outcomes or '(none is declared)'}, so the two are drawn as a tree of their own"
             parts.append(f"{name} is {applied['role']} of {parent} ({applied['identity']}); {reach}")
         else:
             fitting = [c for c in found if c["status"] == "ambiguous"]
@@ -852,8 +861,8 @@ class Extension:
                              f"({'; '.join(c['identity'] for c in fitting)}) and none was applied, so it stands by its "
                              f"own formula {final.formula.text}")
             else:
-                parts.append(f"{name} stands by its own formula {final.formula.text}, outside the tree of the outcome "
-                             f"{outcomes}: no metric without a decomposition is made of it")
+                parts.append(f"{name} stands by its own formula {final.formula.text}, {beside}: no metric without a "
+                             f"decomposition is made of it")
         for c in found:
             if c["status"] == "proposed":
                 parts.append(f"proposed, not applied: {c['identity']} ({c['reason']})")
