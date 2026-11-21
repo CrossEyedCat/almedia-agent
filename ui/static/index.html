@@ -244,12 +244,13 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
   }
   function renderExtra(shown) {
     var x = $('extra'); x.textContent = '';
-    if (dom === 'all' || !graph) return;
+    if (!graph) return;
     var rest = (domains.filter(function (d) { return d.id === dom; })[0] || { metrics: [] }).metrics;
+    if (dom === 'all') rest = list(graph.nodes).filter(function (n) { return n.kind === 'metric'; }).map(function (n) { return n.id; });
     if (dom === 'other') rest = list(graph.nodes).filter(function (n) { return n.kind === 'metric' && !domOf[n.id]; }).map(function (n) { return n.id; });
     rest = rest.filter(function (m) { return !(shown && shown[m]) && meta[m]; });
     if (!rest.length) return;
-    x.appendChild(text('Also in this domain, not on the formula tree: '));
+    x.appendChild(text(dom === 'all' ? 'Not on the formula tree: ' : 'Also in this domain, not on the formula tree: '));
     rest.forEach(function (m) { var b = el('button', null, [m]); b.onclick = function () { selNode = m; mode = 'node'; renderDetail(); applyStyles(); }; x.appendChild(b); });
   }
   function applyStyles() {
@@ -396,11 +397,12 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
     list(g.nodes).forEach(function (n) { if (n.kind === 'metric') meta[n.id] = n; });
     domains.forEach(function (d) { d.metrics.forEach(function (m) { domOf[m] = d.id; }); });
   }
+  // Compare complete payloads: values and links can change without IDs or counts changing.
   function graphSignature(g) {
-    return JSON.stringify([list(g.nodes).map(function (n) { return [n.id, n.status]; }), list(g.trees).map(function (t) { return t.metric; }), list(g.edges).length]);
+    return JSON.stringify(g);
   }
   function incidentSignature() {
-    return JSON.stringify(incidents.map(function (i) { return [i.id, i.status, i.last_seen, list(i.trail).length, str(i.report).length, list(i.hypotheses).length]; }));
+    return JSON.stringify([incidents, skipped]);
   }
   function refresh() {
     get('/api/state').then(function (s) {
@@ -417,7 +419,7 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
       $('exbadge').textContent = '';
       if (example) $('exbadge').appendChild(el('span', 'pill example', ['showing the contract example, no live incident yet']));
       var scope = inScope();
-      if (!incidents.some(function (i) { return i.id === selInc; })) {      // the selected one is gone: open the first
+      if (flipped || !incidents.some(function (i) { return i.id === selInc; })) {      // new live feed or missing selection: open the first in scope
         selInc = scope.length ? scope[0].id : null; if (mode === 'incident' || flipped) mode = 'incident';
       }
       note('');
