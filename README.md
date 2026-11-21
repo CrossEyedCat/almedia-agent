@@ -131,15 +131,19 @@ A picture of the brain - the data path, the graph as loaded from the code and th
 
 ### 3.3 Extension agent (M4)
 
-Deterministic first: a new metric gets a formula and a place without a language model.
+Built in `brain/extension.py`; no language model is used. The live monitor looks into `$INCOMING_METRICS_DIR` on every poll, takes a `<name>.yaml` once it reads the same on two looks in a row, and answers with `<name>.result.json`: a status, a message, and every check with its numbers. On the 28-day demo data the console's `refund_rate` is answered in about two seconds.
 
-1. **Run the SQL** in the sandbox (contract tables only, time and row limits) and read its grain from the result columns.
-2. **Find the formula.** Use the given one, or search formulas over existing metrics (a single metric, `a / b`, `a × b`, `a ± b`, with a constant) that reproduce the SQL values at its grain: about 4,000 candidates, under a second.
-3. **Check what the SQL really defines.** Compare row sets in both directions: a SQL that returns only part of the rows is a filtered metric and is registered as scoped or `tentative`, not as valid everywhere. Roll-up test: split every fact row in two and rerun the SQL; a function of sums does not change, an average of rows does.
-4. **Recognise aliases.** Each definition has a numeric signature (its value on random column values). A new metric with the signature of an existing one is reported as an alias, not added as a node.
-5. **Find its place.** Search identities that link the new metric to existing ones (`x = y × m`, `x = y + m`, `m = x / y`, …). Rank them (a parent inside the outcome tree first, then fewer hops to the outcome) and keep the others as alternatives. When several fit equally the status is `ambiguous` and the report says so.
-6. **Cause links.** Proposed links (rules or a language model) are admitted only if they pass structural checks (no cycle, not already arithmetic, not a duplicate) and they stay `assumed`.
-7. **Re-validate the whole graph** (0.7 s on 28 days) and start monitoring the metric at its grain.
+1. **Read the definition.** A new lower_snake_case name with a formula, a query or both. The formula may use only metrics the graph has (a near miss gets a suggestion). A definition may set the tolerance of its own comparison only above 0 and up to 1e-4 (the default is 1e-6); anything looser is rejected.
+2. **Run the SQL** inside the contract tables with a 3 s time limit and a 500,000-row limit, and read its grain from the result columns.
+3. **Find the formula.** The given one, or a search: every formula of the shapes `a`, `a / b`, `a * b`, `a + b`, `a - b` over the column metrics (1,045 candidates for 19 columns) is computed on the same rows, and the one that reproduces every value of the query is taken.
+4. **Check what the SQL really defines.** Row by row against the formula at the query's grain. Row sets in both directions: rows the facts lack reject the definition, rows the query lacks make it a filtered metric (`tentative`). Split test: the query is run again on a private in-memory copy of the last 24 hours with every fact row split in two; a function of sums returns the same values, an average or a count of rows does not (`tentative`).
+5. **Recognise aliases.** Each definition has a numeric signature (its value on random column values, `brain/signature.py`). A definition with the signature of an existing metric is reported as an alias and not added. One exception: when that metric is a tentative contribution and the new definition has no caveat, the new one takes its place and the tentative one's file is answered as the alias.
+6. **Find its place.** Identities that hold for any data and link the new metric to two existing ones (`x = y * m`, `x = y + m`, differences) are found by signature. A product or a sum whose whole has no decomposition yet and lies outside the outcome tree is applied, when it is the only such place and the new metric has no caveat. Two such places are `ambiguous`: none is applied and the status is `tentative`. A place inside the outcome tree, or any place of a metric that is itself tentative, is proposed and left to a person. The alternatives stay in the result with the reason.
+7. **Re-validate and watch.** `brain/validate.py` runs on the whole graph with the metric in it, the graph export is written again, and a ratio of two columns joins the monitor's watch list from the next tick (`Monitor.rewatch`).
+
+Statuses: `validated`, `tentative` (in the graph, with the caveat named in the message), `rejected` (not in the graph, with the reason). A changed file replaces what it defined before; a text that is rejected withdraws the metric.
+
+**Not built.** Formulas with constants or with more than two metrics in the search. Proposing cause links for a new metric: a definition may declare `may_affect` links itself, and they stay `assumed`.
 
 ### 3.4 Monitoring (M2)
 
@@ -157,15 +161,16 @@ Built in `brain/clock.py`, `brain/stats.py`, `brain/monitor.py`, `brain/impact.p
 
 ### 3.5 Investigation (M3)
 
-- **Two coherent states.** Actual and expected sums for the incident window at the finest grain; everything below compares these two.
-- **Attribution.** One function gives, for every leaf factor, the part of the outcome change it explains, in EUR. It walks the formula DAG and sums over all paths; sums split exactly, products use the logarithmic mean Divisia index (LMDI, an exact decomposition), with a Shapley split as the fallback for zeros and other formula shapes. It never just follows the largest child: `gmv` reaches `contribution` through fees and through discounts with opposite signs.
-- **Localization.** For the leading factor, every element of every combination of dimensions is scored (479 elements for 4 countries, 3 platforms, 5 categories and 3 channels) by how well "one common shift of the rate inside this element" explains the data. The best element is accepted when it clearly beats the runner-up. The scan is exhaustive because it is cheap here; no greedy order of dimensions is needed.
-- **Mix versus rate.** Attribution runs per cell and is then summed, so a shift in the mix of segments is not booked as a change of a rate.
-- **Context.** Data freshness first. Then every release and calendar event that starts no later than an hour after the onset and whose scope (country, platform) contains the localized segment is a candidate; `systems` tags rank the candidates.
-- **Hypotheses.** Candidates are leaf factors in a cell, events and `may_affect` parents. A `may_affect` hypothesis is tested inside the incident: the cause must itself be anomalous in the same segment, in the same or an earlier hour, and move the way its sign predicts. Each hypothesis gets a score (share of the change explained, timing, scope match, consistency) and a label: `supported`, `plausible` or `rejected`.
-- **First cause versus symptom.** First-cause candidates are leaf factors and events; a metric above them is a symptom of its factors.
-- **Stop rule.** The leading hypothesis explains most of the change and beats the runner-up by a margin, or nothing is left to test, or the query budget is spent.
-- **Honesty check.** A plain ranking of the most anomalous factor and cell is kept as a baseline in the scoring harness; the graph has to beat it.
+Built in `brain/investigate.py`, `brain/localize.py`, `brain/attribution.py`; it runs on every tick for every open incident that has a live alert on that tick (an open incident without one keeps its last report until it is resolved) and records each question and its answer in the trail.
+
+- **Cause and symptom.** Among the metrics that moved, one that another moved metric may affect (a `may_affect` link, in the direction the link predicts) is read as a symptom. The investigation leads with a cause candidate.
+- **Localization.** Every place the dimensions can name that has counts in the window is scored on the 180 finest cells: at most 479 places and the whole (a place with nothing to divide by is left out). The score is the log-likelihood gain of "the rate moved by one common factor inside this place and nowhere else" over "nothing moved" (binomial for proportions, so a cell with 0 of 3 is weak evidence; Gaussian on the historical spread for other ratios), minus the price of the search: ln(number of places of that kind) + ln(number of kinds). The monitor's place is confirmed, narrowed (only when the rest of it is quiet), widened (only when the wider place moved as one) or kept; a fault in a combination that no watched series covers is narrowed to it. When the rate changed direction during the incident (an ad budget that overspends and then runs dry), the place is read from the hours since the last change of direction. A different place that explains the counts nearly as well is reported under "still uncertain".
+- **Attribution.** One function splits the outcome's change over the atomic factors along every path of the formula DAG: the logarithmic mean Divisia index (LMDI) per product, which is exact and leaves no interaction term, with a Shapley split as the fallback for zeros and other formula shapes. The incident's cost is a counterfactual, in EUR and in orders: the outcome as observed against the outcome with the moved rates put back to their baselines, together with any rate a directed link from them predicts to move, even while the data does not show it yet (that is then named under "still uncertain"). The baselines are frozen when the cost is first reported, so a long incident is not measured against itself. `explained_share` is that effect as a share of the whole gap to the state with every judged rate at its baseline (capped at 1, left out when the two have opposite signs); the rest is what the other rates differ from their baselines by: noise, or something else going on in the same place, and the trail names the largest of them. Traffic is taken as given.
+- **Mix versus rate.** For the leading rate the change inside the place is split into "the rates of the cells moved" and "the weights of the cells moved". A mix shift is one of the explanations that are tested, and is rejected or kept by its share.
+- **Hypotheses.** Every release from 12 h before the onset until now is scored on three questions. Is its system linked to what moved (the `systems` tags of the graph)? Does its scope fit the place (exactly, wider, only part of it, or elsewhere, with the rate inside its scope as evidence)? Did the change start with it (within two hours of the estimated onset, before or after; earlier than that only if the hours in between already lean the same way; more than two hours after it never)? `supported` needs all three. The others stay in the report as `plausible` or `rejected`, each with its reason. Without a supported release the moved metric itself is the cause candidate, supported once the second movement that a directed link predicts is there. A planned event, late data and a mix shift are always tested as well.
+- **Stop step.** Every candidate is tested on every run; nothing stops early. The trail's last step (`stop`) states the outcome: the leading explanation is supported and ahead of the next one, supported with every other one rejected, supported but not ahead of a rival, or not supported yet.
+- **Not built.** The plain-ranking baseline for the scoring harness (the honesty check); attribution per finest cell (it runs at the incident's place); a range around the cost (the estimate is noisy for a short incident in a small place); causes that are not in the context tables.
+- **Known limits.** Two faults of one metric that start in the same hour in places that share a country or a platform can be reported as one incident at the series that contains both (DE x Android and DE x iOS as DE), with no release supported; faults in places that share nothing stay two incidents. A harmless release of the same system and place within two hours of the onset is `supported` next to the real one.
 
 ### 3.6 Reporting and lifecycle
 
@@ -289,13 +294,15 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [x] Alert feed: status, metric, segment, impact, first and last seen.
 
 **B — investigator v1**
-- [ ] Attribution: one function over the formula DAG, all paths summed (exact for sums, LMDI for products, Shapley fallback); result in € of the outcome.
-- [ ] Localization: score every element of every combination of dimensions (479) for the leading factor; accept the best when it clearly beats the runner-up.
-- [ ] Context checks: data freshness first, then every release and calendar event that overlaps the localized segment in time and scope, ranked by `systems` tags.
-- [ ] Trail: every query and its result is recorded as a step.
-- [ ] Incident JSON written to `incidents/` per the contract.
+- [x] Attribution: one function over the formula DAG, all paths summed (LMDI per product, exact; Shapley fallback); the cost is a counterfactual in EUR of the outcome and in orders. `brain/attribution.py`.
+- [x] Localization: every place of every combination of dimensions that has counts (at most 479 and the whole) scored for the leading factor on the finest cells; the monitor's place is confirmed, narrowed, widened or kept, and a close different place is reported as doubt. `brain/localize.py`.
+- [x] Context checks: freshness first, then the calendar, then every release from 12 h before the onset, scored on link (`systems` tags), scope and timing. Rival explanations stay in the report as `plausible` or `rejected` with the reason; a mix shift is tested too. `brain/investigate.py`.
+- [x] Cause and symptom: a moved metric that another moved metric may affect is read as a symptom.
+- [x] Trail: watch, compare, drill, follow, decompose, check (freshness, calendar, each release), compare, stop; every step with its numbers.
+- [x] Incident JSON written to `incidents/` per the contract; new optional fields `localization`, `explained_share`, hypothesis `score`, driver `role`.
+- [ ] Plain-ranking baseline in the scoring harness, to show what the graph adds (3.5, honesty check).
 
-**A+B checkpoint:** the S1 incident in the UI says DE × Android, `payment_success_rate`, release `payments-sdk`, with numbers.
+**A+B checkpoint:** the S1 incident in the UI says DE × Android, `payment_success_rate`, release `payments-sdk`, with numbers. **Done 21 Nov.** In the console the report names DE × Android, the loss in EUR and in orders, the release `payments-sdk 4.2` as the supported cause with its three pieces of evidence (linked system, exact scope, released in the hour the change began), and lists late data and a mix shift as tested and rejected; with harmless releases next to the fault it rejects the release in another place and the release of an unlinked system with the reason. Scoring at `48b6516`, 49-day generator with routine releases, ten seeds (4, 8, 9, 10, 11, 12, 13, 22, 71, 80): 120 of 120 faults detected, 100 % localized, right cause 118 of 120 (the two misses are stockouts whose effect on the add-to-cart rate was too weak to confirm the link), 0 false alarms, 80 of 80 innocent events silent. Not an independent holdout: these seeds were also run while the investigator was built.
 
 ### M4 Extension and innocent changes — Sun 00:00–06:00 (sleep in shifts)
 
@@ -304,15 +311,15 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [x] S3: the payments source arrives 2 h late in `ingestion_log`. (Any source; `python -m sim.inject data_delay --source payments ...`.)
 - [x] Buttons in the UI: payment fault, promo, data delay, add metric.
 - [x] Report view: evidence numbers, hypotheses with status, trail, what remains uncertain.
-- [x] "Add metric" endpoint: POST YAML to incoming_metrics and show the result file when B writes it (B integration pending).
+- [x] "Add metric" endpoint: POST YAML to incoming_metrics and show the result file when B writes it (B's side is `brain/extension.py`, section 3.3).
 
 **B — extension and reasoning**
-- [ ] Extension agent, no language model needed: run the SQL with time and row limits → find or check the formula by search over existing metrics → compare row sets both ways and test the roll-up → detect aliases by signature → find the place (alternatives kept, `ambiguous` when several fit) → re-validate → monitor.
-- [ ] Calendar-aware expectation: a planned event that overlaps a deviation in time and scope explains it; reported, not alerted.
-- [ ] Hypothesis scoring with `supported` / `plausible` / `rejected`; a `may_affect` link is tested inside the incident (cause anomalous in the same segment, same or earlier hour, direction matches its sign).
-- [ ] First-cause rule: candidates are leaf factors in a cell and events; a metric above them is a symptom.
+- [x] Extension agent, no language model: run the SQL with time and row limits → find or check the formula by search over the column metrics (1,045 candidates) → compare row sets both ways and run the split test → detect aliases by signature → find the place (alternatives kept, `ambiguous` when several fit) → re-validate → watch from the next tick. `brain/extension.py`, `tests/test_extension.py`; as built in 3.3. A rate that arrived at run time is judged like the others: in the test, refunds raised in one country after the hand-over open an incident on the first affected hour, with the place; no cost is claimed, because the rate has no path to the outcome.
+- [x] Calendar-aware expectation: a planned event that overlaps a deviation in time and country explains it for the metrics the graph links to the calendar (systems demand, pricing, promotions); reported as `explained`, not alerted. For other metrics the event is tested and rejected as a cause. Built with the monitor (3.4).
+- [x] Hypothesis scoring with `supported` / `plausible` / `rejected`; a `may_affect` link is tested inside the incident (the linked metric must have moved in the same place, in the direction the link predicts). Built with the investigator (3.5).
+- [x] First-cause rule: a moved metric that another moved metric may affect is a symptom; the report leads with the cause candidate (3.5).
 
-**A+B checkpoint:** S2 gives no alert (explained), S3 is held, S4 is placed and validated and visible in the graph.
+**A+B checkpoint:** S2 gives no alert (explained), S3 is held, S4 is placed and validated and visible in the graph. **Done 21 Nov**, one live run at `54ef95b` on a fresh 28-day backfill, in the console. S4: **Add refund_rate** answered "validated on 28 days of data (the SQL equals refunds / orders on 72054 rows); placed as a factor of refunds (refunds = orders * refund_rate); watched from the next tick" within seconds, and the graph shows the new tree. Then, with the new rate watched: the payment fault was raised with the release as the supported cause and resolved after the rollback; S2, the FR promo, appeared as `explained` and opened no incident; S3, payments two hours late, was held as pending for two hours and opened no incident.
 
 **Sleep:** A 00:30–04:30, B 04:30–08:30 (or swap). Whoever is awake keeps the other's part untouched.
 
@@ -324,7 +331,7 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [x] Demo script `docs/demo.md`: exact clicks and timing, plus a fallback if something hangs. Draft is there; lines marked [B] need B's confirmation.
 
 **B**
-- [ ] Lifecycle `open → ongoing → resolved`; dedup by fingerprint; updates instead of new alerts.
+- [x] Lifecycle `open → ongoing → resolved`: one file per incident, matched by place and related metrics and updated in place; resolved only on evidence of health. `brain/incidents.py`, built with the monitor (3.4, 3.6).
 - [ ] LLM narration from structured evidence, template fallback, 20 s timeout.
 - [ ] Unattended run of one simulated day with mixed events: no crash, no duplicate alerts.
 

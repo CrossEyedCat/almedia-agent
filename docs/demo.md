@@ -1,6 +1,6 @@
 # Demo script (3 minutes)
 
-Status: integrated monitor a757828 has been replay-tested, and run live in the order of this script (payment fault, stockouts, search regression, promo: three separate incidents, the promo explained). Live recovery and the three-minute timing still need rehearsal. The new-metric handover is still pending B's implementation; do not present it as complete.
+Status: integrated monitor a757828 has been replay-tested, and run live in the order of this script (payment fault, stockouts, search regression, promo: three separate incidents, the promo explained). Live recovery and the three-minute timing still need rehearsal. The whole script was run once in the console at `54ef95b` (investigator and new-metric intake on `main`): new metric validated and watched, payment fault raised and resolved after the rollback, promo explained, late data held.
 
 ## Before we start (all terminals at the repository root)
 
@@ -13,9 +13,11 @@ Status: integrated monitor a757828 has been replay-tested, and run live in the o
 
 ```
 python -m sim.run --backfill 28d --db data/market.db --force
-python -m brain.run --db data/market.db --incidents incidents --graph-out data/graph.json --fresh
+python -m brain.run --db data/market.db --incidents incidents --incoming incoming_metrics --graph-out data/graph.json --fresh
 # --fresh empties incidents/ (archive it first, step 2, if the run is worth keeping). Without it a restarted
 # monitor leaves the previous run's incident and pending files as they were and opens duplicates beside them.
+# It also removes old answers in incoming_metrics/. A definition left there is taken again at start, so the
+# folder must be empty (step 2) for the new-metric step to happen in front of the audience.
 python -m sim.live --speed 2 --db data/market.db
 ```
 
@@ -55,7 +57,7 @@ Never point the live UI at eval_incidents. Missing or empty scoring output is an
 | 1:35 | "Someone rolls the release back. The incident should close by itself." | Pick the fault in **In progress**, click **End it (rollback)** | A rollback release appears; after a few normal hours the incident turns resolved [B] |
 | 1:45 | "Not everything unusual is a problem: a planned French promo lifts orders." | Click **Promo (12 h)** (FR) | No new incident; the calendar explains it [B] |
 | 2:00 | "If data arrives late, it waits instead of crying wolf." | Click **Arrives 2 h late** (payments) | No incident for those hours [B] |
-| 2:15 | Only after B's handover is integrated: "A new metric arrives as a definition and a query." | Click **Add refund_rate** | Must get a real validated result and updated graph; currently this step is a known gap, not a completed capability |
+| 2:15 | "A new metric arrives as a definition and a query. The system checks the query against the formula, finds the metric's place in the graph and starts watching it." | Click **Add refund_rate** | Message "refund_rate added: validated on 28 days of data ... placed as a factor of refunds ... watched from the next tick" (about 2 s); a new tree `refunds` = `orders` x `refund_rate` in the graph [B] |
 | 2:40 | "We scored it on N random faults and innocent events: detection, delay, false alarms." | Show `docs/results.md` | Numbers from `python -m sim.score`, not hand-picked |
 | 2:55 | One-line close: "It watches the business, not the servers." | | |
 
