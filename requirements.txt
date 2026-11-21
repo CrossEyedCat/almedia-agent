@@ -5,3 +5,4 @@ httpx
 pandas
 pytest
 python-dotenv
+pyyaml
