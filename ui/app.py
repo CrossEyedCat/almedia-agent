@@ -74,25 +74,43 @@ def graph():
     return json.loads(GRAPH_JSON.read_text(encoding="utf-8"))
 
 
-def _incidents() -> tuple[list[dict], bool]:
-    items = []
-    if INCIDENTS_DIR.exists():
+def _no_constant(name: str):
+    raise ValueError(f"{name} is not valid JSON")
+
+
+def _read_incident(path: Path) -> dict | None:
+    """One incident file, or None when it is not an incident: unreadable, half written, NaN or Infinity (Python's
+    json.dumps writes them, browsers refuse them), not an object, or without a text id and metric."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"), parse_constant=_no_constant)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("id"), str) or not isinstance(data.get("metric"), str):
+        return None
+    return data
+
+
+def _incidents() -> tuple[list[dict], bool, int]:
+    """(incidents, is_example, number of files ignored). The contract example is shown only when the folder does not
+    exist; once the monitor has made it, an empty folder means "nothing found"."""
+    if INCIDENTS_DIR.is_dir():
+        items, skipped = [], 0
         for p in sorted(INCIDENTS_DIR.glob("*.json")):
-            try:
-                items.append(json.loads(p.read_text(encoding="utf-8")))
-            except (OSError, json.JSONDecodeError):
-                continue  # a file that is being written right now
-    if items:
-        return sorted(items, key=lambda i: i.get("last_seen", ""), reverse=True), False
-    if EXAMPLE_INCIDENT.exists():  # nothing detected yet: show the contract example, clearly marked
-        return [json.loads(EXAMPLE_INCIDENT.read_text(encoding="utf-8"))], True
-    return [], False
+            d = _read_incident(p)
+            if d is None:
+                skipped += 1
+            else:
+                items.append(d)
+        return sorted(items, key=lambda i: str(i.get("last_seen") or ""), reverse=True), False, skipped
+    if EXAMPLE_INCIDENT.exists():
+        return [json.loads(EXAMPLE_INCIDENT.read_text(encoding="utf-8"))], True, 0
+    return [], False, 0
 
 
 @app.get("/api/incidents")
 def incidents():
-    items, is_example = _incidents()
-    return {"example": is_example, "incidents": items}
+    items, is_example, skipped = _incidents()
+    return {"example": is_example, "incidents": items, "skipped": skipped}
 
 
 @app.get("/api/state")
@@ -193,6 +211,19 @@ def end_fault(req: End):
         raise HTTPException(409, str(exc))
     finally:
         con.close()
+
+
+@app.get("/api/metric/{name}")
+def metric_result(name: str):
+    """What the monitor did with a contributed metric: <name>.result.json next to the YAML (404 until it exists)."""
+    safe = "".join(ch for ch in name if ch.isalnum() or ch == "_")
+    path = INCOMING_DIR / f"{safe}.result.json"
+    if not safe or not path.is_file():
+        raise HTTPException(404, "no result yet")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"), parse_constant=_no_constant)
+    except (OSError, ValueError):
+        raise HTTPException(404, "the result is not readable yet")
 
 
 class NewMetric(BaseModel):

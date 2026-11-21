@@ -50,12 +50,14 @@ svg text { font-family: var(--ui); }
 .edge { fill: none; stroke: var(--edge); stroke-width: 1.2; }
 .dim .node, .dim .edge { opacity: .35; } .dim .node.on, .dim .edge.on { opacity: 1; }
 .dim .edge.on { stroke: var(--hot); stroke-width: 2; }
+.edge.may { stroke-dasharray: 4 3; stroke: var(--muted); opacity: .5; }
+.sign { fill: var(--muted); font: 700 13px var(--ui); text-anchor: middle; }
 /* right side */
 #side { display: grid; gap: 24px; }
 #feed { max-height: 232px; overflow: auto; padding-bottom: 8px; }
-.inc { display: grid; grid-template-columns: 56px 1fr auto; gap: 0 16px; padding: 8px 24px; cursor: pointer; align-items: baseline; }
+.inc { display: grid; grid-template-columns: 88px 1fr auto; gap: 0 16px; padding: 8px 24px; cursor: pointer; align-items: baseline; }
 .inc.sel { background: var(--hot-bg); }
-.inc .t { font-weight: 500; } .inc .m { color: var(--muted); font-size: 12px; }
+.inc .t { font-weight: 500; } .inc .m { color: var(--muted); font-size: 12px; } .inc > .m:last-child { white-space: nowrap; }
 .detail { padding: 8px 24px 24px; display: grid; gap: 24px; }
 .detail h3 { margin: 0 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin: 4px 0 8px; } .bar i { display: block; height: 100%; background: var(--hot); }
@@ -76,6 +78,7 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
     <h1>Eye of the System</h1>
     <span class="muted" id="clock">connecting...</span>
     <span id="exbadge"></span>
+    <span class="muted" id="notice" role="status"></span>
     <a class="grow" href="/data">Data &rarr;</a>
   </header>
   <nav id="domains" aria-label="Business domain"></nav>
@@ -107,7 +110,8 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
       <span><i style="border-color:var(--amber);background:var(--amber-bg)"></i>ongoing</span>
       <span><i style="border-color:var(--ok);background:var(--ok-bg)"></i>resolved</span>
       <span><i style="border-color:var(--edge)"></i>no incident</span>
-      <span>dashed: shown again under another parent. Click a box for details.</span>
+      <span>solid line: formula. Dashed line with + or &minus;: possible cause. Definition, breakdown and context links are listed when you click a box.</span>
+      <span>dashed box: shown again under another parent.</span>
     </div>
     <div id="extra"></div>
   </section>
@@ -122,38 +126,47 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
 (function () {
   var NS = 'http://www.w3.org/2000/svg';
   var $ = function (id) { return document.getElementById(id); };
-  var graph = null, meta = {}, domains = [], domOf = {}, incidents = [], example = false;
+  var graph = null, meta = {}, domains = [], domOf = {}, incidents = [], example = false, skipped = 0, graphKey = '';
   var dom = 'all', selInc = null, selNode = null, mode = 'incident', drawn = null;
+  var LIVE = ['open', 'ongoing'], COUNTED = ['open', 'ongoing', 'resolved'];
 
-  function text(s) { return document.createTextNode(s == null ? '' : String(s)); }
-  function el(tag, cls, kids) { var e = document.createElement(tag); if (cls) e.className = cls; (kids || []).forEach(function (k) { e.appendChild(typeof k === 'string' ? text(k) : k); }); return e; }
+  // anything the monitor writes may have the wrong type: show it as text, never let it stop the page
+  function str(v) { return v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v)); }
+  function list(v) { return Array.isArray(v) ? v : []; }
+  function obj(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+  function text(s) { return document.createTextNode(str(s)); }
+  function el(tag, cls, kids) { var e = document.createElement(tag); if (cls) e.className = cls; (kids || []).forEach(function (k) { e.appendChild(k && k.nodeType ? k : text(k)); }); return e; }
   function get(url) { return fetch(url).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); }
   function post(url, body) {
     return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.detail || r.status); return j; }); });
   }
   function toast(msg) { $('toast').textContent = msg; }
-  function fmt(n, d) { return n == null ? '-' : Number(n).toLocaleString('en', { maximumFractionDigits: d == null ? 1 : d }); }
-  function segText(s) { var k = Object.keys(s || {}); return k.length ? k.map(function (x) { return s[x]; }).join(' x ') : 'all'; }
+  function num(n) { return typeof n === 'number' && isFinite(n) ? n : null; }
+  function fmt(n, d) { n = num(Number(n)); return n == null ? '-' : n.toLocaleString('en', { maximumFractionDigits: d == null ? 1 : d }); }
+  function segText(s) { var o = obj(s), k = Object.keys(o); return k.length ? k.map(function (x) { return str(o[x]); }).join(' x ') : 'all'; }
+  function when(t) { return str(t).replace('T', ' ').replace(':00Z', '').replace(/-/g, '‑'); }
   function svg(tag, attrs, parent) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+  function note(msg) { $('notice').textContent = msg || ''; }
 
   // ----------------------------------------------------------- domains
   function domainOf(metric) { return domOf[metric] || 'other'; }
   function domainLabel(id) { if (id === 'all') return 'All domains'; var d = domains.filter(function (x) { return x.id === id; })[0]; return d ? d.label : 'Other'; }
   function incidentNodes(i) {
-    var s = {}; s[i.metric] = true;
-    (i.contributions || []).forEach(function (c) { s[c.node] = true; });
+    var s = {}; s[str(i.metric)] = true;
+    list(i.contributions).forEach(function (c) { if (c && c.node) s[str(c.node)] = true; });
     return Object.keys(s);
   }
+  function status(i) { return str(i.status) || 'open'; }
   function touches(i, d) { return d === 'all' || incidentNodes(i).some(function (m) { return domainOf(m) === d; }); }
   function inScope() { return incidents.filter(function (i) { return touches(i, dom); }); }
-  function liveCount(d) { return incidents.filter(function (i) { return i.status !== 'resolved' && touches(i, d); }).length; }
+  function liveCount(d) { return incidents.filter(function (i) { return LIVE.indexOf(status(i)) >= 0 && touches(i, d); }).length; }
 
   function renderChips() {
     var nav = $('domains'); nav.textContent = '';
-    var list = [{ id: 'all', label: 'All' }].concat(domains);
-    if (graph && graph.nodes.some(function (n) { return n.kind === 'metric' && !domOf[n.id]; })) list.push({ id: 'other', label: 'Other' });
-    list.forEach(function (d) {
+    var l = [{ id: 'all', label: 'All' }].concat(domains);
+    if (graph && list(graph.nodes).some(function (n) { return n.kind === 'metric' && !domOf[n.id]; })) l.push({ id: 'other', label: 'Other' });
+    l.forEach(function (d) {
       var n = liveCount(d.id);
       var b = el('button', 'chip' + (d.id === dom ? ' on' : ''), [d.label].concat(n ? [el('span', 'n', [String(n)])] : []));
       b.setAttribute('aria-pressed', d.id === dom ? 'true' : 'false');
@@ -165,52 +178,66 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
   // ------------------------------------------------------------- graph
   function filterTree(n) {
     if (dom === 'all') return n;
-    var kids = (n.children || []).map(filterTree).filter(Boolean);
+    var kids = list(n.children).map(filterTree).filter(Boolean);
     if (domainOf(n.metric) === dom || kids.length) return { metric: n.metric, role: n.role, repeated: n.repeated, children: kids };
     return null;
   }
-  function layout(root) {
+  function layout(root, y0) {
     var nodes = [], edges = [], leaf = 0, DX = 180, DY = 36;
     (function walk(n, depth, parent) {
       var item = { n: n, x: depth * DX + 80, y: 0 }, ys = [];
-      (n.children || []).forEach(function (c) { ys.push(walk(c, depth + 1, item).y); });
-      item.y = ys.length ? (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2 : (leaf++) * DY + 24;
+      list(n.children).forEach(function (c) { ys.push(walk(c, depth + 1, item).y); });
+      item.y = ys.length ? (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2 : y0 + (leaf++) * DY + 24;
       nodes.push(item); if (parent) edges.push([parent, item]);
       return item;
     })(root, 0, null);
-    return { nodes: nodes, edges: edges, w: Math.max.apply(null, nodes.map(function (i) { return i.x; })) + 90, h: leaf * DY + 30 };
+    return { nodes: nodes, edges: edges, w: Math.max.apply(null, nodes.map(function (i) { return i.x; })) + 90, h: leaf * DY + 24 };
   }
   function health() {
     var h = {}, rank = { open: 3, ongoing: 2, resolved: 1 };
     incidents.forEach(function (i) {
-      var st = i.status || 'open';
+      var st = status(i);
+      if (!rank[st]) return;                                   // explained and pending do not colour the graph
       incidentNodes(i).forEach(function (m) { if (!h[m] || rank[st] > rank[h[m]]) h[m] = st; });
     });
     return h;
   }
   function drawGraph() {
     $('graph-title').textContent = 'Metric graph: ' + domainLabel(dom);
+    var wrap = $('graphwrap');
+    Array.prototype.slice.call(wrap.querySelectorAll('.empty')).forEach(function (e) { wrap.removeChild(e); });
     var g = $('g'); g.textContent = '';
     drawn = { edges: [], nodes: [] };
-    var root = graph && graph.trees && graph.trees.length ? filterTree(graph.trees[0]) : null;
-    if (!root) { $('graphwrap').appendChild(el('div', 'empty', ['No formula tree for this domain.'])); renderExtra(null); return; }
-    var L = layout(root);
-    g.setAttribute('viewBox', '0 0 ' + L.w + ' ' + L.h); g.style.width = '100%'; g.style.height = 'auto';
-    var ge = svg('g', {}, g), gn = svg('g', {}, g), shown = {};
-    L.edges.forEach(function (pair) {
+    var roots = list(graph && graph.trees).map(filterTree).filter(Boolean);
+    if (!roots.length) { wrap.appendChild(el('div', 'empty', ['No formula tree for this domain.'])); renderExtra(null); return; }
+    var all = { nodes: [], edges: [], w: 0, h: 0 };
+    roots.forEach(function (r) {
+      var L = layout(r, all.h);
+      all.nodes = all.nodes.concat(L.nodes); all.edges = all.edges.concat(L.edges);
+      all.w = Math.max(all.w, L.w); all.h += L.h + 8;
+    });
+    g.setAttribute('viewBox', '0 0 ' + all.w + ' ' + all.h); g.style.width = '100%'; g.style.height = 'auto';
+    var ge = svg('g', {}, g), gn = svg('g', {}, g), shown = {}, pos = {};
+    all.edges.forEach(function (pair) {
       var a = pair[0], b = pair[1], x1 = a.x + 75, x2 = b.x - 75, c = (x2 - x1) / 2;
       var p = svg('path', { d: 'M' + x1 + ',' + a.y + ' C' + (x1 + c) + ',' + a.y + ' ' + (x2 - c) + ',' + b.y + ' ' + x2 + ',' + b.y, 'class': 'edge' }, ge);
       drawn.edges.push({ el: p, from: a.n.metric, to: b.n.metric });
     });
-    L.nodes.forEach(function (i) {
-      shown[i.n.metric] = true;
-      var gr = svg('g', { 'class': 'node' + (i.n.repeated ? ' repeated' : ''), tabindex: 0, role: 'button', 'aria-label': i.n.metric, transform: 'translate(' + (i.x - 75) + ',' + (i.y - 13) + ')' }, gn);
+    all.nodes.forEach(function (i) {
+      shown[i.n.metric] = true; if (!pos[i.n.metric]) pos[i.n.metric] = i;
+      var gr = svg('g', { 'class': 'node' + (i.n.repeated ? ' repeated' : ''), tabindex: 0, role: 'button', 'aria-label': str(i.n.metric), transform: 'translate(' + (i.x - 75) + ',' + (i.y - 13) + ')' }, gn);
       svg('rect', { width: 150, height: 26, rx: 6 }, gr);
-      var t = svg('text', { x: 75, y: 17 }, gr); t.textContent = i.n.metric;
+      var t = svg('text', { x: 75, y: 17 }, gr); t.textContent = str(i.n.metric);
       var pick = function () { selNode = i.n.metric; mode = 'node'; renderDetail(); applyStyles(); };
       gr.addEventListener('click', pick);
       gr.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
       drawn.nodes.push({ el: gr, metric: i.n.metric });
+    });
+    // possible causes: dashed lines with the direction of the effect, when both ends are on screen
+    list(graph && graph.edges).filter(function (e) { return e.kind === 'may_affect' && pos[e.source] && pos[e.target]; }).forEach(function (e) {
+      var a = pos[e.source], b = pos[e.target], mx = (a.x + b.x) / 2 + 40, my = (a.y + b.y) / 2;
+      svg('path', { d: 'M' + (a.x + 75) + ',' + a.y + ' Q' + (mx + 40) + ',' + my + ' ' + (b.x + 75) + ',' + b.y, 'class': 'edge may' }, ge);
+      var s = svg('text', { x: mx + 28, y: my + 4, 'class': 'sign' }, ge); s.textContent = e.sign > 0 ? '+' : e.sign < 0 ? '−' : '?';
     });
     renderExtra(shown);
     applyStyles();
@@ -219,7 +246,7 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
     var x = $('extra'); x.textContent = '';
     if (dom === 'all' || !graph) return;
     var rest = (domains.filter(function (d) { return d.id === dom; })[0] || { metrics: [] }).metrics;
-    if (dom === 'other') rest = graph.nodes.filter(function (n) { return n.kind === 'metric' && !domOf[n.id]; }).map(function (n) { return n.id; });
+    if (dom === 'other') rest = list(graph.nodes).filter(function (n) { return n.kind === 'metric' && !domOf[n.id]; }).map(function (n) { return n.id; });
     rest = rest.filter(function (m) { return !(shown && shown[m]) && meta[m]; });
     if (!rest.length) return;
     x.appendChild(text('Also in this domain, not on the formula tree: '));
@@ -239,7 +266,7 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
         for (var k = 0; k < ks.length; k++) { var r = path(ks[k], target, seen); if (r) return [from].concat(r); }
         return null;
       };
-      (inc.contributions || []).forEach(function (c) { on[c.node] = true; (path(inc.metric, c.node, {}) || []).forEach(function (m) { on[m] = true; }); });
+      list(inc.contributions).forEach(function (c) { if (!c || !c.node) return; on[c.node] = true; (path(inc.metric, c.node, {}) || []).forEach(function (m) { on[m] = true; }); });
     }
     $('g').classList.toggle('dim', Object.keys(on).length > 0);
     drawn.nodes.forEach(function (n) {
@@ -257,86 +284,145 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
   function renderFeed() {
     $('feed-title').textContent = 'Incidents' + (dom === 'all' ? '' : ' in ' + domainLabel(dom));
     var f = $('feed'); f.textContent = '';
-    var list = inScope();
-    if (!list.length) { f.appendChild(el('div', 'empty', [dom === 'all' ? 'No incidents yet. The monitor is watching.' : 'No incident touches this domain.'])); return; }
-    list.forEach(function (i) {
-      var row = el('div', 'inc' + (i.id === selInc && mode === 'incident' ? ' sel' : ''), [
-        el('span', 'pill ' + (i.status || 'open'), [i.status || 'open']),
-        el('span', null, [el('span', 't', [i.metric + ' ' + (i.change && i.change.delta_pct != null ? fmt(i.change.delta_pct) + '%' : '')]),
-                          el('div', 'm', [segText(i.segment) + ', first seen ' + (i.first_seen || '').replace('T', ' ').replace(':00Z', '').replace(/-/g, '\u2011')])]),
-        el('span', 'm', [i.id])]);
-      row.tabIndex = 0;
-      var pick = function () { selInc = i.id; mode = 'incident'; renderFeed(); renderDetail(); applyStyles(); };
-      row.addEventListener('click', pick); row.addEventListener('keydown', function (e) { if (e.key === 'Enter') pick(); });
-      f.appendChild(row);
+    var l = inScope();
+    if (!l.length) { f.appendChild(el('div', 'empty', [dom === 'all' ? 'No incidents. The monitor is watching.' : 'No incident touches this domain.'])); }
+    l.forEach(function (i) {
+      try {
+        var ch = obj(i.change);
+        var row = el('div', 'inc' + (i.id === selInc && mode === 'incident' ? ' sel' : ''), [
+          el('span', 'pill ' + status(i), [status(i)]),
+          el('span', null, [el('span', 't', [str(i.metric) + ' ' + (num(ch.delta_pct) != null ? fmt(ch.delta_pct) + '%' : '')]),
+                            el('div', 'm', [segText(i.segment) + ', first seen ' + when(i.first_seen)])]),
+          el('span', 'm', [i.id])]);
+        row.tabIndex = 0;
+        var pick = function () { selInc = i.id; mode = 'incident'; renderFeed(); renderDetail(); applyStyles(); };
+        row.addEventListener('click', pick); row.addEventListener('keydown', function (e) { if (e.key === 'Enter') pick(); });
+        f.appendChild(row);
+      } catch (err) { f.appendChild(el('div', 'empty', ['An incident (' + str(i.id) + ') could not be shown: ' + err.message])); }
     });
+    if (skipped) f.appendChild(el('div', 'empty', [skipped + ' file' + (skipped > 1 ? 's' : '') + ' in the incidents folder ignored (not an incident, or still being written).']));
   }
   function section(title, kids) { var d = el('div', null, [el('h3', null, [title])]); kids.forEach(function (k) { d.appendChild(k); }); return d; }
   function kv(pairs) { var k = el('div', 'kv'); pairs.forEach(function (p) { k.appendChild(el('span', null, [p[0]])); k.appendChild(el('span', null, [p[1]])); }); return k; }
 
+  // the typed links of a metric, read from the graph export
+  function linksOf(m) {
+    var out = [], E = list(graph && graph.edges);
+    var by = function (kind) { return E.filter(function (e) { return e.kind === kind; }); };
+    var dims = by('breakdown').filter(function (e) { return e.source === m; }).map(function (e) { return e.dimension; });
+    if (dims.length) out.push(['Breaks down by', dims.join(', ')]);
+    var parts = by('formula').filter(function (e) { return e.source === m; }).map(function (e) { return e.target + (e.role ? ' (' + e.role + ')' : ''); });
+    if (parts.length) out.push(['Made of', parts.join(', ')]);
+    var feeds = by('formula').filter(function (e) { return e.target === m; }).map(function (e) { return e.source; });
+    if (feeds.length) out.push(['Feeds', feeds.join(', ')]);
+    var defs = by('definition').filter(function (e) { return e.source === m; }).map(function (e) { return e.target + (e.role ? ' (' + e.role + ')' : ''); });
+    if (defs.length) out.push(['Defined from', defs.join(', ')]);
+    var ctx = by('context').filter(function (e) { return e.target === m; }).map(function (e) { return e.source + (e.via ? ' (' + e.via + ')' : ''); });
+    if (ctx.length) out.push(['Context', ctx.join(', ')]);
+    var cause = function (e, other) { return e[other] + ' ' + (e.sign > 0 ? '+' : e.sign < 0 ? '−' : '?') + (num(e.prior) != null ? ', prior ' + e.prior : '') + (e.status ? ', ' + e.status : '') + (e.note ? ': ' + e.note : ''); };
+    var affects = by('may_affect').filter(function (e) { return e.source === m; }).map(function (e) { return cause(e, 'target'); });
+    if (affects.length) out.push(['May affect', affects.join('; ')]);
+    var affected = by('may_affect').filter(function (e) { return e.target === m; }).map(function (e) { return cause(e, 'source'); });
+    if (affected.length) out.push(['May be affected by', affected.join('; ')]);
+    return out;
+  }
   function renderNode(d) {
     var m = meta[selNode] || {};
-    $('detail-title').textContent = 'Metric: ' + selNode;
-    var pairs = [['Domain', domainLabel(domainOf(selNode))], ['Unit', m.unit || '-'], ['Direction', m.direction || '-']];
+    $('detail-title').textContent = 'Metric: ' + str(selNode);
+    var pairs = [['Domain', domainLabel(domainOf(selNode))], ['Status', m.status || '-'], ['Origin', m.origin || '-'], ['Unit', m.unit || '-'], ['Direction', m.direction || '-']];
     if (m.formula) pairs.push(['Formula', m.formula]);
     if (m.decomposition) pairs.push(['Made of', m.decomposition]);
     if (m.column) pairs.push(['Column', m.column]);
-    if ((m.systems || []).length) pairs.push(['Systems', m.systems.join(', ')]);
+    if (list(m.systems).length) pairs.push(['Systems', m.systems.join(', ')]);
     if (m.source) pairs.push(['Data source', m.source]);
-    pairs.push(['Dimensions', (m.dimensions || []).join(', ') || '-']);
+    pairs.push(['Dimensions', list(m.dimensions).join(', ') || '-']);
     d.appendChild(section('About', [el('div', null, [m.description || 'No description.']), kv(pairs)]));
+    var links = linksOf(selNode);
+    d.appendChild(section('Links', links.length ? [kv(links)] : [el('div', 'empty', ['No links recorded for this metric.'])]));
     var inc = incidents.filter(function (i) { return incidentNodes(i).indexOf(selNode) >= 0; });
     var box = inc.length ? inc.map(function (i) {
-      var b = el('button', null, [i.id + ' ' + i.metric + ' (' + (i.status || 'open') + ')']);
-      b.style.margin = '2px 6px 2px 0'; b.onclick = function () { selInc = i.id; mode = 'incident'; renderFeed(); renderDetail(); applyStyles(); }; return b;
+      var b = el('button', null, [str(i.id) + ' ' + str(i.metric) + ' (' + status(i) + ')']);
+      b.style.margin = '2px 8px 2px 0'; b.onclick = function () { selInc = i.id; mode = 'incident'; renderFeed(); renderDetail(); applyStyles(); }; return b;
     }) : [el('div', 'empty', ['No incident involves this metric.'])];
     d.appendChild(section('Incidents involving it', box));
   }
   function renderIncident(d, i) {
-    $('detail-title').textContent = 'Report: ' + i.id;
-    var ch = i.change || {};
-    d.appendChild(section('What changed', [kv([['Metric', i.metric], ['Segment', segText(i.segment)], ['Observed', fmt(ch.observed)], ['Expected', fmt(ch.expected)],
-      ['Change', ch.delta_pct != null ? fmt(ch.delta_pct) + '% (z ' + fmt(ch.z) + ')' : '-']])]));
-    var imp = i.impact || {}, ik = Object.keys(imp).map(function (k) { return [k, fmt(imp[k], 0)]; });
+    $('detail-title').textContent = 'Report: ' + str(i.id);
+    var ch = obj(i.change), w = obj(ch.window);
+    var rows = [['Metric', str(i.metric)], ['Segment', segText(i.segment)], ['Observed', fmt(ch.observed)], ['Expected', fmt(ch.expected)],
+                ['Change', num(ch.delta_pct) != null ? fmt(ch.delta_pct) + '% (z ' + fmt(ch.z) + ')' : '-']];
+    if (num(ch.delta) != null) rows.push(['Difference', fmt(ch.delta)]);
+    if (w.start || w.end) rows.push(['Window', when(w.start) + ' to ' + when(w.end)]);
+    d.appendChild(section('What changed', [kv(rows)]));
+    var imp = obj(i.impact), ik = Object.keys(imp).map(function (k) { var v = Number(imp[k]); return [k, fmt(v, Number.isInteger(v) ? 0 : 2)]; });
     if (ik.length) d.appendChild(section('Business impact', [kv(ik)]));
-    var cs = (i.contributions || []).map(function (c) {
-      var bar = el('div', 'bar'), b = el('i'); b.style.width = Math.max(0, Math.min(100, (c.share_of_delta || 0) * 100)) + '%'; bar.appendChild(b);
-      return el('div', null, [el('div', null, [c.node + ': ' + fmt((c.share_of_delta || 0) * 100, 0) + '% of the change (' + fmt(c.observed, 2) + ' vs ' + fmt(c.expected, 2) + ')']), bar]);
+    var cs = list(i.contributions).map(function (c) {
+      c = obj(c);
+      var bar = el('div', 'bar'), b = el('i'); b.style.width = Math.max(0, Math.min(100, (num(c.share_of_delta) || 0) * 100)) + '%'; bar.appendChild(b);
+      return el('div', null, [el('div', null, [str(c.node) + ': ' + fmt((num(c.share_of_delta) || 0) * 100, 0) + '% of the change (' + fmt(c.observed, 2) + ' vs ' + fmt(c.expected, 2) + ')']), bar]);
     });
     if (cs.length) d.appendChild(section('Where along the graph', cs));
-    var hs = (i.hypotheses || []).map(function (h) {
-      return el('div', 'hyp', [el('div', null, [el('span', 'pill ' + h.status, [h.status]), ' ' + h.cause]), el('ul', null, (h.evidence || []).map(function (e) { return el('li', null, [e]); }))]);
+    var loc = list(i.localization).map(function (x) {
+      x = obj(x);
+      return el('div', null, [str(x.dimension) + ' = ' + str(x.segment) + ': ' + fmt((num(x.share_of_delta) || 0) * 100, 0) + '% of the change' + (num(x.surprise) != null ? ', surprise ' + fmt(x.surprise, 2) : '')]);
+    });
+    if (loc.length) d.appendChild(section('Where in the segments', loc));
+    var hs = list(i.hypotheses).map(function (h) {
+      h = obj(h);
+      return el('div', 'hyp', [el('div', null, [el('span', 'pill ' + str(h.status), [str(h.status)]), ' ' + str(h.cause) + (h.kind ? ' [' + str(h.kind) + ']' : '') + (num(h.score) != null ? ' (score ' + fmt(h.score, 2) + ')' : '')]),
+        el('ul', null, list(h.evidence).map(function (e) { return el('li', null, [str(e)]); }))]);
     });
     if (hs.length) d.appendChild(section('Hypotheses', hs));
-    var tr = (i.trail || []).map(function (s) { return el('li', null, [s.action + ' ' + s.target + ': ' + s.result]); });
+    var tr = list(i.trail).map(function (s) { s = obj(s); return el('li', null, [str(s.action) + ' ' + str(s.target) + ': ' + str(s.result)]); });
     if (tr.length) d.appendChild(section('Investigation trail', [el('ol', null, tr)]));
-    if ((i.uncertain || []).length) d.appendChild(section('Still uncertain', [el('ul', null, i.uncertain.map(function (u) { return el('li', null, [u]); }))]));
-    if (i.report) d.appendChild(section('Summary', [el('div', null, [i.report])]));
+    if (list(i.uncertain).length) d.appendChild(section('Still uncertain', [el('ul', null, i.uncertain.map(function (u) { return el('li', null, [str(u)]); }))]));
+    if (i.report) d.appendChild(section('Summary', [el('div', null, [str(i.report)])]));
   }
   function renderDetail() {
     var d = $('detail'); d.textContent = '';
-    if (mode === 'node' && selNode) { renderNode(d); return; }
-    var i = incidents.filter(function (x) { return x.id === selInc; })[0];
-    if (!i) { $('detail-title').textContent = 'Details'; d.appendChild(el('div', 'empty', ['Select a box in the graph or an incident.'])); return; }
-    renderIncident(d, i);
+    try {
+      if (mode === 'node' && selNode) { renderNode(d); return; }
+      var i = incidents.filter(function (x) { return x.id === selInc; })[0];
+      if (!i) { $('detail-title').textContent = 'Details'; d.appendChild(el('div', 'empty', ['Select a box in the graph or an incident.'])); return; }
+      renderIncident(d, i);
+    } catch (err) { d.textContent = ''; d.appendChild(el('div', 'empty', ['This could not be shown: ' + err.message])); }
   }
 
   function renderAll() { renderChips(); drawGraph(); renderFeed(); renderDetail(); }
 
-  // ------------------------------------------------------------- polling
+  // ----------------------------------------------------------- loading
+  function takeGraph(g) {
+    graph = g; meta = {}; domOf = {};
+    list(g.nodes).forEach(function (n) { if (n.kind === 'metric') meta[n.id] = n; });
+    domains.forEach(function (d) { d.metrics.forEach(function (m) { domOf[m] = d.id; }); });
+  }
+  function graphSignature(g) {
+    return JSON.stringify([list(g.nodes).map(function (n) { return [n.id, n.status]; }), list(g.trees).map(function (t) { return t.metric; }), list(g.edges).length]);
+  }
+  function incidentSignature() {
+    return JSON.stringify(incidents.map(function (i) { return [i.id, i.status, i.last_seen, list(i.trail).length, str(i.report).length, list(i.hypotheses).length]; }));
+  }
   function refresh() {
     get('/api/state').then(function (s) {
       $('clock').textContent = s.ready ? 'simulated clock ' + s.last_hour.replace('T', ' ').replace(':00:00Z', ':00 UTC') : s.error;
-      fillEnd((s.injected || []).filter(function (i) { return i.active; }));
+      fillEnd(list(s.injected).filter(function (i) { return i.active; }));
     }).catch(function () { $('clock').textContent = 'server not reachable'; });
+    get('/api/graph').then(function (g) {
+      if (graphSignature(g) !== graphKey) { graphKey = graphSignature(g); takeGraph(g); try { renderAll(); } catch (e) { note('Could not draw the graph: ' + e.message); } }
+    }).catch(function () {});
     get('/api/incidents').then(function (r) {
-      var before = JSON.stringify(incidents.map(function (i) { return [i.id, i.status, i.last_seen]; }));
-      incidents = r.incidents; example = r.example;
+      var before = incidentSignature();
+      incidents = list(r.incidents); skipped = r.skipped || 0;
+      var flipped = example && !r.example; example = !!r.example;
       $('exbadge').textContent = '';
       if (example) $('exbadge').appendChild(el('span', 'pill example', ['showing the contract example, no live incident yet']));
-      if (!selInc && incidents.length) selInc = incidents[0].id;
-      if (before !== JSON.stringify(incidents.map(function (i) { return [i.id, i.status, i.last_seen]; }))) { renderChips(); renderFeed(); renderDetail(); applyStyles(); }
-    }).catch(function () {});
+      var scope = inScope();
+      if (!incidents.some(function (i) { return i.id === selInc; })) {      // the selected one is gone: open the first
+        selInc = scope.length ? scope[0].id : null; if (mode === 'incident' || flipped) mode = 'incident';
+      }
+      note('');
+      if (before !== incidentSignature() || flipped) { try { renderChips(); renderFeed(); renderDetail(); applyStyles(); } catch (e) { note('Could not draw the incidents: ' + e.message); } }
+    }).catch(function () { note('Could not read the incidents.'); });
   }
 
   // ------------------------------------------------------------- controls
@@ -354,19 +440,20 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
     ['country', 'platform', 'category'].forEach(function (p) { $('f-' + p).hidden = need.indexOf(p) < 0; });
   }
   $('f-kind').onchange = showParams; showParams();
+
   // injections that are still in effect, so a demo can end one (the rollback)
   var endKey = '';
-  function fillEnd(list) {
-    var key = JSON.stringify(list.map(function (i) { return i.id; }));
-    $('end-grp').hidden = !list.length;
+  function fillEnd(l) {
+    var key = JSON.stringify(l.map(function (i) { return i.id; }));
+    $('end-grp').hidden = !l.length;
     if (key === endKey) return;
     endKey = key;
     var sel = $('end-select'), keep = sel.value;
     sel.textContent = '';
-    list.forEach(function (i) {
-      var where = ['country', 'platform', 'category', 'source'].map(function (d) { return i.scope[d]; }).filter(Boolean).join(' ');
+    l.forEach(function (i) {
+      var where = ['country', 'platform', 'category', 'source'].map(function (d) { return obj(i.scope)[d]; }).filter(Boolean).join(' ');
       var o = document.createElement('option'); o.value = i.id;
-      o.textContent = i.kind + ' ' + where + ' from ' + (i.scope.start || '').replace('T', ' ').replace(':00:00Z', ':00').slice(5);
+      o.textContent = i.kind + ' ' + where + ' from ' + str(obj(i.scope).start).replace('T', ' ').replace(':00:00Z', ':00').slice(5);
       sel.appendChild(o);
     });
     if (keep) sel.value = keep;
@@ -385,27 +472,32 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
   }
   $('f-go').onclick = function () {
     var kind = $('f-kind').value, label = KINDS.filter(function (k) { return k[0] === kind; })[0][1];
-    act({ kind: kind, country: $('f-country').value, platform: $('f-platform').value, category: $('f-category').value, severity: 0.4, hours: 12, when: 'now' }, label + ' injected');
+    var need = KINDS.filter(function (k) { return k[0] === kind; })[0][2];
+    var body = { kind: kind, severity: 0.4, hours: 12, when: 'now' };
+    need.forEach(function (p) { body[p] = $('f-' + p).value; });          // only the settings this fault uses
+    act(body, label + ' injected');
   };
   $('pr-go').onclick = function () { act({ kind: 'promo', country: $('pr-country').value, hours: 12, when: 'now' }, 'Promo started'); };
   $('dd-go').onclick = function () { act({ kind: 'data_delay', source: $('dd-source').value, hours: 3, delay_hours: 2, when: 'now' }, 'Late data scheduled'); };
+  // adding a metric: hand it over, then wait for the monitor's answer (<name>.result.json)
   $('nm-go').onclick = function () {
     var y = 'name: refund_rate\ndescription: Share of orders refunded\nformula: refunds / orders\nsql: >\n  SELECT ts, country, platform, category, channel,\n         SUM(refunds) * 1.0 / NULLIF(SUM(orders), 0) AS value\n  FROM facts_hourly GROUP BY ts, country, platform, category, channel\ndimensions: [country, platform, category, channel]\nunit: ratio\n';
-    post('/api/metric', { yaml_text: y }).then(function (r) { toast('Metric handed to the monitor: ' + r.saved); }).catch(function (e) { toast('Failed: ' + e.message); });
+    post('/api/metric', { yaml_text: y }).then(function (r) {
+      toast('Handed to the monitor: ' + r.saved + '. Waiting for its answer...');
+      var tries = 0;
+      var poll = function () {
+        get('/api/metric/' + encodeURIComponent(r.name)).then(function (res) { toast(str(res.message) || ('Monitor: ' + str(res.status))); refresh(); })
+          .catch(function () { if (++tries < 20) setTimeout(poll, 2000); else toast('Handed to the monitor; it has not answered yet.'); });
+      };
+      setTimeout(poll, 1500);
+    }).catch(function (e) { toast('Failed: ' + e.message); });
   };
 
   function setTop() { document.documentElement.style.setProperty('--top-h', document.querySelector('.sticky-top').offsetHeight + 'px'); }
   setTop(); window.addEventListener('resize', setTop); if (document.fonts && document.fonts.ready) document.fonts.ready.then(setTop);
 
-  Promise.all([get('/api/graph'), get('/api/domains'), get('/api/incidents')]).then(function (r) {
-    graph = r[0]; domains = r[1]; incidents = r[2].incidents; example = r[2].example;
-    graph.nodes.forEach(function (n) { if (n.kind === 'metric') meta[n.id] = n; });
-    domains.forEach(function (d) { d.metrics.forEach(function (m) { domOf[m] = d.id; }); });
-    if (example) $('exbadge').appendChild(el('span', 'pill example', ['showing the contract example, no live incident yet']));
-    if (incidents.length) selInc = incidents[0].id;
-    renderAll(); setTop();
-    refresh(); setInterval(refresh, 2000);
-  }).catch(function (e) { $('graphwrap').textContent = 'Could not load the graph: ' + e.message; });
+  // start polling first: a page that fails to draw once must still recover on the next tick
+  get('/api/domains').then(function (d) { domains = d; }).catch(function () {}).then(function () { refresh(); setInterval(refresh, 2000); setTop(); });
 })();
 </script>
 </body>
