@@ -116,7 +116,7 @@ Rules for an incident file (agreed in the review of 21 Nov, issue 14; details in
 
 ### 3.2 Metric graph
 
-A picture of the brain - the data path, the graph as loaded from the code and the planned loop - is in [`docs/brain-architecture.html`](docs/brain-architecture.html) (open it in a browser; rebuild with `python docs/build_brain_architecture.py`).
+A picture of the brain - the data path, the graph as loaded from the code, the loop as it runs, the checks on a new metric and the measured results - is in [`docs/brain-architecture.html`](docs/brain-architecture.html) (open it in a browser; rebuild with `python docs/build_brain_architecture.py`).
 
 - **Nodes:** metrics, breakdown views (`orders@country`) and context sources (`release:<system>`, `freshness:<source>`, `calendar`).
 - **Edges, each with its own reasoning:**
