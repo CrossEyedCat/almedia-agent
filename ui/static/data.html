@@ -34,7 +34,6 @@ tr.low td.psr { color:var(--hot); font-weight:700; }
 </head>
 <body>
 <header><h1>Simulator data</h1><span style="color:var(--muted)">read only, straight from data/market.db</span><a href="/" style="margin-left:auto">&larr; Console</a></header>
-<div class="tabs" id="tabs"></div>
 <div class="note" id="note" hidden></div>
 <div class="legend" id="legend" hidden><b>Red rows</b>: payment success rate below 0.75 in an hour with at least 5 payment attempts (fewer attempts are too noisy to call).</div>
 <div class="bar" id="filters"></div>
@@ -52,19 +51,24 @@ tr.low td.psr { color:var(--hot); font-weight:700; }
   function el(t, c, k) { var e = document.createElement(t); if (c) e.className = c; (k || []).forEach(function (x) { e.appendChild(typeof x === 'string' ? document.createTextNode(x) : x); }); return e; }
   function get(u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); }
 
+  var timer = null;
+  function again() { clearTimeout(timer); timer = setTimeout(function () { offset = 0; load(); }, 300); }
   function filterControls() {
     var f = $('filters'); f.textContent = '';
+    var sel = el('select'); sel.id = 'table-select';
+    tables.forEach(function (t) { var o = el('option', null, [t.name + ' (' + t.rows.toLocaleString('en') + ' rows)']); o.value = t.name; sel.appendChild(o); });
+    sel.value = cur.name; sel.onchange = function () { select(tables.filter(function (t) { return t.name === sel.value; })[0]); };
+    f.appendChild(el('label', null, ['table', sel]));
     var cols = cur.columns;
     ['country', 'platform', 'category', 'channel', 'source', 'kind'].forEach(function (n) {
       if (cols.indexOf(n) < 0) return;
-      var i = el('input'); i.id = 'f-' + n; i.size = 11; i.placeholder = n;
+      var i = el('input'); i.id = 'f-' + n; i.size = 11; i.placeholder = n; i.oninput = again;
       f.appendChild(el('label', null, [n, i]));
     });
     ['ts_from', 'ts_to'].forEach(function (n) {
-      var i = el('input'); i.id = 'f-' + n; i.size = 20; i.placeholder = '2026-11-22T04:00:00Z';
+      var i = el('input'); i.id = 'f-' + n; i.size = 20; i.placeholder = '2026-11-22T04:00:00Z'; i.oninput = again;
       f.appendChild(el('label', null, [n === 'ts_from' ? 'from (UTC)' : 'to (UTC)', i]));
     });
-    var go = el('button', null, ['Apply']); go.onclick = function () { offset = 0; load(); }; f.appendChild(go);
     var clr = el('button', null, ['Clear']); clr.onclick = function () { f.querySelectorAll('input').forEach(function (i) { i.value = ''; }); offset = 0; load(); }; f.appendChild(clr);
   }
   function query() {
@@ -99,20 +103,13 @@ tr.low td.psr { color:var(--hot); font-weight:700; }
   }
   function select(t) {
     cur = t; offset = 0;
-    document.querySelectorAll('.tab').forEach(function (b) { b.classList.toggle('on', b.dataset.name === t.name); });
     var n = $('note'); n.hidden = false; n.textContent = NOTES[t.name] || '';
     filterControls(); load();
   }
   $('prev').onclick = function () { offset = Math.max(0, offset - LIMIT); load(); };
   $('next').onclick = function () { offset += LIMIT; load(); };
-  get('/api/db/tables').then(function (ts) {
-    tables = ts; var tabs = $('tabs');
-    ts.forEach(function (t) {
-      var b = el('button', 'tab', [t.name + ' ', el('small', null, ['(' + t.rows.toLocaleString('en') + ')'])]);
-      b.dataset.name = t.name; b.onclick = function () { select(t); }; tabs.appendChild(b);
-    });
-    select(ts[0]);
-  }).catch(function (e) { $('count').textContent = 'No database: ' + e.message; });
+  get('/api/db/tables').then(function (ts) { tables = ts; select(ts[0]); })
+    .catch(function (e) { $('count').textContent = 'No database: ' + e.message; });
 })();
 </script>
 </body>
