@@ -135,6 +135,8 @@ COUNTED_STATUSES = ("open", "ongoing", "resolved")
 
 
 def score(events: list[Event], incidents: list[dict], data_end: pd.Timestamp, days: float) -> dict:
+    explained = sum(i.get("status") == "explained" for i in incidents)
+    pending = sum(i.get("status") == "pending" for i in incidents)
     incidents = [i for i in incidents if i.get("status", "open") in COUNTED_STATUSES]
     faults = [e for e in events if e.kind in FAULT_KINDS]
     innocents = [e for e in events if e.kind in ("promo", "data_delay")]
@@ -172,6 +174,7 @@ def score(events: list[Event], incidents: list[dict], data_end: pd.Timestamp, da
         silent += not noisy
     nf, ni = len(faults), len(innocents)
     return {
+        "explained_without_alert": explained, "pending_records": pending,
         "faults": nf, "detected": detected, "detection_rate": detected / nf if nf else None,
         "mean_delay_h": float(np.mean(delays)) if delays else None,
         "localized_rate": localized / detected if detected else None,
@@ -195,11 +198,12 @@ def report(r: dict, db_path, n_incidents: int, days: float) -> str:
         f"{n_incidents} incidents reported, {days:.1f} simulated days. The data is simulated.", "",
         "| Measure | Value |", "|---|---|",
         f"| Faults detected | {r['detected']} of {r['faults']} ({pct(r['detection_rate'])}) |",
-        f"| Mean detection delay | {mean} |",
-        f"| Localized to the right country and platform | {pct(r['localized_rate'])} of detected |",
-        f"| Right cause named (supported release) | {pct(r['correct_cause_rate'])} of detected |",
+        f"| Delay after first affected hour (0 = first hour) | {mean} |",
+        f"| Localized to the injected scope | {pct(r['localized_rate'])} of detected |",
+        f"| Right cause named (supported hypothesis) | {pct(r['correct_cause_rate'])} of detected |",
         f"| False alarms | {r['false_alarms']} ({fa} per simulated day) |",
         f"| Innocent events that stayed silent | {r['innocents_silent']} of {r['innocents']} ({pct(r['innocent_silent_rate'])}) |", "",
+        f"Explained without an alert: {r['explained_without_alert']}; pending records excluded: {r['pending_records']}.", "",
         "## Per fault", "", "| Fault | Detected | Delay (h) | Localized | Cause |", "|---|---|---|---|---|",
     ]
     for p in r["per_fault"]:

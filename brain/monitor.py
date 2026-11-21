@@ -1,0 +1,460 @@
+"""The monitor: every tick it judges the newest hours of every watched rate in every watched cut.
+
+What is watched comes from the graph: every atomic rate (a ratio of two columns), on the formula
+tree or not. Outcomes such as orders are not judged directly, because a fault in one cell is lost
+in their noise; they are used for the impact once a rate has moved (brain/impact.py).
+
+For a rate in a series (one cut of the dimensions, one value combination):
+
+- expected rate = pooled numerator / pooled denominator over the visible history of that series,
+  leaving out the hours being judged, hours already flagged as bad, hours covered by a calendar
+  event and hours whose data has not arrived;
+- an hour is bad when its counts, alone or summed with the two hours before, are too surprising
+  against that rate (brain/stats.py) and the rate moved by at least `min_effect`;
+- hours whose sources have not arrived are held: not judged, not healthy;
+- the last hours are re-read on every tick, so a rewritten past is seen too.
+
+The monitor reports alerts; brain/incidents.py turns them into incident files.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import numpy as np
+import pandas as pd
+
+from brain.clock import HOUR, Clock
+from brain.data import Store, iso_hour
+from brain.evaluator import Evaluator
+from brain.graph import MetricGraph
+from brain.stats import binomial_surprise, ratio_surprise, robust_scale, scaled_residual
+
+MIN_DISPERSION_HOURS = 48
+
+CUTS: tuple[tuple[str, ...], ...] = (
+    (), ("country",), ("platform",), ("category",), ("channel",),
+    ("country", "platform"), ("country", "category"),
+)
+
+
+@dataclass(frozen=True)
+class Config:
+    lookback_hours: int = 21 * 24     # history a baseline may use
+    reread_hours: int = 8             # newest hours re-read and re-judged on every tick
+    min_history_hours: int = 72       # usable hours a series needs before it is judged
+    min_history_volume: float = 200   # and this much pooled denominator
+    windows: tuple[int, ...] = (1, 3)  # an hour alone, and summed with the two before it
+    min_surprise: float = 7.0         # proportions: two-sided exact p below 1e-7
+    min_z: float = 6.0                # other ratios: residual beyond 6 historical spreads,
+    beyond_history: float = 1.25      # and this many times the largest residual clean history showed,
+    min_ratio_volume: float = 30      # on at least this much denominator (small counts are too lumpy)
+    min_effect: float = 0.10          # and the rate itself moved by at least 10 %
+    onset_min_surprise: float = 2.0   # an earlier hour of a summed window joins the episode at p below 0.01
+    active_hours: int = 3             # an alert is live while its last bad hour is this recent
+    episode_gap_hours: int = 2        # bad hours this close belong to one episode
+    cuts: tuple[tuple[str, ...], ...] = CUTS
+
+
+@dataclass(frozen=True)
+class Watched:
+    metric: str
+    numerator: str      # column
+    denominator: str    # column
+    sources: tuple[str, ...]
+    calendar: bool      # the graph links the metric to the event calendar
+    counts: bool        # numerator and denominator are both counts of events
+
+
+@dataclass
+class Alert:
+    metric: str
+    kind: str                 # "proportion", "excess" or "ratio": the test that was used
+    segment: dict
+    onset: pd.Timestamp       # first hour of the episode
+    last_bad: pd.Timestamp    # newest bad hour
+    hours: int                # bad hours in the episode
+    observed: float           # rate now: over the newest bad hours (at most three)
+    expected: float           # baseline rate
+    numerator: float          # counts behind `observed`
+    denominator: float
+    episode_observed: float   # rate over the whole episode
+    score: float              # strongest surprise in the episode, -log10 p
+    z: float                  # normal-equivalent of that
+    explained_by: dict | None = None   # a calendar row that covers it
+
+    @property
+    def effect(self) -> float:
+        return self.observed / self.expected - 1.0 if self.expected else float("nan")
+
+
+@dataclass
+class Tick:
+    now: pd.Timestamp | None
+    newest: pd.Timestamp | None
+    alerts: list[Alert] = field(default_factory=list)
+    late: dict = field(default_factory=dict)        # hour -> sources not arrived
+    held: dict = field(default_factory=dict)        # hour -> metrics not judged because of that
+    judged_series: int = 0
+
+
+def compatible(a: dict, b: dict) -> bool:
+    """Two segments can describe the same place: no shared dimension disagrees."""
+    return all(b[d] == v for d, v in a.items() if d in b)
+
+
+def leading(alerts: list[Alert]) -> list[Alert]:
+    """Per metric, the strongest alert of each place: a fault in one cell also shows, diluted, in
+    every series that contains the cell, and weaker in every series that splits it."""
+    out: list[Alert] = []
+    for a in sorted(alerts, key=lambda a: -a.score):
+        if not any(k.metric == a.metric and compatible(a.segment, k.segment) for k in out):
+            out.append(a)
+    return out
+
+
+def watch_list(graph: MetricGraph) -> list[Watched]:
+    out = []
+    for name, spec in graph.specs.items():
+        if not spec.atomic or spec.formula is None or spec.formula.kind != "ratio":
+            continue
+        num, den = spec.formula.ratio_parts()
+        if len(num) != 1 or len(den) != 1:
+            continue
+        ncol, dcol = graph.specs[num[0]].column, graph.specs[den[0]].column
+        if not ncol or not dcol:
+            continue
+        calendar = any(n.id == "calendar" for n in graph.context_of(name))
+        counts = graph.specs[num[0]].unit == "count" and graph.specs[den[0]].unit == "count"
+        out.append(Watched(name, ncol, dcol, tuple(graph.sources(name)), calendar, counts))
+    return out
+
+
+class Cube:
+    """Hourly sums of the base columns for one cut, as arrays [hour, series]."""
+
+    def __init__(self, dims: tuple[str, ...], columns: list[str]):
+        self.dims = tuple(dims)
+        self.columns = list(columns)
+        self.t0: pd.Timestamp | None = None
+        self.rows = 0
+        self.keys: list[tuple] = []
+        self._kidx: dict[tuple, int] = {}
+        self.data = {c: np.full((0, 0), np.nan) for c in columns}
+
+    def row(self, ts) -> int:
+        return int((pd.Timestamp(ts) - self.t0) / HOUR)
+
+    def hour(self, row: int) -> pd.Timestamp:
+        return self.t0 + row * HOUR
+
+    def segment(self, k: int) -> dict:
+        return dict(zip(self.dims, self.keys[k]))
+
+    def _grow(self, rows: int) -> None:
+        for c, old in self.data.items():
+            if old.shape == (rows, len(self.keys)):
+                continue
+            new = np.full((rows, len(self.keys)), np.nan)
+            new[:old.shape[0], :old.shape[1]] = old
+            self.data[c] = new
+        self.rows = rows
+
+    def update(self, frame: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> None:
+        """Replace the hours [start, end) by what the frame holds; a series absent there is NaN."""
+        if self.t0 is None:
+            self.t0 = start
+        keys = [tuple(k) for k in frame[list(self.dims)].itertuples(index=False, name=None)] if self.dims \
+            else [()] * len(frame)
+        for k in dict.fromkeys(keys):
+            if k not in self._kidx:
+                self._kidx[k] = len(self.keys)
+                self.keys.append(k)
+        r0, r1 = self.row(start), self.row(end)
+        self._grow(max(self.rows, r1))
+        if frame.empty:
+            for c in self.columns:
+                self.data[c][r0:r1, :] = np.nan
+            return
+        ri = ((frame["ts"] - self.t0) / HOUR).astype(int).to_numpy()
+        ci = np.fromiter((self._kidx[k] for k in keys), dtype=int, count=len(keys))
+        for c in self.columns:
+            self.data[c][r0:r1, :] = np.nan
+            self.data[c][ri, ci] = frame[c].to_numpy(dtype=float)
+
+
+class Monitor:
+    def __init__(self, graph: MetricGraph, store: Store, config: Config = Config()):
+        self.graph = graph
+        self.store = store
+        self.config = config
+        self.evaluator = Evaluator(graph, store)
+        self.watched = watch_list(graph)
+        self.sources = sorted({s for w in self.watched for s in w.sources})
+        columns = sorted({c for w in self.watched for c in (w.numerator, w.denominator)})
+        self.cubes = {cut: Cube(cut, columns) for cut in config.cuts}
+        self._flags: dict[tuple, np.ndarray] = {}     # (metric, cut) -> bad hours [hour, series]
+        self._rates: dict[tuple, tuple] = {}          # (metric, cut) -> (rate, usable) of the last tick
+        self._kinds: dict[str, str] = {}
+        self._loaded_until: pd.Timestamp | None = None
+
+    # ------------------------------------------------------------------ data
+    def _refresh(self, now: pd.Timestamp) -> None:
+        cfg = self.config
+        if self._loaded_until is None:
+            start = now - cfg.lookback_hours * HOUR
+        else:
+            start = max(min(self._loaded_until, now) - cfg.reread_hours * HOUR, self.cubes[()].t0)
+        for cut, cube in self.cubes.items():
+            frame = self.store.sums(cube.columns, start, now, group_by=cut, by_hour=True)
+            cube.update(frame, start, now)
+        self._loaded_until = now
+
+    def _calendar(self, now: pd.Timestamp) -> list[dict]:
+        rows = self.store.read_sql(
+            "SELECT start_ts, end_ts, country, kind, description FROM calendar WHERE start_ts <= ?", (iso_hour(now),))
+        out = []
+        for r in rows.to_dict("records"):
+            country = r["country"] if isinstance(r["country"], str) and r["country"] else None
+            out.append({"start": pd.Timestamp(r["start_ts"]), "end": pd.Timestamp(r["end_ts"]), "country": country,
+                        "kind": r["kind"], "description": r["description"]})
+        return out
+
+    def _calendar_mask(self, cube: Cube, events: list[dict]) -> np.ndarray:
+        mask = np.zeros((cube.rows, len(cube.keys)), dtype=bool)
+        pos = cube.dims.index("country") if "country" in cube.dims else None
+        for e in events:
+            r0, r1 = max(cube.row(e["start"]), 0), min(cube.row(e["end"]), cube.rows)
+            if r1 <= r0:
+                continue
+            if pos is None or e["country"] is None:
+                mask[r0:r1, :] = True
+            else:
+                cols = [k for k, key in enumerate(cube.keys) if key[pos] == e["country"]]
+                mask[r0:r1, cols] = True
+        return mask
+
+    def _flag(self, metric: str, cube: Cube) -> np.ndarray:
+        old = self._flags.get((metric, cube.dims))
+        shape = (cube.rows, len(cube.keys))
+        if old is None or old.shape != shape:
+            new = np.zeros(shape, dtype=bool)
+            if old is not None:
+                new[:old.shape[0], :old.shape[1]] = old
+            self._flags[(metric, cube.dims)] = old = new
+        return old
+
+    def _kind(self, w: Watched) -> str:
+        """Which test fits the metric, decided from its own history.
+
+        proportion: both sides count events, the numerator never exceeded the denominator, and the
+                    hour-to-hour spread is what a binomial would give (so the exact test is honest).
+        excess:     the same for the surplus over the denominator, for a ratio that never fell
+                    below 1 (payment attempts per checkout: the surplus is the retries).
+        ratio:      everything else, including money: judged against its own historical spread."""
+        if w.metric in self._kinds:
+            return self._kinds[w.metric]
+        kind = "ratio"
+        if w.counts:
+            kind = next((name for shift, name in ((0.0, "proportion"), (1.0, "excess"))
+                         if self._binomial_fits(w, shift)), "ratio")
+        if self.cubes[()].rows >= self.config.min_history_hours:
+            self._kinds[w.metric] = kind
+        return kind
+
+    def _binomial_fits(self, w: Watched, shift: float, max_dispersion: float = 1.5) -> bool:
+        ratios = []
+        for cube in self.cubes.values():
+            d = cube.data[w.denominator]
+            n = cube.data[w.numerator] - shift * d
+            both = np.isfinite(n) & np.isfinite(d) & (d > 0)
+            if np.any(n[both] < 0) or np.any(n[both] > d[both]):
+                return False
+            sum_n, sum_d = np.where(both, n, 0.0).sum(axis=0), np.where(both, d, 0.0).sum(axis=0)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                rate = sum_n / sum_d
+                resid = np.where(both, (n - rate * d) / np.sqrt(d), np.nan)
+                seen = both.sum(axis=0) >= MIN_DISPERSION_HOURS
+                ratio = np.nanvar(np.where(seen, resid, np.nan), axis=0) / (rate * (1 - rate)) if seen.any() else \
+                    np.array([])
+            ratios += [x for x in np.atleast_1d(ratio) if np.isfinite(x)]
+        return bool(ratios) and float(np.median(ratios)) <= max_dispersion
+
+    # ---------------------------------------------------------------- judging
+    def tick(self, as_of=None) -> Tick:
+        clock = Clock(self.store, as_of)
+        newest, now = clock.newest_hour(), clock.now
+        tick = Tick(now=now, newest=newest)
+        if newest is None:
+            return tick
+        self._refresh(now)
+        cfg = self.config
+        rows = self.cubes[()].rows
+        j0 = max(0, rows - cfg.reread_hours)
+        judged_hours = [self.cubes[()].hour(r) for r in range(j0, rows)]
+        tick.late = clock.late(judged_hours, self.sources)
+        events = self._calendar(now)
+        for cube in self.cubes.values():
+            cal = self._calendar_mask(cube, events)
+            for w in self.watched:
+                late_rows = [cube.row(h) for h, srcs in tick.late.items() if srcs & set(w.sources)]
+                for h, srcs in tick.late.items():
+                    if srcs & set(w.sources):
+                        tick.held.setdefault(h, set()).add(w.metric)
+                tick.alerts += self._judge(cube, w, j0, late_rows, cal, events)
+                tick.judged_series += len(cube.keys)
+        return tick
+
+    def _judge(self, cube: Cube, w: Watched, j0: int, late_rows: list[int], cal: np.ndarray,
+               events: list[dict]) -> list[Alert]:
+        cfg = self.config
+        kind = self._kind(w)
+        rows = cube.rows
+        N = cube.data[w.numerator].copy()
+        D = cube.data[w.denominator].copy()
+        for r in late_rows:
+            N[r, :] = np.nan
+            D[r, :] = np.nan
+        flags = self._flag(w.metric, cube)
+        shift = 0.0
+        if kind == "excess":
+            N, shift = N - D, 1.0
+
+        # baseline: visible history before the hours being judged
+        b0 = max(0, j0 - cfg.lookback_hours)
+        usable = np.isfinite(N[b0:j0]) & np.isfinite(D[b0:j0]) & (D[b0:j0] > 0) & ~flags[b0:j0] & ~cal[b0:j0]
+        sum_n = np.where(usable, N[b0:j0], 0.0).sum(axis=0)
+        sum_d = np.where(usable, D[b0:j0], 0.0).sum(axis=0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rate = np.where(sum_d > 0, sum_n / sum_d, np.nan)
+        ok = (usable.sum(axis=0) >= cfg.min_history_hours) & (sum_d >= cfg.min_history_volume) & (rate > 0)
+        if kind == "ratio":
+            resid = np.where(usable, scaled_residual(N[b0:j0], D[b0:j0], rate), np.nan)
+            scale = np.array([robust_scale(resid[:, k]) for k in range(resid.shape[1])]) if resid.size else \
+                np.full(len(cube.keys), np.nan)
+            with np.errstate(invalid="ignore"):
+                extreme = np.nanmax(np.abs(resid), axis=0) if resid.size else np.full(len(cube.keys), np.nan)
+            ok &= np.isfinite(scale) & np.isfinite(extreme)
+        else:
+            ok &= rate < 1
+        self._rates[(w.metric, cube.dims)] = (rate + shift, ok, scale if kind == "ratio" else None, kind)
+
+        # the hours being judged, alone and summed with the hours before
+        bad = np.zeros((rows - j0, len(cube.keys)), dtype=bool)
+        best = np.full(bad.shape, np.nan)
+        best_z = np.full(bad.shape, np.nan)
+        single = np.full(bad.shape, np.nan)   # how far each hour alone is from the expected rate
+        single_score = np.full(bad.shape, np.nan)
+        for width in cfg.windows:
+            Nw, Dw = np.full(bad.shape, np.nan), np.full(bad.shape, np.nan)
+            for i, r in enumerate(range(j0, rows)):
+                if r - width + 1 >= 0:
+                    Nw[i] = N[r - width + 1:r + 1].sum(axis=0)   # NaN if any hour of the window is missing or held
+                    Dw[i] = D[r - width + 1:r + 1].sum(axis=0)
+            if kind in ("proportion", "excess"):
+                score, z = binomial_surprise(Nw, Dw, np.broadcast_to(rate, Nw.shape))
+                enough = score >= cfg.min_surprise
+            else:
+                score, z = ratio_surprise(Nw, Dw, np.broadcast_to(rate, Nw.shape), np.broadcast_to(scale, Nw.shape))
+                with np.errstate(invalid="ignore"):
+                    enough = (np.abs(z) >= cfg.min_z) & (Dw >= cfg.min_ratio_volume) \
+                        & (np.abs(scaled_residual(Nw, Dw, rate)) >= cfg.beyond_history * extreme)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                effect = (Nw / Dw + shift) / (rate + shift) - 1.0
+            if width == 1:
+                single, single_score = effect, score
+            hit = ok & enough & (np.abs(effect) >= cfg.min_effect)
+            better = hit & ~(best >= score)
+            best = np.where(better, score, best)
+            best_z = np.where(better, z, best_z)
+            bad |= hit
+            # a sum over several hours says "somewhere in here": an earlier hour of the window is bad
+            # too when it alone moved the same way, by at least min_effect, and is itself unusual
+            for i in range(bad.shape[0]):
+                for back in range(1, width):
+                    if i - back >= 0:
+                        with np.errstate(invalid="ignore"):
+                            bad[i - back] |= hit[i] & (np.sign(single[i - back]) == np.sign(effect[i]))                                 & (np.abs(single[i - back]) >= cfg.min_effect) \
+                                & (single_score[i - back] >= cfg.onset_min_surprise)
+        flags[j0:rows] = bad
+
+        # one alert per series whose newest bad hour is recent
+        alerts = []
+        for k in np.flatnonzero(bad.any(axis=0)):
+            col = flags[:, k]
+            last = int(np.flatnonzero(col)[-1])
+            if last < rows - cfg.active_hours:
+                continue
+            first = last
+            r = last
+            while r >= 0 and first - r <= cfg.episode_gap_hours:
+                if col[r]:
+                    first = r
+                r -= 1
+            ep_n = np.nansum(N[first:last + 1, k])
+            ep_d = np.nansum(D[first:last + 1, k])
+            newest = max(first, last - max(cfg.windows) + 1)   # the state now: the newest bad hours
+            now_n = np.nansum(N[newest:last + 1, k])
+            now_d = np.nansum(D[newest:last + 1, k])
+            recent = slice(max(first, j0) - j0, last - j0 + 1)
+            i = int(np.nanargmax(best[recent, k])) if np.isfinite(best[recent, k]).any() else None
+            alert = Alert(
+                metric=w.metric, kind=kind, segment=cube.segment(k), onset=cube.hour(first), last_bad=cube.hour(last),
+                hours=int(col[first:last + 1].sum()),
+                observed=float(now_n / now_d + shift) if now_d > 0 else float("nan"),
+                expected=float(rate[k] + shift), numerator=float(now_n + shift * now_d), denominator=float(now_d),
+                episode_observed=float(ep_n / ep_d + shift) if ep_d > 0 else float("nan"),
+                score=float(best[recent, k][i]) if i is not None else 0.0,
+                z=float(best_z[recent, k][i]) if i is not None else 0.0)
+            if w.calendar:
+                alert.explained_by = self._covering_event(alert, events)
+            alerts.append(alert)
+        return alerts
+
+    @staticmethod
+    def _covering_event(alert: Alert, events: list[dict]) -> dict | None:
+        """A calendar row that is active during the episode, in the same country or everywhere."""
+        for e in events:
+            overlaps = e["start"] <= alert.last_bad and alert.onset < e["end"] + 2 * HOUR
+            where = e["country"] is None or alert.segment.get("country") in (None, e["country"])
+            if overlaps and where:
+                return {"kind": e["kind"], "country": e["country"], "description": e["description"],
+                        "start": iso_hour(e["start"]), "end": iso_hour(e["end"])}
+        return None
+
+    def _series(self, metric: str, segment: dict):
+        for (m, cut), held in self._rates.items():
+            if m == metric and set(cut) == set(segment):
+                k = self.cubes[cut]._kidx.get(tuple(segment[d] for d in cut))
+                if k is not None and held[1][k]:
+                    return self.cubes[cut], k, held
+        return None
+
+    def expected_rate(self, metric: str, segment: dict) -> float | None:
+        """The baseline rate of a metric in a watched series, from the last tick."""
+        found = self._series(metric, segment)
+        return float(found[2][0][found[1]]) if found else None
+
+    def window(self, metric: str, segment: dict, start, end) -> dict | None:
+        """One targeted look: the metric in a watched series over [start, end) against its baseline.
+        Used to follow a link of the graph from a metric that moved to one it may affect, where a
+        single question is asked and the bar can be far lower than for the hourly scan."""
+        found = self._series(metric, segment)
+        w = next((x for x in self.watched if x.metric == metric), None)
+        if not found or w is None:
+            return None
+        cube, k, (rate, _, scale, kind) = found
+        r0, r1 = max(cube.row(start), 0), min(cube.row(end), cube.rows)
+        shift = 1.0 if kind == "excess" else 0.0
+        d = cube.data[w.denominator][r0:r1, k]
+        n = cube.data[w.numerator][r0:r1, k] - shift * d
+        both = np.isfinite(n) & np.isfinite(d)
+        sum_n, sum_d = float(n[both].sum()), float(d[both].sum())
+        if sum_d <= 0:
+            return None
+        base = float(rate[k]) - shift
+        if kind == "ratio":
+            score, z = ratio_surprise(np.array([sum_n]), np.array([sum_d]), np.array([base]), np.array([scale[k]]))
+        else:
+            score, z = binomial_surprise(np.array([sum_n]), np.array([sum_d]), np.array([base]))
+        return {"metric": metric, "observed": sum_n / sum_d + shift, "expected": float(rate[k]),
+                "numerator": sum_n + shift * sum_d, "denominator": sum_d, "score": float(score[0]), "z": float(z[0])}

@@ -1,0 +1,373 @@
+[
+  {
+    "seed": 4,
+    "days": 49.0,
+    "explained_without_alert": 0,
+    "pending_records": 0,
+    "faults": 12,
+    "detected": 12,
+    "detection_rate": 1.0,
+    "mean_delay_h": 0.25,
+    "localized_rate": 1.0,
+    "correct_cause_rate": 0.9166666666666666,
+    "false_alarms": 0,
+    "false_alarms_per_day": 0.0,
+    "innocents": 8,
+    "innocents_silent": 8,
+    "innocent_silent_rate": 1.0,
+    "per_fault": [
+      {
+        "kind": "payment_failure",
+        "fault": {
+          "country": "PL",
+          "end": "2026-11-16T02:00:00Z",
+          "platform": "Web",
+          "severity": 0.5906798607948704,
+          "start": "2026-11-15T18:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "payment_failure",
+        "fault": {
+          "country": "FR",
+          "end": "2026-11-18T05:00:00Z",
+          "platform": "iOS",
+          "severity": 0.5828411037387501,
+          "start": "2026-11-17T22:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "search_regression",
+        "fault": {
+          "country": "DE",
+          "end": "2026-11-20T02:00:00Z",
+          "severity": 0.38334893886292326,
+          "start": "2026-11-19T19:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "stockout_surge",
+        "fault": {
+          "category": "sports",
+          "end": "2026-11-22T16:00:00Z",
+          "feed_ctr_lift": 0.25,
+          "multiplier": 11.342626880669297,
+          "start": "2026-11-22T08:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "ad_budget_exhausted",
+        "fault": {
+          "after": 0.05,
+          "boost": 3.0,
+          "boost_hours": 3,
+          "country": "DE",
+          "end": "2026-11-23T22:00:00Z",
+          "start": "2026-11-23T14:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "stockout_surge",
+        "fault": {
+          "category": "sports",
+          "end": "2026-11-25T12:00:00Z",
+          "feed_ctr_lift": 0.25,
+          "multiplier": 13.492094803882274,
+          "start": "2026-11-25T04:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "stockout_surge",
+        "fault": {
+          "category": "sports",
+          "end": "2026-11-26T09:00:00Z",
+          "feed_ctr_lift": 0.25,
+          "multiplier": 12.950351707674859,
+          "start": "2026-11-26T01:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": false
+      },
+      {
+        "kind": "search_regression",
+        "fault": {
+          "country": "PL",
+          "end": "2026-11-29T05:00:00Z",
+          "severity": 0.5426576207729359,
+          "start": "2026-11-28T22:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "ad_budget_exhausted",
+        "fault": {
+          "after": 0.05,
+          "boost": 3.0,
+          "boost_hours": 3,
+          "country": "FR",
+          "end": "2026-12-02T07:00:00Z",
+          "start": "2026-12-01T23:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "search_regression",
+        "fault": {
+          "country": "DE",
+          "end": "2026-12-06T12:00:00Z",
+          "severity": 0.5787643003100431,
+          "start": "2026-12-06T08:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "payment_failure",
+        "fault": {
+          "country": "ES",
+          "end": "2026-12-07T11:00:00Z",
+          "platform": "Web",
+          "severity": 0.38278147726955203,
+          "start": "2026-12-07T07:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 3.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "ad_budget_exhausted",
+        "fault": {
+          "after": 0.05,
+          "boost": 3.0,
+          "boost_hours": 3,
+          "country": "FR",
+          "end": "2026-12-09T12:00:00Z",
+          "start": "2026-12-09T04:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      }
+    ]
+  },
+  {
+    "seed": 8,
+    "days": 49.0,
+    "explained_without_alert": 0,
+    "pending_records": 0,
+    "faults": 12,
+    "detected": 11,
+    "detection_rate": 0.9166666666666666,
+    "mean_delay_h": 0.0,
+    "localized_rate": 1.0,
+    "correct_cause_rate": 0.9090909090909091,
+    "false_alarms": 0,
+    "false_alarms_per_day": 0.0,
+    "innocents": 8,
+    "innocents_silent": 8,
+    "innocent_silent_rate": 1.0,
+    "per_fault": [
+      {
+        "kind": "payment_failure",
+        "fault": {
+          "country": "PL",
+          "end": "2026-11-17T09:00:00Z",
+          "platform": "iOS",
+          "severity": 0.47727085552962345,
+          "start": "2026-11-17T03:00:00Z"
+        },
+        "detected": false
+      },
+      {
+        "kind": "search_regression",
+        "fault": {
+          "country": "PL",
+          "end": "2026-11-19T09:00:00Z",
+          "severity": 0.442846782110599,
+          "start": "2026-11-19T03:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "payment_failure",
+        "fault": {
+          "country": "FR",
+          "end": "2026-11-22T01:00:00Z",
+          "platform": "Android",
+          "severity": 0.41799321302589726,
+          "start": "2026-11-21T21:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "ad_budget_exhausted",
+        "fault": {
+          "after": 0.05,
+          "boost": 3.0,
+          "boost_hours": 3,
+          "country": "ES",
+          "end": "2026-11-25T00:00:00Z",
+          "start": "2026-11-24T16:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "ad_budget_exhausted",
+        "fault": {
+          "after": 0.05,
+          "boost": 3.0,
+          "boost_hours": 3,
+          "country": "DE",
+          "end": "2026-11-26T13:00:00Z",
+          "start": "2026-11-26T05:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "ad_budget_exhausted",
+        "fault": {
+          "after": 0.05,
+          "boost": 3.0,
+          "boost_hours": 3,
+          "country": "FR",
+          "end": "2026-11-28T13:00:00Z",
+          "start": "2026-11-28T05:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "stockout_surge",
+        "fault": {
+          "category": "sports",
+          "end": "2026-11-29T01:00:00Z",
+          "feed_ctr_lift": 0.25,
+          "multiplier": 14.313931863337086,
+          "start": "2026-11-28T20:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": false
+      },
+      {
+        "kind": "payment_failure",
+        "fault": {
+          "country": "ES",
+          "end": "2026-11-30T21:00:00Z",
+          "platform": "iOS",
+          "severity": 0.5868287731997698,
+          "start": "2026-11-30T13:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "stockout_surge",
+        "fault": {
+          "category": "beauty",
+          "end": "2026-12-07T12:00:00Z",
+          "feed_ctr_lift": 0.25,
+          "multiplier": 13.390167638587148,
+          "start": "2026-12-07T06:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "search_regression",
+        "fault": {
+          "country": "FR",
+          "end": "2026-12-09T03:00:00Z",
+          "severity": 0.4104549966447032,
+          "start": "2026-12-08T20:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "stockout_surge",
+        "fault": {
+          "category": "electronics",
+          "end": "2026-12-10T15:00:00Z",
+          "feed_ctr_lift": 0.25,
+          "multiplier": 13.666251786593453,
+          "start": "2026-12-10T10:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      },
+      {
+        "kind": "search_regression",
+        "fault": {
+          "country": "FR",
+          "end": "2026-12-11T19:00:00Z",
+          "severity": 0.41417368948336214,
+          "start": "2026-12-11T14:00:00Z"
+        },
+        "detected": true,
+        "delay_h": 0.0,
+        "localized": true,
+        "correct_cause": true
+      }
+    ]
+  }
+]

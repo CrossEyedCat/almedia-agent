@@ -31,7 +31,7 @@ metrics:
     formula: add_to_cart / product_views
     atomic: true
     bounds: [0, 1]
-    systems: [catalog]
+    systems: [catalog, promotions]
     direction: up
 
   - name: checkout_rate

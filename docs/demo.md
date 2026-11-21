@@ -1,7 +1,6 @@
 # Demo script (3 minutes)
 
-Status: draft written before the brain's monitor exists. Lines marked **[B]** depend on brain/ and must be
-checked against the real thing before the first rehearsal. Everything else was run.
+Status: integrated monitor a26fbe7 has been replay-tested. Live recovery and the three-minute timing still need rehearsal. The new-metric handover is still pending B's implementation; do not present it as complete.
 
 ## Before we start (all terminals at the repository root)
 
@@ -14,8 +13,8 @@ checked against the real thing before the first rehearsal. Everything else was r
 
 ```
 python -m sim.run --backfill 28d --db data/market.db --force
-# [B] Start python -m brain.run with the SAME database, incidents and incoming-metrics paths.
-# brain.run does not exist in this snapshot: obtain its real command from B before rehearsing.
+python -m brain.run --db data/market.db --incidents incidents --graph-out data/graph.json
+# Start only with an empty/archived run folder. --fresh clears monitor output; do not use it on a run to preserve.
 python -m sim.live --speed 2 --db data/market.db
 ```
 
@@ -55,7 +54,7 @@ Never point the live UI at eval_incidents. Missing or empty scoring output is an
 | 1:35 | "Someone rolls the release back. The incident should close by itself." | Pick the fault in **In progress**, click **End it (rollback)** | A rollback release appears; after a few normal hours the incident turns resolved [B] |
 | 1:45 | "Not everything unusual is a problem: a planned French promo lifts orders." | Click **Promo (12 h)** (FR) | No new incident; the calendar explains it [B] |
 | 2:00 | "If data arrives late, it waits instead of crying wolf." | Click **Arrives 2 h late** (payments) | No incident for those hours [B] |
-| 2:15 | "A new metric arrives as a definition and a query. The system finds its place by itself." | Click **Add refund_rate** | New node in the graph, status validated [B] |
+| 2:15 | Only after B's handover is integrated: "A new metric arrives as a definition and a query." | Click **Add refund_rate** | Must get a real validated result and updated graph; currently this step is a known gap, not a completed capability |
 | 2:40 | "We scored it on N random faults and innocent events: detection, delay, false alarms." | Show `docs/results.md` | Numbers from `python -m sim.score`, not hand-picked |
 | 2:55 | One-line close: "It watches the business, not the servers." | | |
 
@@ -63,7 +62,7 @@ Never point the live UI at eval_incidents. Missing or empty scoring output is an
 
 1. The simulator or UI is unresponsive: restart it (`Ctrl+C`, run the command again). Data is in `data/market.db`; the
    history stays.
-2. The brain does not report within 20 s: state that it has not produced a report. A recording is a fallback only
+2. In accelerated replay only, if the brain does not report within 20 s: state that it has not produced a report. A recording is a fallback only
    after we have recorded and checked one; no recording exists in this snapshot.
 3. Network or API problem: the core loop does not use the language model; the report falls back to a template.
 4. Use a checked recording if available; otherwise show the graph and data and explain the live failure.
@@ -83,4 +82,4 @@ The scoring script (`python -m sim.score generate`) mixes all four with promos a
 
 - Inject at a chosen header-clock hour and record it in each rehearsal. `--now` affects the latest data hour; it does not fix the hour of day.
 - Reset between rehearsals with the full stop/archive/backfill/restart list above.
-- Fault severity in the button is 0.4 (payment success falls by 40%), promo is 12 hours, late data is 2 hours.
+- Fault severity in the button is 0.4 (payment success falls by 40%), faults default to 12 simulated hours unless rolled back, promo is 12 hours, late data is 2 hours.
