@@ -2,7 +2,7 @@
 
 Column names and units follow brain's fixture (tests/fixture_db.py), so the brain can read the
 simulator's database unchanged. Money is in EUR, timestamps are UTC hour starts like
-2026-11-01T13:00:00Z. Run `python -m sim.schema` to print the DDL (docs/contracts/facts_hourly.sql).
+2026-11-01T13:00:00Z. Run `python -m sim.schema` to print the DDL (docs/contracts/schema.sql).
 """
 from __future__ import annotations
 
@@ -35,7 +35,10 @@ def facts_ddl() -> str:
 
 
 OTHER_DDL = """
--- how fresh each source is, per hour (completeness gate for the monitor)
+-- how fresh each source is, per hour (completeness gate for the monitor).
+-- The clock rule (agreed with B, issue 14): clock = MAX(facts_hourly.ts) + 1 hour; a source's hour has arrived when
+-- arrived_at <= clock + 10 minutes. On time, arrived_at is ts + 1 h + 2..9 minutes, so the jitter must stay under 10
+-- minutes (tests/test_sim.py checks it); a data delay adds delay_hours.
 CREATE TABLE IF NOT EXISTS ingestion_log (source TEXT NOT NULL, ts TEXT NOT NULL, arrived_at TEXT NOT NULL,
   PRIMARY KEY (source, ts));
 -- deployments the brain may use as context

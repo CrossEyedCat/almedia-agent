@@ -26,7 +26,7 @@ def parse_span(text: str) -> int:
 
 
 def backfill(path: str, hours: int, start: str = DEFAULT_START, countries=COUNTRIES, seed: int = 42,
-             overwrite: bool = True) -> Path:
+             overwrite: bool = True, add_context: bool = False) -> Path:
     p = Path(path)
     if p.exists():
         if not overwrite:
@@ -36,6 +36,8 @@ def backfill(path: str, hours: int, start: str = DEFAULT_START, countries=COUNTR
     con = db.connect(p)
     try:
         db.init_db(con, seed, pd.Timestamp(start), countries)
+        if add_context:
+            db.add_release_context(con, hours)
         db.write_hours(con, 0, hours)
     finally:
         con.close()
@@ -52,7 +54,7 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true", help="replace an existing database")
     a = ap.parse_args(argv)
     t0 = time.time()
-    p = backfill(a.db, a.backfill, a.start, tuple(a.countries.split(",")), a.seed, overwrite=a.force or not Path(a.db).exists())
+    p = backfill(a.db, a.backfill, a.start, tuple(a.countries.split(",")), a.seed, overwrite=a.force or not Path(a.db).exists(), add_context=True)
     con = db.connect(p)
     rows = con.execute("SELECT COUNT(*) FROM facts_hourly").fetchone()[0]
     print(f"{p}: {rows} rows, {a.backfill} hours, seed {a.seed}, {time.time() - t0:.1f} s")

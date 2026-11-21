@@ -2,6 +2,7 @@
 import re
 import sqlite3
 import time
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -433,3 +434,36 @@ def test_the_command_line_rejects_a_wrong_value_with_a_usage_error(tmp_path):
     con = db.connect(path)
     assert con.execute("SELECT COUNT(*) FROM ground_truth").fetchone()[0] == 0
     con.close()
+# ------------------------------------------------------------------- the clock rule
+def test_on_time_data_arrives_between_two_and_nine_minutes_after_the_hour_ends(clean_db):
+    """The agreed clock rule only works while the on-time jitter stays under 10 minutes."""
+    con = sqlite3.connect(clean_db)
+    rows = con.execute("SELECT ts, arrived_at FROM ingestion_log").fetchall()
+    con.close()
+    lags = [(pd.Timestamp(a) - pd.Timestamp(t) - pd.Timedelta(hours=1)) / pd.Timedelta(minutes=1) for t, a in rows]
+    assert min(lags) >= 2 and max(lags) < 10
+
+
+def test_the_clock_rule_gives_the_pending_lists_the_demo_expects(tmp_path):
+    """A 2 hour payments delay over 3 hours: on successive ticks the held hours are [10], [10, 11], [11, 12], [12], []."""
+    path = fresh_copy(tmp_path, hours=3 * 24)
+    s, e = pd.Timestamp("2026-10-27T10:00:00Z"), pd.Timestamp("2026-10-27T13:00:00Z")
+    con = db.connect(path)
+    inject.data_delay(con, "payments", s, e, delay_hours=2)
+    rows = con.execute("SELECT ts, arrived_at FROM ingestion_log WHERE source = 'payments' AND ts BETWEEN ? AND ?",
+                       ("2026-10-27T08:00:00Z", "2026-10-27T15:00:00Z")).fetchall()
+    con.close()
+    by_ts = {pd.Timestamp(t): pd.Timestamp(a) for t, a in rows}
+
+    def pending(newest):                                   # the tick whose newest data hour is `newest`
+        clock = newest + pd.Timedelta(hours=1)
+        return [t.hour for t in sorted(by_ts) if t <= newest and by_ts[t] > clock + pd.Timedelta(minutes=10)]
+
+    ticks = [pending(pd.Timestamp(f"2026-10-27T{h}:00:00Z")) for h in (10, 11, 12, 13, 14)]
+    assert ticks == [[10], [10, 11], [11, 12], [12], []]
+
+
+def test_schema_sql_is_what_the_code_prints():
+    from sim.schema import full_ddl
+    committed = (Path(__file__).resolve().parent.parent / "docs" / "contracts" / "schema.sql").read_text(encoding="utf-8")
+    assert committed.strip() == full_ddl().strip()

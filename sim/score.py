@@ -2,19 +2,24 @@
 
     python -m sim.score generate --db data/eval.db --faults 12 --innocents 8 --seed 1
         builds a database with random faults and innocent events spread over the history
-    (run the brain over that database; it writes incidents/*.json)
-    python -m sim.score score --db data/eval.db --incidents incidents/ --out docs/results.md
+    (run the brain over that database; write to a separate eval_incidents/ folder)
+    python -m sim.score score --db data/eval.db --incidents eval_incidents/ --out docs/results.md
 
 The numbers in docs/results.md come from this script, not from hand-picked runs.
 
 Matching rules (kept simple on purpose, so they can be explained on a slide):
 - Faults are payment_failure, stockout_surge, search_regression and ad_budget_exhausted.
+- Only incidents with status open, ongoing or resolved (or no status) count. `explained` and `pending` are skipped: they
+  are neither a detection nor a false alarm.
+- `first_seen` is read as the time of detection (the newest data hour at the tick that raised the incident), so
+  delay = first_seen - fault start. The onset belongs in change.window.start.
 - A fault is DETECTED by an incident whose segment does not contradict the fault's scope (country, platform,
   category, channel) and whose first_seen lies from the fault start to 6 hours after its end (or the end of the data).
   The earliest such incident counts, and one incident can belong to one fault only.
 - DELAY = first_seen - fault start, in hours.
 - LOCALIZED when the incident's segment names every dimension of the fault's scope, with the same values.
-- CORRECT CAUSE, by kind, needs a hypothesis with status 'supported':
+- CORRECT CAUSE, by kind, needs a hypothesis with status 'supported' and the `kind` set (a hypothesis without a kind
+  never counts for the release causes):
     payment_failure   a release that names the country and the platform
     search_regression a release of search that names the country
     ad_budget_exhausted  pacing or ad_load named
@@ -26,7 +31,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
+import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -68,12 +74,35 @@ def load_truth(path) -> tuple[list[Event], pd.Timestamp, pd.Timestamp]:
 
 
 def load_incidents(folder) -> list[dict]:
+    folder = Path(folder)
+    if not folder.is_dir():
+        raise ValueError(f"{folder}: incidents folder does not exist")
+    paths = sorted(folder.glob("*.json"))
+    if not paths:
+        raise ValueError(f"{folder}: no incident JSON files; run the monitor first")
     out = []
-    for p in sorted(Path(folder).glob("*.json")) if Path(folder).exists() else []:
+    for p in paths:
         try:
-            out.append(json.loads(p.read_text(encoding="utf-8")))
-        except (OSError, json.JSONDecodeError):
-            continue
+            i = json.loads(p.read_text(encoding="utf-8"),
+                           parse_constant=lambda v: (_ for _ in ()).throw(ValueError(f"invalid JSON constant {v}")))
+            if not isinstance(i, dict):
+                raise ValueError("incident must be an object")
+            if not isinstance(i.get("id"), str) or not i["id"].strip():
+                raise ValueError("id must be non-empty text")
+            seen = i.get("first_seen")
+            if not isinstance(seen, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", seen):
+                raise ValueError("first_seen must be a UTC timestamp ending in Z")
+            pd.Timestamp(seen)
+            if not isinstance(i.get("segment", {}), dict):
+                raise ValueError("segment must be an object")
+            hypotheses = i.get("hypotheses", [])
+            if not isinstance(hypotheses, list) or any(not isinstance(h, dict) for h in hypotheses):
+                raise ValueError("hypotheses must be a list of objects")
+            if i.get("status", "open") not in (*COUNTED_STATUSES, "explained", "pending"):
+                raise ValueError("unknown incident status")
+        except (OSError, ValueError, TypeError) as exc:
+            raise ValueError(f"{p}: {exc}") from exc
+        out.append(i)
     return out
 
 
@@ -102,22 +131,29 @@ def named_cause(f: Event, incident: dict) -> bool:
     return False
 
 
+COUNTED_STATUSES = ("open", "ongoing", "resolved")
+
+
 def score(events: list[Event], incidents: list[dict], data_end: pd.Timestamp, days: float) -> dict:
+    incidents = [i for i in incidents if i.get("status", "open") in COUNTED_STATUSES]
     faults = [e for e in events if e.kind in FAULT_KINDS]
     innocents = [e for e in events if e.kind in ("promo", "data_delay")]
-    used: set[str] = set()
+    used: set[int] = set()
+    in_window: set[int] = set()
     detected = localized = correct = 0
     delays: list[float] = []
     per_fault = []
     for f in sorted(faults, key=lambda e: e.start):
         hi = min(data_end, f.end + GRACE) if f.end is not None else data_end
-        cands = sorted((i for i in incidents if i["id"] not in used and f.start <= _seen(i) <= hi
-                        and _consistent(i.get("segment") or {}, f.scope)), key=_seen)
+        cands = sorted((n for n, i in enumerate(incidents) if n not in used and f.start <= _seen(i) <= hi
+                        and _consistent(i.get("segment") or {}, f.scope)), key=lambda n: _seen(incidents[n]))
+        in_window.update(cands)
         if not cands:
             per_fault.append({"kind": f.kind, "fault": f.scope, "detected": False})
             continue
-        i = cands[0]
-        used.update(x["id"] for x in cands)
+        n = cands[0]
+        i = incidents[n]
+        used.add(n)
         detected += 1
         delay = (_seen(i) - f.start) / pd.Timedelta(hours=1)
         delays.append(delay)
@@ -127,7 +163,7 @@ def score(events: list[Event], incidents: list[dict], data_end: pd.Timestamp, da
         localized += loc
         correct += cause
         per_fault.append({"kind": f.kind, "fault": f.scope, "detected": True, "delay_h": delay, "localized": loc, "correct_cause": cause})
-    false_alarms = [i for i in incidents if i["id"] not in used]
+    false_alarms = [i for n, i in enumerate(incidents) if n not in used | in_window]
     silent = 0
     for e in innocents:
         end = e.end or data_end
@@ -177,18 +213,20 @@ def report(r: dict, db_path, n_incidents: int, days: float) -> str:
 
 
 # ---------------------------------------------------------------- generate
-def generate(path, faults: int = 12, innocents: int = 8, seed: int = 1, days: int = 28, countries=COUNTRIES) -> Path:
-    """A database with random faults and innocent events; windows do not overlap and are at least 12 h apart."""
+def generate(path, faults: int = 12, innocents: int = 8, seed: int = 1, days: int = 49, countries=COUNTRIES) -> Path:
+    """A database with random faults and innocent events; 21 clean days first; event windows do not overlap (gaps vary)."""
     rng = np.random.default_rng(seed)
     p = Path(path)
-    for suffix in ("", "-wal", "-shm"):
-        Path(str(p) + suffix).unlink(missing_ok=True)
     total = faults + innocents
-    # leave a week of clean history for the baseline, then place events in equal slots, in random order
-    first = 7 * 24
+    if faults < 0 or innocents < 0 or total == 0 or days <= 21 or not countries:
+        raise ValueError("use non-negative event counts, at least one event, countries and more than 21 days")
+    # Validate before replacing an existing database.
+    first = 21 * 24
     slot = (days * 24 - first) // total
     if slot < 12:
         raise ValueError("too many events for this history; lower --faults/--innocents or raise --days")
+    for suffix in ("", "-wal", "-shm"):
+        Path(str(p) + suffix).unlink(missing_ok=True)
     fault_kinds = [FAULT_KINDS[i % len(FAULT_KINDS)] for i in range(faults)]
     kinds = fault_kinds + ["promo"] * (innocents // 2) + ["delay"] * (innocents - innocents // 2)
     rng.shuffle(kinds)
@@ -214,6 +252,7 @@ def generate(path, faults: int = 12, innocents: int = 8, seed: int = 1, days: in
                 inject.promo(con, country, start, start + pd.Timedelta(hours=int(rng.integers(6, 11))), replay_now=False)
             else:
                 inject.data_delay(con, str(rng.choice(SOURCES)), start, start + pd.Timedelta(hours=int(rng.integers(2, 5))), replay_now=False)
+        db.add_release_context(con, days * 24)
         db.write_hours(con, 0, days * 24)             # one pass, with every injection on record
     finally:
         con.close()
@@ -227,20 +266,24 @@ def main(argv=None) -> int:
     g.add_argument("--db", default="data/eval.db")
     g.add_argument("--faults", type=int, default=12)
     g.add_argument("--innocents", type=int, default=8)
-    g.add_argument("--days", type=int, default=28)
+    g.add_argument("--days", type=int, default=49)
     g.add_argument("--seed", type=int, default=1)
     s = sub.add_parser("score")
     s.add_argument("--db", default="data/eval.db")
-    s.add_argument("--incidents", default="incidents")
+    s.add_argument("--incidents", default="eval_incidents")
     s.add_argument("--out", default="docs/results.md")
     a = ap.parse_args(argv)
     if a.cmd == "generate":
         p = generate(a.db, a.faults, a.innocents, a.seed, a.days)
         print(f"{p}: {a.faults} faults and {a.innocents} innocent events over {a.days} days (seed {a.seed})")
         return 0
+    try:
+        incidents = load_incidents(a.incidents)
+    except ValueError as exc:
+        ap.error(str(exc))
+    print(f"Read {len(incidents)} incident files; skipped 0 malformed files (strict validation)", file=sys.stderr)
     events, start, end = load_truth(a.db)
-    incidents = load_incidents(a.incidents)
-    days = (end - start) / pd.Timedelta(days=1)
+    days = (end - start + pd.Timedelta(hours=1)) / pd.Timedelta(days=1)
     r = score(events, incidents, end, days)
     text = report(r, a.db, len(incidents), days)
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
