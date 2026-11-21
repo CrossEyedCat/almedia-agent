@@ -303,3 +303,52 @@ def test_new_faults_cannot_be_recorded_twice_and_are_replayable(tmp_path):
     kinds = [r[0] for r in con.execute("SELECT kind FROM ground_truth ORDER BY rowid")]
     con.close()
     assert kinds == ["stockout_surge", "search_regression", "ad_budget_exhausted"]
+
+
+# ------------------------------------------------------------------ rollback
+def test_ending_a_fault_restores_normal_data_from_that_hour_and_writes_a_rollback(clean_db, tmp_path):
+    path = fresh_copy(tmp_path)
+    s, e = pd.Timestamp("2026-10-28T08:00:00Z"), pd.Timestamp("2026-10-28T14:00:00Z")
+    con = db.connect(path)
+    inject.payment_failure(con, "DE", "Android", s, severity=0.5)
+    (rowid,) = con.execute("SELECT rowid FROM ground_truth").fetchone()
+    inject.end_injection(con, rowid, e)
+    releases = con.execute("SELECT ts, system, country, platform, description FROM releases ORDER BY ts").fetchall()
+    con.close()
+    clean, now = key(facts(clean_db)), key(facts(path))
+    ts = pd.to_datetime(clean.ts)
+    target = (clean.country == "DE") & (clean.platform == "Android")
+    during, after = (ts >= s) & (ts < e) & target, (ts >= e)
+    pd.testing.assert_frame_equal(clean[~during], now[~during])               # only the fault window differs
+    assert now[during].payment_successes.sum() < 0.7 * clean[during].payment_successes.sum()
+    assert [r[1] for r in releases] == ["payments-sdk", "payments-sdk"] and "rollback" in releases[1][4]
+    assert releases[1][0] == "2026-10-28T14:00:00Z" and releases[1][2:4] == ("DE", "Android")
+
+
+def test_ending_twice_or_ending_nothing_is_refused(tmp_path):
+    path = fresh_copy(tmp_path, hours=3 * 24)
+    con = db.connect(path)
+    inject.stockout_surge(con, "home", pd.Timestamp("2026-10-26T06:00:00Z"))
+    (rowid,) = con.execute("SELECT rowid FROM ground_truth").fetchone()
+    inject.end_injection(con, rowid, pd.Timestamp("2026-10-26T12:00:00Z"))
+    with pytest.raises(inject.AlreadyEnded):
+        inject.end_injection(con, rowid, pd.Timestamp("2026-10-26T18:00:00Z"))
+    with pytest.raises(inject.NoSuchInjection):
+        inject.end_injection(con, 999, pd.Timestamp("2026-10-26T18:00:00Z"))
+    rel = con.execute("SELECT COUNT(*) FROM releases").fetchone()[0]
+    ended = inject.list_injections(con, pd.Timestamp("2026-10-26T12:00:00Z"))
+    con.close()
+    assert rel == 0                                                           # stockouts have no release to roll back
+    assert ended[0]["active"] is False
+
+
+def test_a_fault_ended_before_it_starts_is_cancelled_and_the_same_fault_can_be_injected_again(clean_db, tmp_path):
+    path = fresh_copy(tmp_path)
+    s = pd.Timestamp("2026-11-02T00:00:00Z")                                  # after the last hour of the data (10-31): nothing generated yet
+    con = db.connect(path)
+    inject.search_regression(con, "ES", s)
+    (rowid,) = con.execute("SELECT rowid FROM ground_truth").fetchone()
+    inject.end_injection(con, rowid, s)                                       # ends the moment it starts
+    inject.search_regression(con, "ES", s)                                    # the same settings again: allowed
+    con.close()
+    pd.testing.assert_frame_equal(key(facts(clean_db)), key(facts(path)))

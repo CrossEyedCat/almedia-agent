@@ -87,6 +87,8 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
     <div class="grp"><label>Fault</label>
       <select id="f-kind"></select><select id="f-country"></select><select id="f-platform"></select><select id="f-category"></select>
       <button id="f-go">Inject fault</button></div>
+    <div class="grp" id="end-grp" hidden><label>In progress</label>
+      <select id="end-select"></select><button id="end-go">End it (rollback)</button></div>
     <div class="grp"><label>Innocent change</label>
       <select id="pr-country"></select><button id="pr-go">Promo (12 h)</button></div>
     <div class="grp"><label>Data</label>
@@ -325,6 +327,7 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
   function refresh() {
     get('/api/state').then(function (s) {
       $('clock').textContent = s.ready ? 'simulated clock ' + s.last_hour.replace('T', ' ').replace(':00:00Z', ':00 UTC') : s.error;
+      fillEnd((s.injected || []).filter(function (i) { return i.active; }));
     }).catch(function () { $('clock').textContent = 'server not reachable'; });
     get('/api/incidents').then(function (r) {
       var before = JSON.stringify(incidents.map(function (i) { return [i.id, i.status, i.last_seen]; }));
@@ -351,6 +354,30 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
     ['country', 'platform', 'category'].forEach(function (p) { $('f-' + p).hidden = need.indexOf(p) < 0; });
   }
   $('f-kind').onchange = showParams; showParams();
+  // injections that are still in effect, so a demo can end one (the rollback)
+  var endKey = '';
+  function fillEnd(list) {
+    var key = JSON.stringify(list.map(function (i) { return i.id; }));
+    $('end-grp').hidden = !list.length;
+    if (key === endKey) return;
+    endKey = key;
+    var sel = $('end-select'), keep = sel.value;
+    sel.textContent = '';
+    list.forEach(function (i) {
+      var where = ['country', 'platform', 'category', 'source'].map(function (d) { return i.scope[d]; }).filter(Boolean).join(' ');
+      var o = document.createElement('option'); o.value = i.id;
+      o.textContent = i.kind + ' ' + where + ' from ' + (i.scope.start || '').replace('T', ' ').replace(':00:00Z', ':00').slice(5);
+      sel.appendChild(o);
+    });
+    if (keep) sel.value = keep;
+  }
+  $('end-go').onclick = function () {
+    var id = parseInt($('end-select').value, 10);
+    if (!id) return;
+    toast('Ending...');
+    post('/api/end', { id: id }).then(function (r) { toast('Ended from ' + r.ended_from.replace('T', ' ').replace(':00:00Z', ':00 UTC')); refresh(); })
+      .catch(function (e) { toast('Failed: ' + e.message); });
+  };
   function act(body, label) {
     toast(label + '...');
     post('/api/inject', body).then(function (r) { toast(label + ' from ' + r.start.replace('T', ' ').replace(':00:00Z', ':00 UTC')); refresh(); })

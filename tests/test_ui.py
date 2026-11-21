@@ -225,3 +225,37 @@ def test_the_graph_card_stays_in_view_next_to_a_long_report(client):
     html = client.get("/").text
     assert 'id="graph-card"' in html and "#graph-card { position: sticky;" in html
     assert "--top-h" in html and "setTop" in html                      # the offset follows the real height of the top bar
+
+
+# ----------------------------------------------------------------- rollback
+def test_a_fault_can_be_ended_from_the_page_and_stops_being_active(client):
+    assert client.post("/api/inject", json={"kind": "payment_failure", "country": "DE", "platform": "Android"}).status_code == 200
+    injected = client.get("/api/state").json()["injected"]
+    assert injected[0]["active"] is True and isinstance(injected[0]["id"], int)
+    r = client.post("/api/end", json={"id": injected[0]["id"]})
+    assert r.status_code == 200 and r.json()["ended_from"] == "2026-10-27T00:00:00Z"
+    assert client.get("/api/state").json()["injected"][0]["active"] is False
+    assert client.post("/api/end", json={"id": injected[0]["id"]}).status_code == 409      # already ended
+    assert client.post("/api/end", json={"id": 999}).status_code == 404
+    # and the same fault can be started again
+    assert client.post("/api/inject", json={"kind": "payment_failure", "country": "DE", "platform": "Android"}).status_code == 200
+
+
+def test_the_page_has_the_end_control_next_to_the_other_demo_controls(client):
+    html = client.get("/").text
+    assert 'id="end-grp"' in html and "End it (rollback)" in html and "/api/end" in html
+    assert html.index('id="end-grp"') < html.index('id="demo-controls"') + 4000        # inside the folded demo bar
+
+
+def test_static_files_are_not_cached_so_a_changed_style_shows_at_once(client):
+    r = client.get("/static/console.css")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+    assert "[hidden] { display: none !important; }" in r.text
+
+
+def test_pages_link_the_stylesheet_with_its_modification_time(client):
+    import re
+    for page in ("/", "/data"):
+        r = client.get(page)
+        assert re.search(r'/static/console\.css\?v=\d+"', r.text), page
+        assert r.headers["cache-control"] == "no-cache"

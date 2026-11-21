@@ -24,6 +24,7 @@ contract example until the brain writes its first incident).
 | 0:45 | "Fault: a payment release breaks Android payments in Germany." | Choose **Payment failure** (DE, Android) in the DEMO bar, click **Inject fault** | Toast "Payment failure injected from ..." |
 | 1:00 | "It notices, follows the graph, and tells us where and why." | Wait for the incident (about 3 to 6 simulated hours = 6 to 12 s) [B] | Incident appears; path orders to payment success lit in red |
 | 1:20 | Read the report: impact in euros, 91% of the change in payment success, Germany, Android, the release; what is still uncertain | Click the incident | Impact, hypotheses with evidence, trail |
+| 1:35 | "Someone rolls the release back. The incident should close by itself." | Pick the fault in **In progress**, click **End it (rollback)** | A rollback release appears; after a few normal hours the incident turns resolved [B] |
 | 1:45 | "Not everything unusual is a problem: a planned French promo lifts orders." | Click **Promo (12 h)** (FR) | No new incident; the calendar explains it [B] |
 | 2:00 | "If data arrives late, it waits instead of crying wolf." | Click **Arrives 2 h late** (payments) | No incident for those hours [B] |
 | 2:15 | "A new metric arrives as a definition and a query. The system finds its place by itself." | Click **Add refund_rate** | New node in the graph, status validated [B] |

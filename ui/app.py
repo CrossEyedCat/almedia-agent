@@ -15,13 +15,13 @@ from pathlib import Path
 import pandas as pd
 import yaml
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from sim import db, inject
 from ui import domains as domain_map
-from sim.inject import AlreadyInjected
+from sim.inject import AlreadyEnded, AlreadyInjected, NoSuchInjection
 from sim.world import CATEGORIES, CHANNELS, COUNTRIES, PLATFORMS
 from sim.schema import SOURCES
 
@@ -33,12 +33,33 @@ EXAMPLE_INCIDENT = ROOT / "docs/contracts/incident_example.json"
 MARKET_DB = Path(os.environ.get("MARKET_DB", ROOT / "data/market.db"))
 
 app = FastAPI(title="Eye of the System")
-app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
+class NoCacheStatic(StaticFiles):
+    """The console is a local demo: a changed style or script must show up on the next reload."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", NoCacheStatic(directory=Path(__file__).parent / "static"), name="static")
+
+
+STATIC = Path(__file__).parent / "static"
+
+
+def _page(name: str) -> HTMLResponse:
+    """A page whose stylesheet link carries the file's modification time, so a changed style is fetched again
+    even by a browser that cached the old one."""
+    html = (STATIC / name).read_text(encoding="utf-8")
+    version = int((STATIC / "console.css").stat().st_mtime)
+    return HTMLResponse(html.replace("/static/console.css", f"/static/console.css?v={version}"),
+                        headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/")
 def index():
-    return FileResponse(Path(__file__).parent / "static" / "index.html")
+    return _page("index.html")
 
 
 @app.get("/api/domains")
@@ -82,8 +103,9 @@ def state():
     try:
         last = db.last_hour(con)
         meta = db.read_meta(con)
-        injected = [{"kind": k, "at": at, "scope": json.loads(sc), "description": d}
-                    for at, k, sc, d in con.execute("SELECT injected_at, kind, scope, description FROM ground_truth ORDER BY injected_at")]
+        injected = [{"id": i["id"], "kind": i["kind"], "at": con.execute("SELECT injected_at FROM ground_truth WHERE rowid = ?", (i["id"],)).fetchone()[0],
+                     "scope": i["scope"], "description": i["description"], "active": i["active"]}
+                    for i in inject.list_injections(con, last + pd.Timedelta(hours=1))]
         return {"ready": True, "last_hour": last.strftime("%Y-%m-%dT%H:00:00Z"), "start": meta["start"].strftime("%Y-%m-%dT%H:00:00Z"),
                 "countries": list(meta["countries"]), "injected": injected}
     finally:
@@ -150,6 +172,28 @@ def _inject(con, req: "Inject"):
     return {"ok": True, "kind": req.kind, "start": start.strftime("%Y-%m-%dT%H:00:00Z"), "replayed_hours": n}
 
 
+class End(BaseModel):
+    id: int
+
+
+@app.post("/api/end")
+def end_fault(req: End):
+    """Demo: someone rolls the change back. The injection stops from the next simulated hour."""
+    if not MARKET_DB.exists():
+        raise HTTPException(409, "no database yet")
+    con = db.connect(MARKET_DB)
+    try:
+        at = db.last_hour(con) + pd.Timedelta(hours=1)
+        inject.end_injection(con, req.id, at)
+        return {"ok": True, "id": req.id, "ended_from": at.strftime("%Y-%m-%dT%H:00:00Z")}
+    except NoSuchInjection as exc:
+        raise HTTPException(404, str(exc))
+    except AlreadyEnded as exc:
+        raise HTTPException(409, str(exc))
+    finally:
+        con.close()
+
+
 class NewMetric(BaseModel):
     yaml_text: str
 
@@ -186,7 +230,7 @@ def _ro() -> sqlite3.Connection:
 
 @app.get("/data")
 def data_page():
-    return FileResponse(Path(__file__).parent / "static" / "data.html")
+    return _page("data.html")
 
 
 @app.get("/api/db/tables")

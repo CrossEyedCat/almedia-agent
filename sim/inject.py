@@ -4,6 +4,7 @@
     python -m sim.inject stockout_surge --category electronics
     python -m sim.inject search_regression --country DE
     python -m sim.inject ad_budget_exhausted --country FR --start 2026-11-20T23:00:00Z
+    python -m sim.inject end --id 3            # roll back: the fault stops from the next hour
     python -m sim.inject promo --country FR --start 2026-11-20T08:00:00Z --end 2026-11-20T20:00:00Z
     python -m sim.inject data_delay --source payments --start 2026-11-21T06:00:00Z --end 2026-11-21T09:00:00Z
 
@@ -14,6 +15,7 @@ ingestion_log. Rows of segments that the injection does not touch stay exactly a
 from __future__ import annotations
 
 import argparse
+import json
 import sqlite3
 
 import pandas as pd
@@ -36,6 +38,17 @@ def replay(con: sqlite3.Connection, start: pd.Timestamp) -> int:
     count = db.hour_index(con, end) - first + 1
     db.write_hours(con, first, count)
     return count
+
+
+class AlreadyEnded(ValueError):
+    """The injection has already ended at or before that hour."""
+
+
+class NoSuchInjection(LookupError):
+    pass
+
+
+RELEASE_SYSTEM = {"payment_failure": "payments-sdk", "search_regression": "search", "ad_budget_exhausted": "pacing"}
 
 
 class AlreadyInjected(ValueError):
@@ -116,9 +129,40 @@ def ad_budget_exhausted(con, country: str, start: pd.Timestamp, end: pd.Timestam
     return replay(con, start) if replay_now else 0
 
 
+def list_injections(con, after: pd.Timestamp) -> list[dict]:
+    """Every injection on record, with its id and whether it is still in effect after hour `after`."""
+    out = []
+    for rowid, kind, scope, description in con.execute("SELECT rowid, kind, scope, description FROM ground_truth ORDER BY injected_at, rowid"):
+        inj = Injection.from_row(kind, scope)
+        out.append({"id": rowid, "kind": kind, "scope": json.loads(scope), "description": description,
+                    "active": inj.end is None or inj.end > after})
+    return out
+
+
+def end_injection(con, rowid: int, at: pd.Timestamp, replay_now: bool = True) -> int:
+    """Stop an injection from hour `at` on (someone rolled the change back) and regenerate the hours from `at`.
+    A release or fault that wrote a release gets a rollback release. Returns the number of hours replayed."""
+    row = con.execute("SELECT kind, scope FROM ground_truth WHERE rowid = ?", (rowid,)).fetchone()
+    if row is None:
+        raise NoSuchInjection(f"no injection with id {rowid}")
+    inj = Injection.from_row(*row)
+    if inj.end is not None and inj.end <= at:
+        raise AlreadyEnded(f"{inj.kind} already ended at {_fmt(inj.end)}")
+    ended = Injection(inj.kind, inj.start, at, inj.params)
+    con.execute("UPDATE ground_truth SET scope = ? WHERE rowid = ?", (ended.to_scope_json(), rowid))
+    system = RELEASE_SYSTEM.get(inj.kind)
+    if system and at >= inj.start:
+        where = ", ".join(str(inj.params[d]) for d in ("country", "platform") if inj.params.get(d))
+        con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
+                    (_fmt(at), system, inj.params.get("country"), inj.params.get("platform"), f"{system} rollback ({where})"))
+    con.commit()
+    return replay(con, at) if replay_now else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("kind", choices=["payment_failure", "stockout_surge", "search_regression", "ad_budget_exhausted", "promo", "data_delay"])
+    ap.add_argument("kind", choices=["payment_failure", "stockout_surge", "search_regression", "ad_budget_exhausted", "promo", "data_delay", "end"])
+    ap.add_argument("--id", type=int, help="end: the injection to stop (see ground_truth)")
     ap.add_argument("--category")
     ap.add_argument("--multiplier", type=float, default=12.0)
     ap.add_argument("--boost", type=float, default=3.0)
@@ -144,6 +188,13 @@ def main(argv=None) -> int:
         else:
             start = last - pd.Timedelta(hours=5)
         end = pd.Timestamp(a.end) if a.end else None
+        if a.kind == "end":
+            if a.id is None:
+                ap.error("end needs --id")
+            at = pd.Timestamp(a.start) if a.start else last + pd.Timedelta(hours=1)
+            n = end_injection(con, a.id, at)
+            print(f"injection {a.id} ended from {_fmt(at)}, {n} hours replayed")
+            return 0
         if a.kind == "payment_failure":
             if not (a.country and a.platform):
                 ap.error("payment_failure needs --country and --platform")
