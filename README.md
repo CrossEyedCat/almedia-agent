@@ -141,11 +141,16 @@ Deterministic first: a new metric gets a formula and a place without a language 
 
 ### 3.4 Monitoring (M2)
 
-- **Clock and completeness.** `now` and the meaning of `arrived_at` are part of the data contract. An hour of a metric is judged only when every source the metric depends on has arrived; until then it is *pending*: neither healthy nor an alert.
-- **What to watch.** The leaf factors of the formula graph — the step rates of the funnel, sessions and the other volume leaves — in every country × platform cell and in total: 12 cells × about 10 factors, one query of a few milliseconds per tick. Top outcomes are used for impact and reporting, not for detection: a fault in one cell is diluted in them (3.8).
-- **Expected state.** Built for the base columns at the watched grain from the same hour-of-week in previous weeks; every metric is then derived from those expected sums (`Evaluator.derive`). Expected values therefore obey the same formulas and add up over segments. A separate median baseline per metric does not.
-- **Planned events.** A calendar event that overlaps a deviation in time and scope explains it: reported as explained, not alerted.
-- **Detection.** For a rate, a binomial test of successes given attempts against the expected rate, with its spread calibrated on clean history. For a volume, a robust z-score of the seasonal residual. Then persistence over consecutive hours and a minimum business impact in EUR, so small blips do not start investigations.
+Built in `brain/clock.py`, `brain/stats.py`, `brain/monitor.py`, `brain/impact.py`, `brain/incidents.py`; run with `python -m brain.run`.
+
+- **Clock and completeness.** `clock = MAX(facts_hourly.ts) + 1 h`; a source's hour has arrived when `arrived_at <= clock + 10 min` (`docs/contracts/`). An hour of a metric is judged only when every source the metric depends on has arrived; until then it is *pending*: neither healthy nor an alert. `--replay` walks a finished database with the same rule and never reads a row from the future.
+- **What to watch.** Every atomic rate of the graph (15 today), on the formula tree or not, in seven cuts: total, each dimension, country × platform and country × category (48 series). Outcomes are not judged directly, because a fault in one cell is diluted in them (3.8); they are used for the impact.
+- **Expected rate.** Pooled numerator over pooled denominator of the series' own visible history (up to three weeks; three days are enough to start), without the hours being judged, hours already flagged, hours of calendar events and held hours. A fault that lasts therefore does not become the new normal. The simulator's rates have no daily pattern; real data would need an hour-of-week factor here.
+- **Detection.** The test is chosen per metric from its own history. If numerator and denominator count events and the hour-to-hour spread is binomial: the exact two-sided binomial tail, p below 1e-7. The same on the surplus for a ratio that never falls below 1 (payment attempts per checkout). Otherwise (money, impressions per session): the residual against its historical spread, beyond 6 spreads and beyond anything clean history showed. Each hour is judged alone and summed with the two before it, and the rate must have moved by at least 10 %. The last 8 hours are re-read and re-judged on every tick, because an injection can rewrite them.
+- **One fault, one incident.** A fault in one cell also shows, diluted, in every series that contains the cell: per metric the strongest series wins, alerts on other metrics in a compatible place join it, and an open incident is updated in place (same file, same `first_seen`), its place refined when stronger evidence arrives. It is resolved after three normal, judged hours.
+- **Planned events.** A calendar event that overlaps a deviation in time and scope explains it for the metrics the graph links to the calendar (traffic, pricing, promotions): written as a note with status `explained`, no alert. Its hours stay out of later baselines.
+- **Impact.** The outcome is recomputed through the formulas of the graph with the moved rates back at their expected values, so every path counts (a payment fault lowers fees and discounts together). From a metric that moved, the `may_affect` links are followed with one targeted test each: out-of-stock listings cost orders through the add-to-cart rate.
+- **Not built yet.** Volumes (sessions) with an hour-of-week baseline; attribution between several interacting factors and the comparison of rival causes belong to 3.5.
 
 ### 3.5 Investigation (M3)
 
@@ -258,13 +263,15 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [x] A small injection CLI for testing: `python -m sim.inject payment_failure --country DE --platform Android`.
 
 **B — monitor v1**
-- [ ] Clock and completeness: `now` and the meaning of `arrived_at` agreed with A in `docs/contracts/`; a reader for arrivals; an hour is pending until every source the metric depends on (`graph.sources`) has arrived.
-- [ ] Expected state: the same hour-of-week over the past 3 weeks for the base columns at country × platform grain; metrics derived from it with `Evaluator.derive`, so identities and sums over segments hold.
-- [ ] Watch list: leaf factors of the formula graph (step rates, sessions and other volume leaves) in every country × platform cell and in total; one query per tick.
-- [ ] Detector: binomial test for rates, robust z-score for volumes, persistence over consecutive hours, minimum impact in €.
-- [ ] Loop: `python -m brain.run` polls the database every tick (one snapshot per tick, trailing hours re-read) and logs detections.
+- [x] Clock and completeness: `clock = MAX(ts) + 1 h`, arrived when `arrived_at <= clock + 10 min` (agreed in issue 14, `docs/contracts/`); an hour is pending until every source the metric depends on (`graph.sources`) has arrived. `brain/clock.py`.
+- [x] Expected rate per series from its own history, robust to a lasting fault and to promo hours (instead of an hour-of-week state of base columns: the rates have no daily pattern, and counts give an exact test). `brain/monitor.py`.
+- [x] Watch list from the graph: every atomic rate, in total, per dimension, per country × platform and per country × category.
+- [x] Detector: exact binomial tail for proportions, historical spread for other ratios, one hour and three hours, minimum change of 10 %. `brain/stats.py`. Volumes are not watched yet.
+- [x] Incidents: one file per fault, refined in place, resolved after three normal hours; impact through the formulas; releases around the onset as hypotheses with `kind`; notes for explained and pending. `brain/incidents.py`, `brain/impact.py`.
+- [x] Loop: `python -m brain.run --fresh` (live) and `python -m brain.run --replay --db data/eval.db --incidents runs/eval --fresh` (scoring).
+- [ ] Minimum impact in EUR as a gate (today: minimum change of the rate), and sessions with a seasonal baseline.
 
-**A+B checkpoint (dinner):** live simulator with S1 → the brain detects it; write down the detection delay in simulated hours.
+**A+B checkpoint (dinner):** live simulator with S1 → the brain detects it; write down the detection delay in simulated hours. Done 21 Nov: S1 from the console (DE × Android, started at 02:00 simulated time, the night trough) was raised after 2 simulated hours with the release as the supported cause. On five scoring databases never used for tuning (60 faults, 40 innocent events): 59 detected (the one miss is a correct incident that the scorer assigns to the previous fault, issue 10), 100 % localized, right cause for 54 of 59, 0 false alarms, 40 of 40 innocent events silent, mean delay 0.2 h after the first affected hour.
 
 ### M3 Investigation — Sat 19:00–00:00
 

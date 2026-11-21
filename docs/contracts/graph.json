@@ -333,7 +333,8 @@
       ],
       "direction": "up",
       "systems": [
-        "catalog"
+        "catalog",
+        "promotions"
       ],
       "source": null,
       "sources": [
@@ -1486,6 +1487,21 @@
       "system": "catalog"
     },
     {
+      "id": "release:promotions",
+      "kind": "context",
+      "label": "releases of promotions",
+      "status": "",
+      "table": "releases",
+      "system": "promotions"
+    },
+    {
+      "id": "calendar",
+      "kind": "context",
+      "label": "promo and holiday calendar",
+      "status": "",
+      "table": "calendar"
+    },
+    {
       "id": "checkout_rate@country",
       "kind": "breakdown",
       "label": "checkout_rate by country",
@@ -2124,13 +2140,6 @@
       "status": "",
       "table": "releases",
       "system": "demand"
-    },
-    {
-      "id": "calendar",
-      "kind": "context",
-      "label": "promo and holiday calendar",
-      "status": "",
-      "table": "calendar"
     },
     {
       "id": "searches@country",
@@ -3325,6 +3334,22 @@
       "via": "releases.system"
     },
     {
+      "id": "context:release:promotions->add_to_cart_rate",
+      "source": "release:promotions",
+      "target": "add_to_cart_rate",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
+    },
+    {
+      "id": "context:calendar->add_to_cart_rate",
+      "source": "calendar",
+      "target": "add_to_cart_rate",
+      "kind": "context",
+      "status": "",
+      "via": "calendar.country"
+    },
+    {
       "id": "context:freshness:traffic->add_to_cart_rate",
       "source": "freshness:traffic",
       "target": "add_to_cart_rate",
@@ -4211,6 +4236,14 @@
       "via": "releases.system"
     },
     {
+      "id": "context:calendar->discounts",
+      "source": "calendar",
+      "target": "discounts",
+      "kind": "context",
+      "status": "",
+      "via": "calendar.country"
+    },
+    {
       "id": "context:freshness:orders->discounts",
       "source": "freshness:orders",
       "target": "discounts",
@@ -4290,6 +4323,14 @@
       "kind": "context",
       "status": "",
       "via": "releases.system"
+    },
+    {
+      "id": "context:calendar->discount_rate",
+      "source": "calendar",
+      "target": "discount_rate",
+      "kind": "context",
+      "status": "",
+      "via": "calendar.country"
     },
     {
       "id": "context:freshness:orders->discount_rate",
