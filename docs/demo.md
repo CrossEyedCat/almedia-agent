@@ -12,10 +12,11 @@ Status: integrated monitor a26fbe7 has been replay-tested. Live recovery and the
 3. Backfill with explicit paths:
 
 ```
-python -m sim.run --backfill 28d --db data/market.db --force
-python -m brain.run --db data/market.db --incidents incidents --graph-out data/graph.json
-# Start only with an empty/archived run folder. --fresh clears monitor output; do not use it on a run to preserve.
-python -m sim.live --speed 2 --db data/market.db
+python -m sim.run --backfill 28d --db data/market.db --force      # clean 4-week history, about 3 s
+python -m brain.run --db data/market.db --incidents incidents --graph-out data/graph.json   # the monitor
+# Start only with an empty/archived run folder. --fresh clears monitor output (stop the monitor before a new backfill); do not use it on a run to preserve.
+python -m sim.live --speed 2 --db data/market.db                  # one simulated hour every 2 s
+uvicorn ui.app:app --port 8000                                    # open http://127.0.0.1:8000
 ```
 
 4. Start the UI with these environment variables, then `uvicorn ui.app:app --port 8000`:
