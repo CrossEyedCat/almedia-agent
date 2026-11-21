@@ -319,3 +319,10 @@ def test_the_page_reads_the_typed_links_and_survives_odd_fields(client):
                  "Where in the segments", "/api/metric/", "function str(", "function list("):
         assert word in html, word
     assert "explained" in client.get("/static/console.css").text                   # grey, not counted
+
+
+def test_metrics_the_monitor_also_watched_move_count_for_their_domain(client):
+    """A watched metric in the investigation trail (stockout_rate next to an ad fault that began in the same hour) lights its own domain."""
+    html = client.get("/").text
+    assert "t.action === 'watch'" in html and "meta[t.target]" in html
+    assert html.count("t.action === 'watch'") == 2          # the domain counts and the highlight both use it
