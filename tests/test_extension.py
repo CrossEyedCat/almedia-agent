@@ -503,6 +503,11 @@ def test_replay_does_not_touch_the_incoming_folder(market, tmp_path, monkeypatch
     assert sorted(p.name for p in incoming.iterdir()) == ["refund_rate.yaml"]
 
 
+class FixedMonitor(Monitor):
+    """A monitor that builds its watch list once, at start, and cannot take a rate later."""
+    rewatch = None
+
+
 class RewatchingMonitor(Monitor):
     """brain/monitor.py plus the change the extension needs from it (see the hand-over report): take up the rates
     that joined the graph after the start. Kept here until that change is in the monitor itself."""
@@ -524,7 +529,7 @@ class RewatchingMonitor(Monitor):
 
 def test_an_accepted_rate_is_ready_for_the_monitor_and_the_answer_says_whether_it_is_watched(market, tmp_path):
     store, graph = Store(market), MetricGraph.load()
-    monitor = Monitor(graph, store, Config())
+    monitor = FixedMonitor(graph, store, Config())
     ext = Extension(graph, store, tmp_path / "incoming", monitor=monitor, quiet=True)
     drop(ext.incoming, "refund_rate", page_yaml())
     [r] = look(ext)
@@ -550,4 +555,9 @@ def test_with_the_proposed_monitor_change_the_new_rate_is_judged_from_the_next_t
     assert monitor.expected_rate("refund_rate", {}) == pytest.approx(0.03, abs=0.01)
     assert monitor.expected_rate("payment_success_rate", {}) is not None      # the rates it had are still judged
     assert not [a for a in tick.alerts if a.metric == "refund_rate"]           # clean data: nothing to report
+    # the file is changed into a bad definition: the rate leaves the graph and the watch list with it
+    drop(ext.incoming, "refund_rate", page_yaml().replace("refunds / orders", "refunds / sessions"))
+    [r] = look(ext)
+    assert r["status"] == "rejected" and "refund_rate" not in {w.metric for w in monitor.watched}
+    assert monitor.tick().judged_series == judged_before
     store.conn.close()
