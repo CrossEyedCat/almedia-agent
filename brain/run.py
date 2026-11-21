@@ -4,9 +4,13 @@ Live, next to the simulator's clock (started after the backfill, before `python 
 
     python -m brain.run --fresh
 
+With --narrate the live loop also asks a language model for a short narration of each incident,
+written from the incident's own evidence and checked against it (brain/narrate.py; needs an API key
+with credit, falls back to nothing but the template report otherwise).
+
 Replay of a finished database hour by hour, as if it were live (for the scoring harness):
 
-    python -m brain.run --replay --db data/eval.db --incidents runs/eval --fresh
+    python -m brain.run --replay --db data/eval.db --incidents eval_incidents --fresh
 
 Paths default to the environment variables the console uses (MARKET_DB, INCIDENTS_DIR, GRAPH_JSON),
 then to data/market.db, incidents/ and no graph export. Stop it with Ctrl+C before a database is
@@ -29,6 +33,7 @@ from brain.extension import Extension
 from brain.graph import MetricGraph
 from brain.incidents import Book, write_json
 from brain.monitor import Config, Monitor
+from brain.narrate import Narrator, describe as describe_narrator
 
 
 def export_graph(graph: MetricGraph, store: Store, path: Path) -> None:
@@ -113,12 +118,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--poll", type=float, default=0.5, help="live: seconds between looks at the database")
     ap.add_argument("--max-ticks", type=int, help="live: stop after this many ticks (for tests)")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--narrate", action="store_true",
+                    help="live: a language model narrates each incident from its evidence (brain/narrate.py)")
     a = ap.parse_args(argv)
 
     store = Store(a.db)
     graph = MetricGraph.load()
     monitor = Monitor(graph, store, Config())
-    book = Book(monitor, a.incidents, fresh=a.fresh)
+    narrator = Narrator() if a.narrate and not a.replay else None
+    if a.narrate and a.replay:
+        print("narration is for the live loop; the replay runs without it")
+    book = Book(monitor, a.incidents, fresh=a.fresh, narrator=narrator)
     try:
         if a.replay:
             replay(monitor, book, a.start, a.end, a.quiet)
@@ -126,10 +136,14 @@ def main(argv: list[str] | None = None) -> int:
             if a.graph_out:
                 export_graph(graph, store, Path(a.graph_out))
             extension = Extension(graph, store, a.incoming, a.graph_out, monitor, fresh=a.fresh, quiet=a.quiet)
+            if a.narrate:
+                print(describe_narrator(narrator), flush=True)
             live(monitor, book, a.poll, a.max_ticks, a.quiet, extension)
     except KeyboardInterrupt:
         print("stopped")
     finally:
+        if narrator is not None:
+            narrator.close()
         store.conn.close()
     return 0
 

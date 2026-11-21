@@ -93,12 +93,14 @@ class Incident:
     resolved_at: pd.Timestamp | None = None
     confirmed: list = field(default_factory=list)   # evidence that once confirmed the metric cause; kept while open
     frozen: dict = field(default_factory=dict)      # (metric, place) -> expected rate at the first report of the cost
+    narrative: dict | None = None                   # the newest narration (brain/narrate.py), written into the file
     body: dict = field(default_factory=dict)
 
 
 class Book:
-    def __init__(self, monitor: Monitor, folder: str | Path, fresh: bool = False):
+    def __init__(self, monitor: Monitor, folder: str | Path, fresh: bool = False, narrator=None):
         self.monitor = monitor
+        self.narrator = narrator          # brain.narrate.Narrator, live loop only; None writes no narrative
         self.graph = monitor.graph
         self.investigator = Investigator(monitor)
         self.folder = Path(folder)
@@ -117,6 +119,7 @@ class Book:
     # ------------------------------------------------------------------ update
     def update(self, tick: Tick) -> list[dict]:
         """Apply one tick; returns the incident bodies that were written."""
+        self._take_narrations()
         if tick.newest is None:
             return []
         # A place that already has an open incident on a metric is known: the series that merely
@@ -166,7 +169,7 @@ class Book:
                 if not inc.body:
                     continue
                 inc.body = dict(inc.body, status=inc.status, last_seen=iso_hour(inc.last_seen))
-            write_json(self.folder / f"{inc.id}.json", inc.body)
+            self._write(inc)
             written.append(inc.body)
 
         for inc in self.incidents:
@@ -178,13 +181,36 @@ class Book:
                 inc.body = dict(inc.body, status="resolved", resolved_at=iso_hour(tick.newest),
                                 report=inc.body.get("report", "") + f" Back to normal since {self._when(inc.last_seen + HOUR)}"
                                        f" ({RESOLVE_AFTER_HOURS} normal hours in a row).")
-                write_json(self.folder / f"{inc.id}.json", inc.body)
+                self._write(inc)
                 written.append(inc.body)
 
         self.monitor.open_episodes = [(m, a.segment, inc.onset) for inc in self.incidents
                                       if inc.status != "resolved" for m, a in inc.metrics.items()]
         self._write_notes(tick, explained)
         return written
+
+    def _write(self, inc: Incident) -> None:
+        """Write the incident's file, with its newest narration, and ask for a narration of this state."""
+        if inc.narrative is not None:
+            inc.body = dict(inc.body, narrative=inc.narrative)
+        write_json(self.folder / f"{inc.id}.json", inc.body)
+        if self.narrator is not None:
+            self.narrator.submit(inc.id, inc.body)
+
+    def _take_narrations(self) -> None:
+        """Narrations that finished since the last tick go into their incident's file. A failed one is
+        recorded only while no narration of that incident has succeeded: a good text is never replaced by
+        a failure, and the template report stays the `report` either way."""
+        if self.narrator is None:
+            return
+        for key, story in self.narrator.ready():
+            inc = next((i for i in self.incidents if i.id == key), None)
+            if inc is None or not inc.body:
+                continue
+            if story["source"] == "model" or inc.narrative is None or inc.narrative.get("source") != "model":
+                inc.narrative = story
+            inc.body = dict(inc.body, narrative=inc.narrative)
+            write_json(self.folder / f"{inc.id}.json", inc.body)
 
     def _match(self, group: list[Alert]) -> Incident | None:
         metrics = {a.metric for a in group}
