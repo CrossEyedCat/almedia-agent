@@ -4,9 +4,12 @@ Timestamps are UTC hour starts in the form 2026-11-01T13:00:00Z; windows are [st
 Guardrail 2 is enforced inside SQLite: an authorizer lets this connection read only the
 contract tables, so no query text - core or contributed - can reach the scoring table.
 A missing value is never summed as zero: a group with any NULL comes back as NaN.
+A contributed query can also be run on a private in-memory copy of the contract tables in which
+every fact row is split in two (`rerun_on_split_rows`); the market database is never written.
 """
 from __future__ import annotations
 
+import random
 import sqlite3
 import time
 from pathlib import Path
@@ -21,6 +24,7 @@ TS_FORMAT = "%Y-%m-%dT%H:00:00Z"
 TS_GLOB = "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:00:00Z"
 _ALLOWED_ACTIONS = {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION,
                     getattr(sqlite3, "SQLITE_RECURSIVE", 33)}
+SPLIT_SHARE = (0.2, 0.8)  # a value of a fact row goes to the first of its two halves in a share from this range
 
 
 class ContractError(ValueError):
@@ -45,6 +49,38 @@ def _authorize(action, arg1, arg2, dbname, source):
     return sqlite3.SQLITE_OK
 
 
+def _run(conn: sqlite3.Connection, sql: str, params, timeout: float | None, max_rows: int | None) -> pd.DataFrame:
+    """Run one query on a connection, with the limits a contributed query gets."""
+    deadline = None if timeout is None else time.monotonic() + timeout
+    if deadline is not None:
+        conn.set_progress_handler(lambda: time.monotonic() > deadline, 20_000)
+    try:
+        if max_rows is None:
+            return pd.read_sql_query(sql, conn, params=params)
+        cursor = conn.execute(sql, params)
+        try:
+            if cursor.description is None:
+                raise ValueError("the query returns no columns")
+            rows = cursor.fetchmany(max_rows + 1)
+            if len(rows) > max_rows:
+                raise OverflowError(f"the query returns more than {max_rows} rows")
+            return pd.DataFrame.from_records(rows, columns=[d[0] for d in cursor.description],
+                                             coerce_float=True)
+        finally:
+            cursor.close()
+    except OverflowError:
+        raise
+    except Exception as e:  # pandas wraps sqlite3 errors in its own DatabaseError
+        if deadline is not None and time.monotonic() > deadline:
+            raise TimeoutError(f"the query took longer than {timeout:g} s and was stopped") from e
+        if "not authorized" in str(e) or "is prohibited" in str(e):
+            raise PermissionError(f"query reads outside the contract tables {READABLE_TABLES}") from e
+        raise
+    finally:
+        if deadline is not None:
+            conn.set_progress_handler(None, 0)
+
+
 class Store:
     def __init__(self, path: str | Path):
         p = Path(path)
@@ -61,6 +97,9 @@ class Store:
             raise ContractError(f"{p}: {FACTS} lacks columns {missing_dims}")
         present = {r[0] for r in self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         self._tables = [t for t in READABLE_TABLES if t in present]
+        # the declared columns of the contract tables, read here because the authorizer below refuses PRAGMA
+        self._declared = {t: [(r[1], r[2]) for r in self.conn.execute(f'PRAGMA table_info("{t}")')]
+                          for t in self._tables}
         bad, example = self.conn.execute(
             f"SELECT COUNT(*), MIN(ts) FROM {FACTS} WHERE ts IS NULL OR ts NOT GLOB ?", (TS_GLOB,)).fetchone()
         if bad:
@@ -103,34 +142,49 @@ class Store:
         """Run a read-only query; anything outside the contract tables is refused by SQLite.
         A contributed query is run with limits: SQLite is interrupted and TimeoutError raised when it
         takes longer than `timeout` seconds; OverflowError when it returns more than `max_rows` rows."""
-        deadline = None if timeout is None else time.monotonic() + timeout
-        if deadline is not None:
-            self.conn.set_progress_handler(lambda: time.monotonic() > deadline, 20_000)
-        try:
-            if max_rows is None:
-                return pd.read_sql_query(sql, self.conn, params=params)
-            cursor = self.conn.execute(sql, params)
+        return _run(self.conn, sql, params, timeout, max_rows)
+
+    def rerun_on_split_rows(self, sql: str, hours: int = 24, seed: int = 0, timeout: float | None = None,
+                            max_rows: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame, int]:
+        """Run a contributed query twice on private in-memory copies of the contract tables: on the last
+        `hours` hours of facts as they are, and with every fact row there replaced by two rows that add
+        up to it. Each measure is split in a share of its own; a count stays a whole number and a missing
+        value stays missing in both halves. A query that is a function of sums returns the same values
+        both times; an average, a maximum or a count of rows does not. Returns the two results and the
+        number of fact rows that were split. The copies hold the contract tables and nothing else, the
+        same authorizer and limits apply, and the split is the same every time (`seed`)."""
+        start = iso_hour(self.time_range()[1] - pd.Timedelta(hours=hours - 1))
+        names = [name for name, _ in self._declared[FACTS]]
+        rows = self.conn.execute(f"SELECT * FROM {FACTS} WHERE ts >= ?", (start,)).fetchall()
+        measure_at = [i for i, name in enumerate(names) if name in self.measures]
+        rng = random.Random(seed)
+        halves = []
+        for row in rows:
+            a, b = list(row), list(row)
+            for i in measure_at:
+                share = rng.uniform(*SPLIT_SHARE)   # drawn for every value, so a missing one does not shift the rest
+                if isinstance(row[i], int):
+                    a[i] = int(row[i] * share)
+                elif isinstance(row[i], float):
+                    a[i] = row[i] * share
+                else:
+                    continue                        # missing: missing in both halves
+                b[i] = row[i] - a[i]
+            halves += [a, b]
+        results = []
+        for facts in (rows, halves):
+            copy = sqlite3.connect(":memory:")
             try:
-                if cursor.description is None:
-                    raise ValueError("the query returns no columns")
-                rows = cursor.fetchmany(max_rows + 1)
-                if len(rows) > max_rows:
-                    raise OverflowError(f"the query returns more than {max_rows} rows")
-                return pd.DataFrame.from_records(rows, columns=[d[0] for d in cursor.description],
-                                                 coerce_float=True)
+                for table in self._tables:
+                    columns = self._declared[table]
+                    copy.execute(f'CREATE TABLE "{table}" (' + ", ".join(f'"{n}" {kind}' for n, kind in columns) + ")")
+                    content = facts if table == FACTS else self.conn.execute(f'SELECT * FROM "{table}"').fetchall()
+                    copy.executemany(f'INSERT INTO "{table}" VALUES ({", ".join("?" * len(columns))})', content)
+                copy.set_authorizer(_authorize)
+                results.append(_run(copy, sql, (), timeout, max_rows))
             finally:
-                cursor.close()
-        except OverflowError:
-            raise
-        except Exception as e:  # pandas wraps sqlite3 errors in its own DatabaseError
-            if deadline is not None and time.monotonic() > deadline:
-                raise TimeoutError(f"the query took longer than {timeout:g} s and was stopped") from e
-            if "not authorized" in str(e) or "is prohibited" in str(e):
-                raise PermissionError(f"query reads outside the contract tables {READABLE_TABLES}") from e
-            raise
-        finally:
-            if deadline is not None:
-                self.conn.set_progress_handler(None, 0)
+                copy.close()
+        return results[0], results[1], len(rows)
 
     # ---------------------------------------------------------------- sums
     def sums(self, columns, start=None, end=None, segment: dict | None = None,
