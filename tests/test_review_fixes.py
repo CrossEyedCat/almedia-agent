@@ -231,3 +231,12 @@ def test_unknown_release_system_is_a_warning(tmp_path, graph):
                                releases=[("2026-11-01T03:00:00Z", "teleport", "DE", "Android", "v1")]))
     warns = [c for c in validate_graph(graph, st, days=1) if c.status == "warn"]
     assert any("teleport" in c.detail for c in warns)
+
+
+def test_simulator_release_system_is_linked_to_payment_metrics(tmp_path, graph):
+    """The simulator writes releases.system = 'payments-sdk' (sim/inject.py)."""
+    for m in ("payment_success_rate", "payment_attempt_rate", "payment_successes", "payment_attempts"):
+        assert "release:payments-sdk" in {n.id for n in graph.context_of(m)}, m
+    st = Store(make_fixture_db(tmp_path / "m.db", days=1,
+                               releases=[("2026-11-01T03:00:00Z", "payments-sdk", "DE", "Android", "4.2")]))
+    assert [c.detail for c in validate_graph(graph, st, days=1) if c.status == "warn"] == []

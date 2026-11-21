@@ -378,7 +378,8 @@
       "direction": "none",
       "systems": [
         "checkout",
-        "payments"
+        "payments",
+        "payments-sdk"
       ],
       "source": null,
       "sources": [
@@ -406,7 +407,8 @@
       ],
       "direction": "up",
       "systems": [
-        "payments"
+        "payments",
+        "payments-sdk"
       ],
       "source": "payments",
       "sources": [
@@ -535,7 +537,10 @@
         "channel"
       ],
       "direction": "none",
-      "systems": [],
+      "systems": [
+        "payments",
+        "payments-sdk"
+      ],
       "source": "payments",
       "sources": [
         "payments"
@@ -560,7 +565,10 @@
         "channel"
       ],
       "direction": "up",
-      "systems": [],
+      "systems": [
+        "payments",
+        "payments-sdk"
+      ],
       "source": "payments",
       "sources": [
         "payments"
@@ -1520,6 +1528,14 @@
       "status": "",
       "table": "releases",
       "system": "payments"
+    },
+    {
+      "id": "release:payments-sdk",
+      "kind": "context",
+      "label": "releases of payments-sdk",
+      "status": "",
+      "table": "releases",
+      "system": "payments-sdk"
     },
     {
       "id": "freshness:payments",
@@ -3430,6 +3446,14 @@
       "via": "releases.system"
     },
     {
+      "id": "context:release:payments-sdk->payment_attempt_rate",
+      "source": "release:payments-sdk",
+      "target": "payment_attempt_rate",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
+    },
+    {
       "id": "context:freshness:orders->payment_attempt_rate",
       "source": "freshness:orders",
       "target": "payment_attempt_rate",
@@ -3504,6 +3528,14 @@
     {
       "id": "context:release:payments->payment_success_rate",
       "source": "release:payments",
+      "target": "payment_success_rate",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
+    },
+    {
+      "id": "context:release:payments-sdk->payment_success_rate",
+      "source": "release:payments-sdk",
       "target": "payment_success_rate",
       "kind": "context",
       "status": "",
@@ -3770,6 +3802,22 @@
       "aggregation": "sum"
     },
     {
+      "id": "context:release:payments->payment_attempts",
+      "source": "release:payments",
+      "target": "payment_attempts",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
+    },
+    {
+      "id": "context:release:payments-sdk->payment_attempts",
+      "source": "release:payments-sdk",
+      "target": "payment_attempts",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
+    },
+    {
       "id": "context:freshness:payments->payment_attempts",
       "source": "freshness:payments",
       "target": "payment_attempts",
@@ -3813,6 +3861,22 @@
       "status": "",
       "dimension": "channel",
       "aggregation": "sum"
+    },
+    {
+      "id": "context:release:payments->payment_successes",
+      "source": "release:payments",
+      "target": "payment_successes",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
+    },
+    {
+      "id": "context:release:payments-sdk->payment_successes",
+      "source": "release:payments-sdk",
+      "target": "payment_successes",
+      "kind": "context",
+      "status": "",
+      "via": "releases.system"
     },
     {
       "id": "context:freshness:payments->payment_successes",
