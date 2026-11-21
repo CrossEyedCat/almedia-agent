@@ -188,3 +188,52 @@ def test_a_rate_that_changed_direction_is_still_placed_and_explained(run, last):
     assert inc["hypotheses"][0]["status"] == "supported"
     if last > 4:
         assert any(s["action"] == "drill" and "changed direction" in s["result"] for s in inc["trail"])
+
+
+# ----------------------------------------------------------------- from the review of the investigator
+def test_the_cost_is_the_loss_against_the_same_hours_without_the_fault(clean_db, tmp_path):
+    # a promo runs in the same country: the fault's cost must not swallow what the promo does to the other rates
+    from brain.evaluator import Evaluator
+    promo = lambda con: inject.promo(con, "FR", FAULT - 2 * H, FAULT + 10 * H)
+    fault = lambda con: inject.payment_failure(con, "FR", "Android", FAULT, 0.4)
+    stores = {}
+    for name, steps in (("with", (promo, fault)), ("without", (promo,))):
+        path = tmp_path / f"{name}.db"
+        shutil.copy(clean_db, path)
+        con = simdb.connect(path)
+        for step in steps:
+            step(con)
+        con.close()
+        stores[name] = Store(path)
+    graph = MetricGraph.load()
+    monitor = Monitor(graph, stores["with"])
+    book = Book(monitor, tmp_path / "incidents", fresh=True)
+    for k in range(0, 9):
+        book.update(monitor.tick(as_of=FAULT + k * H))
+    inc = next(json.loads(p.read_text(encoding="utf-8")) for p in sorted(book.folder.glob("inc-*.json")))
+    assert inc["drivers"][0]["metric"] == "payment_success_rate" and inc["segment"] == {"country": "FR", "platform": "Android"}
+    window, place = inc["change"]["window"], {"country": "FR", "platform": "Android"}
+    truth = Evaluator(graph, stores["with"]).value("contribution", window["start"], window["end"], place)         - Evaluator(graph, stores["without"]).value("contribution", window["start"], window["end"], place)
+    assert truth < 0
+    assert inc["impact"]["contribution_eur"] == pytest.approx(truth, rel=0.15)
+
+
+def test_a_total_outage_has_a_cost(run):
+    # no payment succeeds, so there are no orders: order value, take rate and discount rate are 0 / 0
+    (inc,) = run(lambda con: inject.payment_failure(con, "DE", "Android", FAULT, 0.999), last=4)
+    assert inc["impact"]["contribution_eur"] < 0 and inc["impact"]["orders"] < 0
+    assert not any("could not be computed" in u for u in inc["uncertain"])
+
+
+def test_the_decompose_line_states_what_was_computed(run):
+    (inc,) = run(payment)
+    line = next(s["result"] for s in inc["trail"] if s["action"] == "decompose")
+    assert "usual range" not in " ".join(s["result"] for s in inc["trail"])
+    assert "the other rates account for" in line and "payment_success_rate" in line
+    assert "z" not in inc["change"]     # the outcome has no z of its own; the rate's z is in drivers
+
+
+def test_a_release_without_a_description_does_not_stop_the_monitor(run):
+    (inc,) = run(payment, release(FAULT, "payments-sdk", "DE", "Web", None))
+    assert inc["hypotheses"][0]["status"] == "supported"
+    assert any(h["cause"] == "release payments-sdk: " and h["status"] == "rejected" for h in inc["hypotheses"])

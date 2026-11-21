@@ -120,3 +120,27 @@ def test_a_place_is_narrowed_when_the_rest_of_it_is_quiet():
     num, den, rate = cells(shift, volume=80)
     result = choose(scan(DIMS, KEYS, num, den, rate), {"country": "FR"})
     assert result.place.segment == {"country": "FR", "platform": "Web"} and result.verdict == "refined"
+
+
+def test_two_moved_places_are_not_widened_into_the_place_that_contains_both():
+    # a payment fault on two platforms of one country, with different sizes: "the country" with one common
+    # factor scores higher than either platform, but it is two places, and the rest of it is untouched
+    def shift_factor(c):
+        if c["country"] == "DE" and c["platform"] == "Android":
+            return 0.5
+        if c["country"] == "DE" and c["platform"] == "iOS":
+            return 0.75
+        return 1.0
+    rng = np.random.default_rng(2)
+    den = rng.poisson(80, len(KEYS)).astype(float)
+    p = np.array([0.9 * shift_factor(dict(zip(DIMS, k))) for k in KEYS])
+    num = rng.binomial(den.astype(int), p).astype(float)
+    places = scan(DIMS, KEYS, num, den, np.full(len(KEYS), 0.9))
+    for anchor in ({"country": "DE", "platform": "Android"}, {"country": "DE", "platform": "iOS"}):
+        assert choose(places, anchor).place.segment == anchor
+
+
+def test_a_place_is_widened_when_all_of_the_wider_place_moved_alike():
+    num, den, rate = cells(lambda c: c["country"] == "DE", volume=60)
+    result = choose(scan(DIMS, KEYS, num, den, rate), {"country": "DE", "platform": "Android"})
+    assert result.place.segment == {"country": "DE"} and result.verdict == "refined"

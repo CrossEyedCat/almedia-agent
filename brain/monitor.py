@@ -451,8 +451,8 @@ class Monitor:
             (iso_hour(now), iso_hour(now - cfg.release_watch_hours * HOUR)))
         out: list[Alert] = []
         for r in rows.to_dict("records"):
-            if "rollback" in (r["description"] or "").lower():
-                continue   # by the contract a rollback row ends a release
+            if isinstance(r["description"], str) and "rollback" in r["description"].lower():
+                continue   # by the contract a rollback row ends a release (the column may be NULL)
             scope = {d: r[d] for d in ("country", "platform") if isinstance(r[d], str) and r[d]}
             start = pd.Timestamp(r["ts"])
             for w in self.watched:
@@ -461,7 +461,7 @@ class Monitor:
                 key = (r["ts"], r["system"], tuple(sorted(scope.items())), w.metric)
                 if key in self._watch_closed:
                     continue
-                if any(a.metric == w.metric and compatible(a.segment, scope) for a in tick.alerts + out):
+                if any(a.metric == w.metric and compatible(a.segment, scope) for a in tick.alerts):
                     self._watch_seen.add(key)
                     continue   # the scan already has it
                 skip = [h for h, srcs in tick.late.items() if srcs & set(w.sources)]
@@ -499,7 +499,13 @@ class Monitor:
                 if w.calendar:
                     alert.explained_by = self._covering_event(alert, events)
                 out.append(alert)
-        return out
+        # Two releases can ask about the same metric in overlapping places (a routine one hours before the
+        # real one). The older one's sum is the diluted one: of such alerts the strongest is kept.
+        kept: list[Alert] = []
+        for a in sorted(out, key=lambda a: (-a.score, a.onset)):
+            if not any(k.metric == a.metric and compatible(k.segment, a.segment) for k in kept):
+                kept.append(a)
+        return kept
 
     @staticmethod
     def _covering_event(alert: Alert, events: list[dict]) -> dict | None:
@@ -574,7 +580,9 @@ class Monitor:
         if hist_d.sum() <= 0:
             return None
         pooled = hist_n.sum() / hist_d.sum()
-        rate = (hist_n + CELL_PRIOR_VOLUME * pooled) / (hist_d + CELL_PRIOR_VOLUME)
+        prior = 0.0 if kind == "ratio" else CELL_PRIOR_VOLUME
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rate = np.where(hist_d + prior > 0, (hist_n + prior * pooled) / (hist_d + prior), pooled)
         unit_var = 1.0
         if kind == "ratio":
             with np.errstate(divide="ignore", invalid="ignore"):

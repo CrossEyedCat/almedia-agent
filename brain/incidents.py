@@ -21,7 +21,9 @@ from __future__ import annotations
 import json
 import math
 import os
+import sys
 import time
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -71,6 +73,13 @@ def write_json(path: Path, obj: dict) -> None:
             time.sleep(0.02)
 
 
+def earliest_onset(current: pd.Timestamp, alerts: list[Alert]) -> pd.Timestamp:
+    """The incident's onset after a tick. An alert from the hourly scan dates the change from the data.
+    An alert from the watch after a release is dated at the release, which only says when the question
+    was asked: a harmless release hours before a fault must not move the onset back to itself."""
+    return min([current] + [a.onset for a in alerts if a.trigger != "release"])
+
+
 @dataclass
 class Incident:
     id: str
@@ -83,6 +92,7 @@ class Incident:
     metrics: dict = field(default_factory=dict)     # metric -> newest leading alert
     resolved_at: pd.Timestamp | None = None
     confirmed: list = field(default_factory=list)   # evidence that once confirmed the metric cause; kept while open
+    frozen: dict = field(default_factory=dict)      # (metric, place) -> expected rate at the first report of the cost
     body: dict = field(default_factory=dict)
 
 
@@ -145,10 +155,17 @@ class Book:
             if g[0].score > inc.best_score:
                 inc.best_score, inc.segment = g[0].score, dict(g[0].segment)
             inc.last_seen = max([inc.last_seen] + [a.last_bad for a in g])
-            inc.onset = min([inc.onset] + [a.onset for a in g])
+            inc.onset = earliest_onset(inc.onset, g)
             for a in g:
                 inc.metrics[a.metric] = a
-            inc.body = self._render(inc, tick)
+            try:
+                inc.body = self._render(inc, tick)
+            except Exception:     # one incident's report must not stop the others or the monitor
+                traceback.print_exc()
+                print(f"report for {inc.id} failed; its file keeps the previous state", file=sys.stderr, flush=True)
+                if not inc.body:
+                    continue
+                inc.body = dict(inc.body, status=inc.status, last_seen=iso_hour(inc.last_seen))
             write_json(self.folder / f"{inc.id}.json", inc.body)
             written.append(inc.body)
 
@@ -196,11 +213,15 @@ class Book:
         in a small cell, or hours with no rows, prove nothing, and the incident stays open."""
         own = [a for a in inc.metrics.values() if a.segment == inc.segment] or list(inc.metrics.values())
         top = max(own, key=lambda a: a.score)
-        w = self.monitor.window(top.metric, top.segment, inc.last_seen + HOUR, tick.newest + HOUR,
-                                as_rate=top.episode_observed)
+        # the faulty rate to look for: the episode's, unless the rate rose and then fell by amounts that
+        # cancel over the episode (then its newest bad hours say what "still faulty" would look like)
+        faulty = top.episode_observed
+        if top.expected and abs(faulty / top.expected - 1) < self.monitor.config.min_effect:
+            faulty = top.observed
+        w = self.monitor.window(top.metric, top.segment, inc.last_seen + HOUR, tick.newest + HOUR, as_rate=faulty)
         if w is None or w["telling"] < HEALTH_MIN_SURPRISE:
             return False
-        same_way = (w["observed"] < w["expected"]) == (top.episode_observed < top.expected)
+        same_way = (w["observed"] < w["expected"]) == (faulty < top.expected)
         return not (same_way and w["score"] >= HEALTH_MIN_SURPRISE)
 
     # ------------------------------------------------------------------ content

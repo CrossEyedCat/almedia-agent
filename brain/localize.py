@@ -121,7 +121,7 @@ def scan(dims, keys, num, den, rate, kind: str = "proportion", unit_var: float =
                     observed=float(s["k"] / s["n"] + shift), expected=float(s["m"] / s["n"] + shift),
                     numerator=float(s["k"] + shift * s["n"]), denominator=float(s["n"]), cells=count,
                     counted=float(s["k"]), awaited=float(s["m"])))
-    out.sort(key=lambda pl: (-pl.score, -len(pl.segment)))
+    out.sort(key=lambda pl: (-round(pl.score, 6), -len(pl.segment)))
     return out
 
 
@@ -138,6 +138,13 @@ def quiet_outside(inner: Place, outer: Place, kind: str = "proportion", unit_var
     return float(surprise[0]) < QUIET_MAX_SURPRISE
 
 
+def one_place(places: list[Place], wider: Place, here: Place, kind: str, unit_var: float) -> bool:
+    """Widening claims one common factor in all of `wider`: the rest of it must have moved too, and the
+    whole must explain the counts at least as well as its parts of the anchor's kind taken one by one."""
+    parts = [p for p in places if set(p.segment) == set(here.segment) and wider.segment.items() <= p.segment.items()]
+    return wider.score >= sum(max(p.score, 0.0) for p in parts) and not quiet_outside(here, wider, kind, unit_var)
+
+
 def choose(places: list[Place], anchor: dict, margin: float = CLEAR_MARGIN, kind: str = "proportion",
            unit_var: float = 1.0) -> Choice:
     """The place to report, given the place the monitor raised the incident on.
@@ -151,8 +158,9 @@ def choose(places: list[Place], anchor: dict, margin: float = CLEAR_MARGIN, kind
     top = places[0]
     if here is None or top.segment == anchor:
         chosen, verdict = top, "confirmed" if here is not None else "refined"
-    elif nested(top.segment, anchor) and top.score - here.score >= margin and (
-            top.segment.items() < anchor.items() or quiet_outside(top, here, kind, unit_var)):
+    elif here.score > 0 and nested(top.segment, anchor) and top.score - here.score >= margin and (
+            one_place(places, top, here, kind, unit_var) if top.segment.items() < anchor.items()
+            else quiet_outside(top, here, kind, unit_var)):
         chosen, verdict = top, "refined"
     else:
         chosen, verdict = here, "kept"

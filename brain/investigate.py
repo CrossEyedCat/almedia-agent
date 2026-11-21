@@ -96,7 +96,7 @@ class Investigator:
                     out.setdefault(b.metric, a.metric)
         return out
 
-    def follow(self, alerts: list[Alert], segment: dict, start, end) -> list[dict]:
+    def follow(self, alerts: list[Alert], segment: dict, start, end, skip=()) -> list[dict]:
         """Metrics that a moved metric may affect and that did move the way the link predicts, in the
         same place and hours. They were too weak for the hourly scan, but they carry the damage:
         out-of-stock listings cost orders through the add-to-cart rate. `shown` False: the link
@@ -106,7 +106,7 @@ class Investigator:
             for e in self._links(a.metric):
                 if e.dst in seen:
                     continue
-                w = self.monitor.window(e.dst, segment, start, end)
+                w = self.monitor.window(e.dst, segment, start, end, skip)
                 if w is None:
                     continue
                 sign = e.attrs.get("sign", 0)
@@ -125,7 +125,9 @@ class Investigator:
         (an ad budget spent early, then gone) cancels itself out over the whole incident: where it
         happened can only be read from hours in which it moved one way. The phase begins after the
         last hour that moved clearly the other way."""
-        clear = [h for h in self.monitor.hourly(metric, segment, start, end, skip) if h["score"] >= NORMAL_MAX_SURPRISE]
+        floor = self.monitor.config.min_effect
+        clear = [h for h in self.monitor.hourly(metric, segment, start, end, skip)
+                 if h["score"] >= NORMAL_MAX_SURPRISE and h["expected"] and abs(h["observed"] / h["expected"] - 1) >= floor]
         begin = pd.Timestamp(start)
         if clear:
             rising = clear[-1]["z"] > 0
@@ -143,6 +145,8 @@ class Investigator:
                       cells["kind"], cells["unit_var"], cells["shift"])
         if not places:
             return None, {}, cells
+        if not any(p.segment == anchor for p in places):
+            return None, {}, cells   # the monitor's place has no counts in this window
         choice = choose(places, anchor, kind=cells["kind"], unit_var=cells["unit_var"])
         return choice, {frozenset(p.segment.items()): p for p in places}, cells
 
@@ -165,10 +169,22 @@ class Investigator:
         return {"mix": mix, "rate": rate, "share": abs(mix) / size if size else 0.0}
 
     # ----------------------------------------------------------- 3. what it cost
-    def explain(self, alerts: list[Alert], followed: list[dict], segment: dict, start, end) -> dict | None:
-        """Attribution of the top outcome's change in a segment and window. None when no moved metric
-        is on the outcome's formula tree or the outcome cannot be computed there."""
-        graph = self.graph
+    def explain(self, alerts: list[Alert], followed: list[dict], segment: dict, start, end, skip=(),
+                frozen: dict | None = None) -> dict | None:
+        """What the moved rates cost, in the top outcome's unit, in a segment and window.
+
+        Two comparisons, for two questions:
+        - the effect: the outcome as observed against the outcome with only the moved rates back at
+          their expected values and everything else as observed. That is "had this not happened",
+          whatever else is going on in the same place (a promo, a second fault);
+        - the gap: the outcome as observed against the state with every judged rate at its own
+          baseline, split over all factors. It shows what else is off besides the moved rates.
+
+        `skip`: hours whose data has not arrived; they are in neither comparison. `frozen` keeps the
+        expected rates of the first report of an incident, so a long incident does not drift into
+        its own baseline. None when no moved metric is on the outcome's formula tree or the outcome
+        cannot be computed there."""
+        graph, ev = self.graph, self.monitor.evaluator
         outcome = graph.top_outcomes()[0] if graph.top_outcomes() else None
         if outcome is None:
             return None
@@ -178,53 +194,70 @@ class Investigator:
         moved = [m for m in atoms if m in known]
         if not moved:
             return None
+        below = {m: graph.specs[m].formula.ratio_parts()[1] for m in atoms
+                 if graph.specs[m].formula is not None and graph.specs[m].formula.kind == "ratio"}
+        names = list(dict.fromkeys(tree + [d for ds in below.values() for d in ds]))
         try:
-            frame = self.monitor.evaluator.frame(tree, start, end, segment)
+            hourly = ev.sums(names, start, end, segment, by_hour=True)
+            if len(skip):
+                hourly = hourly[~hourly["ts"].isin(list(skip))]
+            if hourly.empty:
+                return None
+            frame = ev.derive(hourly.drop(columns=["ts"]).sum(min_count=1).to_frame().T, names)
         except NotComputable:
             return None
-        if frame.empty:
-            return None
-        observed = {m: float(frame[m].iloc[0]) for m in tree}
+        observed = {m: float(frame[m].iloc[0]) for m in names}
         expected = {}
+        place = tuple(sorted(segment.items()))
         for m in atoms:
-            rate = self.monitor.expected_rate(m, segment)
-            if rate is None and m in known:
-                rate = known[m]
+            rate = frozen.get((m, place)) if frozen is not None else None
+            if rate is None:
+                rate = self.monitor.expected_rate(m, segment)
+                if rate is None and m in known:
+                    rate = known[m]
+                if frozen is not None and rate is not None and math.isfinite(rate):
+                    frozen[(m, place)] = rate
             expected[m] = rate if rate is not None and math.isfinite(rate) else observed[m]   # not judged: taken as it is
-        attr = attribute(graph, outcome, observed, expected)
-        if attr is None:
+        for m, parts in below.items():
+            # nothing to divide by (no orders at all, so no order value and no take rate): the rate cannot
+            # be judged and multiplies a zero, so it is taken at its expected value. A missing sum stays missing.
+            if not math.isfinite(observed[m]) and all(observed.get(d) == 0 for d in parts) and math.isfinite(expected[m]):
+                observed[m] = expected[m]
+        restored = {m: expected[m] if m in moved else observed[m] for m in atoms}
+        try:
+            cost = attribute(graph, outcome, observed, restored)
+            whole = attribute(graph, outcome, observed, expected)
+        except ValueError:      # more changed factors than the exact split takes
             return None
-        effect = sum(attr.by_factor[m] for m in moved)
-        gap = attr.delta     # observed minus the state with every judged rate at its baseline
-
-        def share(part: float) -> float:
-            """Part of the gap, as a share. The gap also holds the ordinary ups and downs of the other
-            rates, which partly cancel; when they outweigh the effect the share falls back to sizes."""
-            if abs(gap) > 1e-12 and effect * gap > 0:
-                return min(max(part / gap, 0.0), 1.0)
-            size = sum(abs(v) for v in attr.by_factor.values())
-            return abs(part) / size if size else 0.0
+        if cost is None:
+            return None
+        effect = cost.delta
+        gap = whole.delta if whole is not None else effect
+        others = sorted(((m, v) for m, v in (whole.by_factor.items() if whole is not None else [])
+                         if m not in moved and abs(v) >= 0.5), key=lambda kv: -abs(kv[1]))
         counted = {}
         for m in tree:   # what is counted along the way (orders, clicks), from the same two states
             spec = graph.specs[m]
             if m != outcome and spec.unit == "count" and spec.direction == "up" and spec.investigative_formula is not None:
-                sub = attribute(graph, m, observed, expected)
-                if sub is not None:
-                    part = sum(v for k, v in sub.by_factor.items() if k in moved)
-                    if abs(part) >= 0.5:
-                        counted[m] = part
+                sub = attribute(graph, m, observed, restored)
+                if sub is not None and abs(sub.delta) >= 0.5:
+                    counted[m] = sub.delta
         return {
-            "outcome": outcome, "unit": graph.specs[outcome].unit, "attribution": attr, "moved": moved,
-            "observed": observed, "expected": expected, "effect": effect, "counted": counted,
-            "explained": share(effect),
+            "outcome": outcome, "unit": graph.specs[outcome].unit, "moved": moved, "method": cost.method,
+            "observed": observed, "expected": expected, "actual": cost.actual, "effect": effect,
+            "gap": gap, "others": others, "counted": counted,
+            # the incident's share of everything that is off in this place; None when the rest outweighs it
+            "explained": min(effect / gap, 1.0) if abs(gap) > 1e-9 and effect * gap > 0 else None,
+            "unclear": [f["metric"] for f in followed if f["metric"] in moved and not f["shown"]],
             "contributions": [
-                {"node": m, "share_of_delta": share(attr.by_factor[m]), "delta": attr.by_factor[m],
-                 "observed": observed[m], "expected": expected[m]}
-                for m in sorted(moved, key=lambda m: -abs(attr.by_factor[m]))],
+                {"node": m, "share_of_delta": min(max(cost.by_factor[m] / effect, 0.0), 1.0) if abs(effect) > 1e-9 else 0.0,
+                 "delta": cost.by_factor[m], "observed": observed[m], "expected": expected[m]}
+                for m in sorted(moved, key=lambda m: -abs(cost.by_factor[m]))],
         }
 
     # ------------------------------------------------------------------ 4. why
-    def releases(self, inc, tick: Tick, primary: Alert, moved: list[str], place: dict, segment: dict, end, places: dict) -> list[dict]:
+    def releases(self, inc, tick: Tick, primary: Alert, moved: list[str], place: dict, segment: dict, end, places: dict,
+                 skip=()) -> list[dict]:
         """Every release from RELEASE_LOOKBACK_HOURS before the onset to now, as a scored hypothesis."""
         graph, mon = self.graph, self.monitor
         rows = self.store.read_sql(
@@ -234,9 +267,11 @@ class Investigator:
         place_scope = {d: place[d] for d in SCOPE_DIMS if d in place}
         falling = primary.observed < primary.expected
         best: dict[tuple, dict] = {}
+        self.rollbacks_skipped = 0
         for r in rows.to_dict("records"):
-            description = r["description"] or ""
+            description = r["description"] if isinstance(r["description"], str) else ""   # the column may be NULL
             if "rollback" in description.lower():
+                self.rollbacks_skipped += 1
                 continue   # by the contract a rollback row ends a release; it is not a new cause
             scope = {d: r[d] for d in SCOPE_DIMS if isinstance(r[d], str) and r[d]}
             ts = pd.Timestamp(r["ts"])
@@ -260,7 +295,7 @@ class Investigator:
             if any(d in place_scope and place_scope[d] != v for d, v in scope.items()):
                 relation, fit = "conflict", 0.0
                 text = f"scope {seg_text(scope)} does not include {where}"
-                w = mon.window(primary.metric, scope, inc.onset, end) if mon.has_series(primary.metric, scope) else None
+                w = mon.window(primary.metric, scope, inc.onset, end, skip) if mon.has_series(primary.metric, scope) else None
                 if w is not None:
                     state = "normal" if w["score"] < NORMAL_MAX_SURPRISE else "moved too"
                     text += f"; {primary.metric} inside its scope is {num(w['observed'])} against {num(w['expected'])} ({state})"
@@ -286,13 +321,13 @@ class Investigator:
                 evidence.append(f"released {when(ts)}, " + ("the hour the change began" if lag == 0 else
                                                            f"{abs(lag)} h {'before' if lag > 0 else 'after'} the estimated onset"))
             elif lag > RELEASE_BEFORE_HOURS:
-                lean = mon.window(primary.metric, segment, ts, inc.onset)
+                lean = mon.window(primary.metric, segment, ts, inc.onset, skip)
                 leans = lean is not None and lean["score"] >= FOLLOW_MIN_SURPRISE and (lean["observed"] < lean["expected"]) == falling
-                timing = 0.8 if leans else 0.1
-                evidence.append(f"released {when(ts)}, {lag} h before the estimated onset; "
-                                + (f"the hours in between already lean the same way ({num(lean['observed'])} against {num(lean['expected'])})"
-                                   if leans else "the hours in between were normal"
-                                   + (f" ({num(lean['observed'])} against {num(lean['expected'])})" if lean is not None else "")))
+                timing = 0.8 if leans else 0.5 if lean is None else 0.1
+                evidence.append(f"released {when(ts)}, {lag} h before the estimated onset; " + (
+                    f"the hours in between already lean the same way ({num(lean['observed'])} against {num(lean['expected'])})"
+                    if leans else "no data has arrived for the hours in between, so they cannot tell" if lean is None else
+                    f"the hours in between were normal ({num(lean['observed'])} against {num(lean['expected'])})"))
             else:
                 timing = 0.0
                 evidence.append(f"released {when(ts)}, {-lag} h after the change began")
@@ -343,6 +378,9 @@ class Investigator:
         place = dict(choice.place.segment) if choice is not None else dict(inc.segment)
         segment = place if mon.has_series(primary.metric, place) else dict(inc.segment)   # where rates can be compared
         where = seg_text(place)
+        own = choice.place if choice is not None and place != primary.segment else None   # the headline rate is another series'
+        seen_in = f" in the watched series {seg_text(primary.segment)}" if own is not None else ""
+        obs, exp = (own.observed, own.expected) if own is not None else (primary.observed, primary.expected)
         localization = []
         if choice is not None:
             ranked = sorted(places.values(), key=lambda p: (-p.score, -len(p.segment)))
@@ -355,7 +393,9 @@ class Investigator:
             if since > inc.onset:
                 text += f"; read from the hours since {when(since)}, when the rate changed direction"
             if choice.verdict == "refined":
-                text += f"; narrowed from the monitor's series {seg_text(inc.segment)}"
+                how = "narrowed" if inc.segment.items() < place.items() else \
+                    "widened" if place.items() < inc.segment.items() else "moved"
+                text += f"; {how} from the monitor's series {seg_text(inc.segment)}"
             if choice.rival is not None:
                 text += f"; best different place {seg_text(choice.rival.segment)} (gain {choice.rival.gain:.0f})"
             trail.append({"action": "drill", "target": primary.metric, "result": text})
@@ -374,14 +414,15 @@ class Investigator:
             trail.append({"action": "watch", "target": a.metric,
                           "result": f"also moved in {seg_text(a.segment)}: {num(a.observed)} against {num(a.expected)} (z {a.z:+.1f})"
                                     + (f"; the graph says {via} may affect it, so it is read as a symptom" if via else "")})
-        followed = self.follow(alerts, segment, inc.onset, end)
+        followed = self.follow(alerts, segment, inc.onset, end, held)
         for f in followed:
             if f["metric"] in inc.metrics or not f["shown"]:
                 continue   # it has its own "also moved" line, or is not clear yet
             trail.append({"action": "follow", "target": f["metric"],
                           "result": f"{f['via']} may affect it ({f['note'] or 'link in the graph'}): "
                                     f"{num(f['observed'])} against {num(f['expected'])} in {seg_text(segment)} over the incident "
-                                    f"(z {f['z']:+.1f}), the direction the link predicts"})
+                                    f"(z {f['z']:+.1f}), "
+                                    + ("the direction the link predicts" if f["sign"] else "the link predicts no direction")})
 
         body = {
             "id": inc.id, "status": inc.status,
@@ -400,27 +441,43 @@ class Investigator:
         }
 
         # 3. what it cost
-        cost = self.explain(alerts, followed, segment, inc.onset, end)
+        waiting = sorted(tick.late)      # hours with any source still missing are in no sum
+        cost = self.explain(alerts, followed, segment, inc.onset, end, waiting, getattr(inc, "frozen", None))
         loss = ""
         if cost is not None:
             outcome, unit, effect = cost["outcome"], cost["unit"], cost["effect"]
-            restored = cost["attribution"].actual - effect      # the outcome with the moved rates back at their expected values
+            restored = cost["actual"] - effect      # the outcome with the moved rates back at their expected values
             body["metric"] = outcome
-            body["change"] = {"observed": cost["attribution"].actual, "expected": restored, "delta": effect,
-                              "delta_pct": 100 * effect / restored if restored else None, "z": primary.z,
+            body["change"] = {"observed": cost["actual"], "expected": restored, "delta": effect,
+                              "delta_pct": 100 * effect / restored if restored else None,
                               "window": {"start": iso_hour(inc.onset), "end": iso_hour(end)}}
+            if segment != place:
+                body["change"]["segment"] = ordered(segment)
+                uncertain.append(f"The effect is measured in {seg_text(segment)}, the nearest series the monitor keeps a "
+                                 f"baseline for; it contains {where}.")
             body["impact"] = {f"{outcome}_{unit}" if unit != "count" else outcome: effect, **cost["counted"]}
             body["contributions"] = cost["contributions"]
-            body["explained_share"] = cost["explained"]
+            if cost["explained"] is not None:
+                body["explained_share"] = cost["explained"]
+            rest = cost["gap"] - effect
             trail.append({"action": "decompose", "target": outcome, "result": (
-                f"{num(cost['attribution'].actual, 4)} observed in {seg_text(segment)} since {when(inc.onset)}; "
+                f"{num(cost['actual'], 4)} observed in {seg_text(segment)} since {when(inc.onset)}; with "
+                f"{', '.join(cost['moved'])} back at the expected rate it would be {num(restored, 4)}: "
                 + ", ".join(f"{c['node']} {c['delta']:+,.0f} {unit}" for c in cost["contributions"])
-                + f" ({cost['attribution'].method} over every path of the formulas); the moved rates are {cost['explained']:.0%} "
-                  "of the whole gap to the expected state, the rest is other rates within their usual range")})
+                + f" ({cost['method']} over every path of the formulas). Against the state with every judged rate at its "
+                  f"baseline the gap is {cost['gap']:+,.0f} {unit}, so the other rates account for {rest:+,.0f}"
+                + (" (largest: " + ", ".join(f"{m} {v:+,.0f}" for m, v in cost["others"][:3]) + ")" if cost["others"] else "")
+                + (f"; {len(waiting)} hour(s) still waiting for data are left out" if waiting else ""))})
+            for m in cost["unclear"]:
+                f = next(x for x in followed if x["metric"] == m)
+                uncertain.append(f"The effect so far runs partly through {m}, which the link from {f['via']} predicts but the "
+                                 f"data does not show yet ({num(f['observed'])} against {num(f['expected'])}, z {f['z']:+.1f}): "
+                                 "the amount, even its sign, can still change.")
             also = "".join(f", {d:+,.0f} {m}" for m, d in cost["counted"].items())
             loss = f" Effect on {outcome} in {seg_text(segment)} so far: {effect:+,.0f} {unit}{also}."
         elif any(m in tree_metrics(graph, o) for o in graph.top_outcomes()[:1] for m in inc.metrics):
-            uncertain.append("The effect on the outcome could not be computed for this window (a factor has no data).")
+            uncertain.append("The effect on the outcome could not be computed for this window: a factor of the formulas "
+                             "has no value or no baseline there.")
 
         # 4. why
         trail.append({"action": "check", "target": "freshness",
@@ -438,13 +495,15 @@ class Investigator:
             + ": it does not explain this change")})
 
         moved = list(inc.metrics) + [f["metric"] for f in followed if f["shown"] and f["metric"] not in inc.metrics]
-        candidates = self.releases(inc, tick, primary, moved, place, segment, end, places)
+        candidates = self.releases(inc, tick, primary, moved, place, segment, end, places, held)
         for h in sorted(candidates, key=lambda h: h["_ts"]):
             trail.append({"action": "check", "target": h["cause"].split(":")[0].replace("release ", "release:"),
                           "result": f"{h['cause'].split(': ', 1)[-1]}: {h['status']} (score {h['score']:.2f}); " + "; ".join(h["evidence"])})
         if not candidates:
-            trail.append({"action": "check", "target": "releases",
-                          "result": f"no release in the {RELEASE_LOOKBACK_HOURS} h before the onset or since"})
+            trail.append({"action": "check", "target": "releases", "result": (
+                f"no release in the {RELEASE_LOOKBACK_HOURS} h before the onset or since"
+                + (f" ({self.rollbacks_skipped} rollback row(s) in that time end a release and are not causes)"
+                   if self.rollbacks_skipped else ""))})
         kept = [h for h in candidates if h["status"] != "rejected"]
         rejected = sorted((h for h in candidates if h["status"] == "rejected"), key=lambda h: -h["score"])[:MAX_REJECTED_RELEASES]
         hypotheses = kept + rejected
@@ -462,7 +521,7 @@ class Investigator:
                          + ("" if covering else " or planned event"),
                 "kind": "metric", "status": "supported" if inc.confirmed else "plausible",
                 "score": 0.7 if inc.confirmed else 0.4,
-                "evidence": [f"{num(primary.observed)} against {num(primary.expected)} expected, z {primary.z:+.1f}"]
+                "evidence": [f"{num(primary.observed)} against {num(primary.expected)} expected{seen_in}, z {primary.z:+.1f}"]
                 + inc.confirmed})
 
         for e in covering:
@@ -474,7 +533,8 @@ class Investigator:
         hypotheses.append({
             "cause": "late or missing data", "kind": "freshness", "status": "rejected", "score": 0.0,
             "evidence": ["every source these metrics depend on had arrived for the hours of the incident" if not held else
-                         f"the incident rests on hours that have arrived; {len(held)} newer hour(s) are still waiting and are not judged"]})
+                         f"{len(held)} hour(s) are still waiting for data and are left out of every comparison above; "
+                         "the incident rests on the hours that have arrived"]})
         split = self.mix(cells, segment) if cells is not None else None
         if split is not None:
             hypotheses.append({
@@ -493,12 +553,18 @@ class Investigator:
         trail.append({"action": "compare", "target": "explanations", "result": (
             f"{len(hypotheses)} tested: " + "; ".join(f"{h['cause']} - {h['status']} ({h['score']:.2f})" for h in hypotheses[:6])
             + ("; ..." if len(hypotheses) > 6 else ""))})
-        ahead = lead["score"] - second["score"] if second is not None else lead["score"]
-        trail.append({"action": "stop", "target": "investigation", "result": (
-            (f"the leading explanation is supported and ahead of the next by {ahead:.2f}"
-             + (f"; the moved rates explain {cost['explained']:.0%} of the gap" if cost is not None else ""))
-            if lead["status"] == "supported" else
-            "no explanation is supported yet: every candidate was tested, the leading one stays a candidate")})
+        standing = [h for h in hypotheses[1:] if h["status"] != "rejected"]
+        rival = max(standing, key=lambda h: h["score"]) if standing else None
+        if lead["status"] != "supported":
+            verdict = "no explanation is supported yet: every candidate was tested, the leading one stays a candidate"
+        elif rival is None:
+            verdict = "the leading explanation is supported and every other one was rejected"
+        elif lead["score"] > rival["score"]:
+            verdict = f"the leading explanation is supported and ahead of the next one standing by {lead['score'] - rival['score']:.2f}"
+        else:
+            verdict = (f"the leading explanation is supported, but {rival['cause']} ({rival['status']}) scores "
+                       f"{rival['score']:.2f} against {lead['score']:.2f}")
+        trail.append({"action": "stop", "target": "investigation", "result": verdict})
 
         # 5. what stays open
         if (primary.observed - primary.expected) * (primary.episode_observed - primary.expected) < 0:
@@ -506,7 +572,7 @@ class Investigator:
         if primary.hours < 2 and inc.status == "open":
             uncertain.append("Only one hour of evidence so far.")
         if sum(h["status"] == "supported" for h in hypotheses) > 1:
-            uncertain.append("More than one explanation is supported; the data cannot tell them apart.")
+            uncertain.append("More than one explanation fits in system, place and time.")
         if cost is not None:
             uncertain.append("Traffic is taken as given: only rates are judged, so a change in sessions is not part of the effect.")
 
@@ -514,7 +580,7 @@ class Investigator:
         body["trail"] = trail
         body["uncertain"] = uncertain
         body["report"] = (
-            f"{primary.metric} {direction} to {num(primary.observed)} from an expected {num(primary.expected)} in "
+            f"{primary.metric} {'fell' if obs < exp else 'rose'} to {num(obs)} from an expected {num(exp)} in "
             f"{where}, starting {when(inc.onset)}.{loss} "
             + (f"Most likely cause: {lead['cause']}." if lead["status"] == "supported" else "No cause is confirmed yet.")
             + (f" {sum(h['status'] == 'rejected' for h in hypotheses)} other explanation(s) were tested and rejected."
