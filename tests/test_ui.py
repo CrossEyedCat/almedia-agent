@@ -334,3 +334,10 @@ def test_page_metric_yaml_is_accepted_by_brain(client, tmp_path):
     assert response.status_code == 200
     specs = load_specs(tmp_path / 'incoming' / 'refund_rate.yaml')
     assert len(specs) == 1 and specs[0].name == 'refund_rate'
+
+
+def test_metrics_the_monitor_also_watched_move_count_for_their_domain(client):
+    """A watched metric in the investigation trail (stockout_rate next to an ad fault that began in the same hour) lights its own domain."""
+    html = client.get("/").text
+    assert "t.action === 'watch'" in html and "meta[t.target]" in html
+    assert html.count("t.action === 'watch'") == 2          # the domain counts and the highlight both use it

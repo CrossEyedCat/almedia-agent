@@ -155,6 +155,9 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
   function incidentNodes(i) {
     var s = {}; s[str(i.metric)] = true;
     list(i.contributions).forEach(function (c) { if (c && c.node) s[str(c.node)] = true; });
+    // metrics the monitor also watched move during the investigation (one incident can hold several faults that began
+    // together, e.g. an ad budget fault and stockouts): they count for their own domain too
+    list(i.trail).forEach(function (t) { t = obj(t); if (t.action === 'watch' && t.target && meta[t.target]) s[str(t.target)] = true; });
     return Object.keys(s);
   }
   function status(i) { return str(i.status) || 'open'; }
@@ -268,6 +271,7 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
         return null;
       };
       list(inc.contributions).forEach(function (c) { if (!c || !c.node) return; on[c.node] = true; (path(inc.metric, c.node, {}) || []).forEach(function (m) { on[m] = true; }); });
+      list(inc.trail).forEach(function (t) { t = obj(t); if (t.action === 'watch' && t.target && meta[t.target]) on[t.target] = true; });
     }
     $('g').classList.toggle('dim', Object.keys(on).length > 0);
     drawn.nodes.forEach(function (n) {
