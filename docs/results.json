@@ -2,12 +2,12 @@
   {
     "seed": 4,
     "days": 49.0,
-    "explained_without_alert": 0,
+    "explained_without_alert": 4,
     "pending_records": 0,
     "faults": 12,
     "detected": 12,
     "detection_rate": 1.0,
-    "mean_delay_h": 0.25,
+    "mean_delay_h": 0.08333333333333333,
     "localized_rate": 1.0,
     "correct_cause_rate": 0.9166666666666666,
     "false_alarms": 0,
@@ -165,7 +165,7 @@
           "start": "2026-12-07T07:00:00Z"
         },
         "detected": true,
-        "delay_h": 3.0,
+        "delay_h": 1.0,
         "localized": true,
         "correct_cause": true
       },
@@ -189,14 +189,14 @@
   {
     "seed": 8,
     "days": 49.0,
-    "explained_without_alert": 0,
+    "explained_without_alert": 4,
     "pending_records": 0,
     "faults": 12,
-    "detected": 11,
-    "detection_rate": 0.9166666666666666,
-    "mean_delay_h": 0.0,
+    "detected": 12,
+    "detection_rate": 1.0,
+    "mean_delay_h": 0.4166666666666667,
     "localized_rate": 1.0,
-    "correct_cause_rate": 0.9090909090909091,
+    "correct_cause_rate": 0.9166666666666666,
     "false_alarms": 0,
     "false_alarms_per_day": 0.0,
     "innocents": 8,
@@ -212,7 +212,10 @@
           "severity": 0.47727085552962345,
           "start": "2026-11-17T03:00:00Z"
         },
-        "detected": false
+        "detected": true,
+        "delay_h": 5.0,
+        "localized": true,
+        "correct_cause": true
       },
       {
         "kind": "search_regression",

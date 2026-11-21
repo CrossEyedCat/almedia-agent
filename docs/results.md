@@ -6,16 +6,15 @@ Synthetic data, 21 clean baseline days per run, routine deployments included. Th
 | Run | Faults detected | Correct supported cause | False alarms | Innocent events silent |
 |---|---:|---:|---:|---:|
 | Seed 4, 49 days | 12/12 | 11/12 detected | 0 | 8/8 |
-| Seed 8, 49 days | 11/12 | 10/11 detected | 0 | 8/8 |
+| Seed 8, 49 days | 12/12 | 11/12 detected | 0 | 8/8 |
 
-Total: 23/24 faults detected (96%), 23/23 localized to the injected scope, 21/23 with the correct supported cause.
+Total: 24/24 faults detected (100%), 24/24 localized to the injected scope, 22/24 with the correct supported cause.
 False alarms: 0 over 98 simulated days (0.000/day). Innocent changes silent: 16/16.
-Mean delay after the first affected data hour: 0.13 simulated hours (0 means caught in the first bad hour).
+Mean delay after the first affected data hour: 0.25 simulated hours (0 means caught in the first bad hour).
 
 ## Misses and unsupported causes
 
 - Seed 4: stockout_surge at 2026-11-26T01:00:00Z, category=sports: detected and localized; cause not confirmed.
-- Seed 8: payment_failure at 2026-11-17T03:00:00Z, country=PL, platform=iOS: not detected (no matching monitor incident).
 - Seed 8: stockout_surge at 2026-11-28T20:00:00Z, category=sports: detected and localized; cause not confirmed.
 
 ## Limits
