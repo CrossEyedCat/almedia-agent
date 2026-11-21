@@ -48,10 +48,26 @@ def run(clean_db, tmp_path):
     return go
 
 
-def files(book):
+def records(book):
+    """Everything the readers see in the folder, alerts or not."""
     def strict(text):
         return json.loads(text, parse_constant=lambda c: pytest.fail(f"non-finite number {c} in an incident file"))
     return [strict(p.read_text(encoding="utf-8")) for p in sorted(book.folder.glob("*.json"))]
+
+
+def files(book):
+    """The alerts: records that are not `explained` or `pending`."""
+    return [r for r in records(book) if r["status"] in ("open", "ongoing", "resolved")]
+
+
+def assert_readable(record):
+    """What the console and the scorer need from any record, alert or not."""
+    for key in ("id", "status", "metric", "first_seen", "last_seen", "report"):
+        assert isinstance(record[key], str) and record[key], key
+    assert isinstance(record["segment"], dict)
+    assert all(isinstance(h["cause"], str) and h["kind"] and h["status"] and
+               all(isinstance(e, str) for e in h["evidence"]) for h in record["hypotheses"])
+    assert all(isinstance(s["target"], str) and s["target"] and isinstance(s["result"], str) for s in record["trail"])
 
 
 def payment(con):
@@ -123,24 +139,58 @@ def test_a_second_fault_elsewhere_is_a_second_incident(run):
                    (("country", "FR"),): "search_ctr"}
 
 
-def test_a_promo_writes_a_note_and_no_incident(run):
+def test_a_promo_is_written_as_explained_and_is_no_alert(run):
     book, path = run(lambda con: inject.promo(con, "FR", FAULT, FAULT + 12 * H), last=6)
     assert files(book) == []
-    (note,) = [json.loads(p.read_text(encoding="utf-8")) for p in book.notes.glob("explained-*.json")]
+    (note,) = records(book)
+    assert_readable(note)
     assert note["status"] == "explained" and note["event"]["kind"] == "promo"
-    assert "discount_rate" in {m["metric"] for m in note["moved"]}
+    assert note["segment"] == {"country": "FR"}
+    assert note["hypotheses"][0]["kind"] == "calendar" and note["hypotheses"][0]["status"] == "supported"
+    assert "discount_rate" in {m["metric"] for m in note["drivers"]}
+    assert note["first_seen"] <= note["last_seen"]
     events, _, data_end = simscore.load_truth(path)
-    assert simscore.score(events, files(book), data_end, days=DAYS)["false_alarms"] == 0
+    result = simscore.score(events, records(book), data_end, days=DAYS)   # the scorer reads the whole folder
+    assert result["false_alarms"] == 0 and result["innocents_silent"] == result["innocents"]
 
 
-def test_held_hours_are_written_as_a_note_and_removed_when_the_data_is_in(run):
-    book, _ = run(lambda con: inject.data_delay(con, "payments", FAULT, FAULT + 2 * H, 2), first=1, last=2)
-    note = json.loads((book.notes / "pending.json").read_text(encoding="utf-8"))
-    assert note["status"] == "pending"
-    assert {"payments"} == {s for h in note["held"] for s in h["sources"]}
-    assert files(book) == []
-    book, _ = run(lambda con: inject.data_delay(con, "payments", FAULT, FAULT + 2 * H, 2), first=1, last=8)
-    assert not (book.notes / "pending.json").exists()
+def test_the_explained_record_keeps_its_first_seen(run):
+    early, _ = run(lambda con: inject.promo(con, "FR", FAULT, FAULT + 12 * H), last=2)
+    (a,) = records(early)
+    late, _ = run(lambda con: inject.promo(con, "FR", FAULT, FAULT + 12 * H), last=8)
+    (b,) = records(late)
+    assert a["id"] == b["id"] and a["first_seen"] == b["first_seen"] and a["last_seen"] < b["last_seen"]
+
+
+def test_held_hours_are_written_as_pending_and_removed_when_the_data_is_in(run):
+    delay = lambda con: inject.data_delay(con, "payments", FAULT, FAULT + 2 * H, 2)
+    book, path = run(delay, first=1, last=2)
+    (note,) = records(book)
+    assert_readable(note)
+    assert note["status"] == "pending" and note["sources"] == ["payments"]
+    assert note["hypotheses"][0]["kind"] == "freshness"
+    assert {h["hour"] for h in note["held"]} == {"2026-11-03T12:00:00Z", "2026-11-03T13:00:00Z"}
+    events, _, data_end = simscore.load_truth(path)
+    result = simscore.score(events, records(book), data_end, days=DAYS)
+    assert result["false_alarms"] == 0 and result["innocents_silent"] == result["innocents"]
+    book, _ = run(delay, first=1, last=8)
+    assert records(book) == []
+
+
+def test_the_console_lists_explained_and_pending_without_skipping_them(run, monkeypatch):
+    book, _ = run(lambda con: inject.promo(con, "FR", FAULT, FAULT + 12 * H),
+                  lambda con: inject.data_delay(con, "payments", FAULT + 2 * H, FAULT + 5 * H, 2), last=4)
+    monkeypatch.setenv("INCIDENTS_DIR", str(book.folder))
+    import importlib
+    import ui.app
+    app = importlib.reload(ui.app)
+    try:
+        got = app.incidents()
+    finally:
+        monkeypatch.delenv("INCIDENTS_DIR")
+        importlib.reload(ui.app)
+    assert got["skipped"] == 0
+    assert {i["status"] for i in got["incidents"]} == {"explained", "pending"}
 
 
 def test_stockouts_light_the_route_through_the_rates_on_the_tree(run):

@@ -52,6 +52,8 @@ class Config:
     onset_min_surprise: float = 2.0   # an earlier hour of a summed window joins the episode at p below 0.01
     active_hours: int = 3             # an alert is live while its last bad hour is this recent
     episode_gap_hours: int = 2        # bad hours this close belong to one episode
+    release_watch_hours: int = 24     # after a release, its metrics are tested in its scope this long
+    release_min_surprise: float = 4.0  # one question per release and metric: p below 1e-4 is enough
     cuts: tuple[tuple[str, ...], ...] = CUTS
 
 
@@ -81,6 +83,7 @@ class Alert:
     score: float              # strongest surprise in the episode, -log10 p
     z: float                  # normal-equivalent of that
     explained_by: dict | None = None   # a calendar row that covers it
+    trigger: str = "scan"              # "scan": the hourly scan; "release": the watch after a release
 
     @property
     def effect(self) -> float:
@@ -196,6 +199,8 @@ class Monitor:
         self._rates: dict[tuple, tuple] = {}          # (metric, cut) -> (rate, usable) of the last tick
         self._kinds: dict[str, str] = {}
         self._loaded_until: pd.Timestamp | None = None
+        self._watch_seen: set[tuple] = set()      # (release, metric) that has alerted, by scan or watch
+        self._watch_closed: set[tuple] = set()    # ... and whose episode is over: never raised again
 
     # ------------------------------------------------------------------ data
     def _refresh(self, now: pd.Timestamp) -> None:
@@ -302,6 +307,7 @@ class Monitor:
                         tick.held.setdefault(h, set()).add(w.metric)
                 tick.alerts += self._judge(cube, w, j0, late_rows, cal, events)
                 tick.judged_series += len(cube.keys)
+        tick.alerts += self._release_watch(now, tick, events)
         return tick
 
     def _judge(self, cube: Cube, w: Watched, j0: int, late_rows: list[int], cal: np.ndarray,
@@ -410,6 +416,73 @@ class Monitor:
             alerts.append(alert)
         return alerts
 
+    def _release_watch(self, now: pd.Timestamp, tick: Tick, events: list[dict]) -> list[Alert]:
+        """A release is a reason to look closer. The hourly scan asks thousands of questions an hour
+        and needs overwhelming evidence for each; a release asks one: did the metrics linked to this
+        system change, in the scope of the release, since it went out? That single question can be
+        answered with far less data, which is what a small cell at night has.
+
+        Only metrics with an exact test are asked: for the others a p-value of 1e-4 is not trustworthy.
+        Each release and metric gets one episode: once its alert (from the scan or from here) has
+        ended, the question is closed, so the evidence that stays in the sum cannot raise it again."""
+        cfg = self.config
+        if not cfg.release_watch_hours:
+            return []
+        rows = self.store.read_sql(
+            "SELECT ts, system, country, platform, description FROM releases WHERE ts <= ? AND ts >= ? ORDER BY ts",
+            (iso_hour(now), iso_hour(now - cfg.release_watch_hours * HOUR)))
+        out: list[Alert] = []
+        for r in rows.to_dict("records"):
+            if "rollback" in (r["description"] or "").lower():
+                continue   # by the contract a rollback row ends a release
+            scope = {d: r[d] for d in ("country", "platform") if isinstance(r[d], str) and r[d]}
+            start = pd.Timestamp(r["ts"])
+            for w in self.watched:
+                if r["system"] not in self.graph.specs[w.metric].systems:
+                    continue
+                key = (r["ts"], r["system"], tuple(sorted(scope.items())), w.metric)
+                if key in self._watch_closed:
+                    continue
+                if any(a.metric == w.metric and compatible(a.segment, scope) for a in tick.alerts + out):
+                    self._watch_seen.add(key)
+                    continue   # the scan already has it
+                skip = [h for h, srcs in tick.late.items() if srcs & set(w.sources)]
+                found = self._series(w.metric, scope)
+                if found is None or found[2][3] == "ratio":
+                    continue
+                if skip and key in self._watch_seen:
+                    continue   # hours are held: neither raise nor close on missing data
+                cube = found[0]
+                # the evidence through each hour since the release; the newest hour that added to it
+                best, last, prev = None, None, 0.0
+                for row in range(max(cube.row(start), 0), cube.rows):
+                    through = self.window(w.metric, scope, start, cube.hour(row + 1), skip)
+                    if through is None:
+                        continue
+                    if through["score"] > prev + 1e-9:
+                        last = row
+                    prev = through["score"]
+                    if best is None or through["score"] > best["score"]:
+                        best = through
+                live = (best is not None and last is not None and best["score"] >= cfg.release_min_surprise
+                        and abs(best["observed"] / best["expected"] - 1.0) >= cfg.min_effect
+                        and last >= cube.rows - cfg.active_hours)   # else nothing new for a while
+                if not live:
+                    if key in self._watch_seen:
+                        self._watch_closed.add(key)   # it alerted and has ended
+                    continue
+                self._watch_seen.add(key)
+                now_w = self.window(w.metric, scope, start, cube.hour(last + 1), skip)
+                alert = Alert(
+                    metric=w.metric, kind=found[2][3], segment=dict(scope), onset=start, last_bad=cube.hour(last),
+                    hours=last - max(cube.row(start), 0) + 1, observed=now_w["observed"], expected=now_w["expected"],
+                    numerator=now_w["numerator"], denominator=now_w["denominator"],
+                    episode_observed=now_w["observed"], score=best["score"], z=best["z"], trigger="release")
+                if w.calendar:
+                    alert.explained_by = self._covering_event(alert, events)
+                out.append(alert)
+        return out
+
     @staticmethod
     def _covering_event(alert: Alert, events: list[dict]) -> dict | None:
         """A calendar row that is active during the episode, in the same country or everywhere."""
@@ -434,7 +507,7 @@ class Monitor:
         found = self._series(metric, segment)
         return float(found[2][0][found[1]]) if found else None
 
-    def window(self, metric: str, segment: dict, start, end) -> dict | None:
+    def window(self, metric: str, segment: dict, start, end, skip=()) -> dict | None:
         """One targeted look: the metric in a watched series over [start, end) against its baseline.
         Used to follow a link of the graph from a metric that moved to one it may affect, where a
         single question is asked and the bar can be far lower than for the hourly scan."""
@@ -448,6 +521,9 @@ class Monitor:
         d = cube.data[w.denominator][r0:r1, k]
         n = cube.data[w.numerator][r0:r1, k] - shift * d
         both = np.isfinite(n) & np.isfinite(d)
+        for h in skip:                      # hours whose data has not arrived are not evidence
+            if r0 <= cube.row(h) < r1:
+                both[cube.row(h) - r0] = False
         sum_n, sum_d = float(n[both].sum()), float(d[both].sum())
         if sum_d <= 0:
             return None

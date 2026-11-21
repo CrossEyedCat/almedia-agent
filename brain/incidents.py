@@ -7,11 +7,14 @@ contains the cell, and on the metrics downstream of the one that moved. The book
 - alerts on different metrics whose places are compatible form one incident, led by the strongest;
 - an incident that is still open and compatible is updated in place: same file, same id, same
   first_seen; its place is refined when stronger evidence points to a narrower or other series;
-- alerts the calendar covers become notes, not incidents; so do hours held back for late data.
+- alerts the calendar covers are written with status `explained`, hours held back for late data
+  with status `pending`: the same file shape, no alert. A pending record is removed when the data
+  is in and the hours have been judged.
 
 Files (the page and the scoring harness read them, see docs/contracts and issues #4, #7, #8):
-  <folder>/<id>.json          one incident, rewritten whole, never NaN, strings where strings are due
-  <folder>/notes/*.json       explained events and held hours, until the readers know those statuses
+  <folder>/inc-NNNN.json       one incident, rewritten whole, never NaN, strings where strings are due
+  <folder>/explained-*.json    a planned event that explains a deviation
+  <folder>/pending-*.json      hours waiting for late data
 """
 from __future__ import annotations
 
@@ -104,16 +107,17 @@ class Book:
         self.monitor = monitor
         self.graph = monitor.graph
         self.folder = Path(folder)
-        self.notes = self.folder / "notes"
         self.folder.mkdir(parents=True, exist_ok=True)
+        old_notes = self.folder / "notes"   # where explained and pending records lived before the readers knew them
         if fresh:
             for p in list(self.folder.glob("*.json")) + list(self.folder.glob("*.json.tmp")) + \
-                    (list(self.notes.glob("*.json")) if self.notes.exists() else []):
+                    (list(old_notes.glob("*.json")) if old_notes.exists() else []):
                 p.unlink(missing_ok=True)
         self.incidents: list[Incident] = []
         taken = [int(p.stem.split("-")[-1]) for p in self.folder.glob("inc-*.json") if p.stem.split("-")[-1].isdigit()]
         self._next = max(taken, default=0) + 1
-        self._held_note = False
+        self._first_seen: dict[str, pd.Timestamp] = {}   # explained / pending record -> hour it was first written
+        self._pending_id: str | None = None
 
     # ------------------------------------------------------------------ update
     def update(self, tick: Tick) -> list[dict]:
@@ -341,31 +345,65 @@ class Book:
                else "No cause is confirmed yet."))
         return body
 
-    # ------------------------------------------------------------------- notes
+    # ------------------------------------------------- explained and pending
     def _write_notes(self, tick: Tick, explained: list[Alert]) -> None:
         by_event: dict[str, list[Alert]] = {}
         for a in explained:
             e = a.explained_by
-            by_event.setdefault(f"{e['kind']}-{e['country'] or 'all'}-{e['start']}", []).append(a)
-        for key, alerts in by_event.items():
+            key = f"explained-{e['kind']}-{e['country'] or 'all'}-{e['start']}".replace(":", "")
+            by_event.setdefault(key, []).append(a)
+        for rid, alerts in by_event.items():
+            alerts.sort(key=lambda a: -a.score)
             e = alerts[0].explained_by
-            path = self.notes / ("explained-" + key.replace(":", "") + ".json")
-            write_json(path, {
-                "id": path.stem, "status": "explained",
-                "first_seen": iso_hour(tick.newest), "last_seen": iso_hour(max(a.last_bad for a in alerts)),
-                "event": e, "segment": {"country": e["country"]} if e["country"] else {},
-                "moved": [{"metric": a.metric, "segment": ordered(a.segment), "observed": a.observed,
-                           "expected": a.expected, "delta_pct": 100 * a.effect, "z": a.z} for a in alerts],
-                "report": f"{e['description'] or e['kind']} ({e['start']} to {e['end']}) explains "
-                          + ", ".join(sorted({a.metric for a in alerts})) + "; no alert raised."})
-        path = self.notes / "pending.json"
+            scope = {"country": e["country"]} if e["country"] else {}
+            top = next((a for a in alerts if a.segment == scope), alerts[0])   # the event's own place if it moved
+            first = self._first_seen.setdefault(rid, tick.newest)
+            what = e["description"] or e["kind"]
+            window = f"{self._when(pd.Timestamp(e['start']))} to {self._when(pd.Timestamp(e['end']))}"
+            write_json(self.folder / f"{rid}.json", {
+                "id": rid, "status": "explained",
+                "first_seen": iso_hour(first), "last_seen": iso_hour(max(a.last_bad for a in alerts)),
+                "metric": top.metric, "segment": ordered(top.segment),
+                "change": {"observed": top.observed, "expected": top.expected, "delta_pct": 100 * top.effect,
+                           "z": top.z, "window": {"start": iso_hour(min(a.onset for a in alerts)),
+                                                  "end": iso_hour(max(a.last_bad for a in alerts) + HOUR)}},
+                "drivers": [{"metric": a.metric, "segment": ordered(a.segment), "observed": a.observed,
+                             "expected": a.expected, "delta_pct": 100 * a.effect, "z": a.z} for a in alerts],
+                "hypotheses": [{
+                    "cause": f"planned event: {what}", "kind": "calendar", "status": "supported",
+                    "evidence": [f"calendar entry of kind {e['kind']} for {e['country'] or 'all countries'}, {window}",
+                                 "the change began inside that window and sits in the place the entry names",
+                                 "the graph links the calendar to " + ", ".join(sorted({a.metric for a in alerts}))]}],
+                "trail": [{"action": "watch", "target": a.metric,
+                           "result": f"{num(a.observed)} against an expected {num(a.expected)} in "
+                                     f"{seg_text(a.segment)} (z {a.z:+.1f})"} for a in alerts]
+                + [{"action": "check", "target": "calendar", "result": f"{what}, {window}: covers it"}],
+                "event": e,
+                "report": f"{what} ({window}) explains the change in "
+                          + ", ".join(sorted({a.metric for a in alerts})) + ". No alert."})
+
         if tick.held:
-            write_json(path, {
-                "id": "pending", "status": "pending", "last_seen": iso_hour(tick.newest),
-                "held": [{"hour": iso_hour(h), "sources": sorted(tick.late.get(h, [])), "metrics": sorted(ms)}
-                         for h, ms in sorted(tick.held.items())],
-                "report": "Waiting for late data; these hours are not judged yet."})
-            self._held_note = True
-        elif self._held_note:
-            path.unlink(missing_ok=True)
-            self._held_note = False
+            hours = sorted(tick.held)
+            if self._pending_id is None:
+                self._pending_id = "pending-" + iso_hour(hours[0]).replace(":", "")
+                self._first_seen[self._pending_id] = tick.newest
+            sources = sorted({s for h in hours for s in tick.late.get(h, [])})
+            metrics = sorted({m for ms in tick.held.values() for m in ms})
+            write_json(self.folder / f"{self._pending_id}.json", {
+                "id": self._pending_id, "status": "pending",
+                "first_seen": iso_hour(self._first_seen[self._pending_id]), "last_seen": iso_hour(tick.newest),
+                "metric": metrics[0], "segment": {},
+                "sources": sources,
+                "held": [{"hour": iso_hour(h), "sources": sorted(tick.late.get(h, [])), "metrics": sorted(tick.held[h])}
+                         for h in hours],
+                "hypotheses": [{
+                    "cause": f"data from {', '.join(sources)} has not arrived yet", "kind": "freshness",
+                    "status": "supported",
+                    "evidence": [f"{self._when(h)}: waiting for {', '.join(sorted(tick.late.get(h, [])))}" for h in hours]}],
+                "trail": [{"action": "check", "target": "freshness",
+                           "result": f"{len(hours)} hour(s) not judged for {', '.join(metrics)}"}],
+                "report": f"Waiting for data from {', '.join(sources)}: {len(hours)} hour(s) of "
+                          f"{', '.join(metrics)} are not judged yet. They are neither healthy nor an alert."})
+        elif self._pending_id is not None:
+            (self.folder / f"{self._pending_id}.json").unlink(missing_ok=True)   # the data is in and was judged
+            self._pending_id = None
