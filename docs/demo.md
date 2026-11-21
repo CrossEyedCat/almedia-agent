@@ -7,7 +7,7 @@ checked against the real thing before the first rehearsal. Everything else was r
 
 ```
 python -m sim.run --backfill 28d --force        # clean 4-week history, about 3 s
-python -m brain.run ...                          # [B] the monitor; command to be filled in by B
+python -m brain.run --fresh                     # the monitor; --fresh empties incidents/ (stop it before a new backfill)
 python -m sim.live --speed 2                     # one simulated hour every 2 s
 uvicorn ui.app:app --port 8000                   # open http://127.0.0.1:8000
 ```
