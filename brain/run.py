@@ -25,6 +25,7 @@ import pandas as pd
 
 from brain.clock import HOUR, Clock
 from brain.data import Store, iso_hour
+from brain.extension import Extension
 from brain.graph import MetricGraph
 from brain.incidents import Book, write_json
 from brain.monitor import Config, Monitor
@@ -69,11 +70,14 @@ def replay(monitor: Monitor, book: Book, start=None, end=None, quiet: bool = Fal
     return opened
 
 
-def live(monitor: Monitor, book: Book, poll: float, max_ticks: int | None = None, quiet: bool = False) -> None:
+def live(monitor: Monitor, book: Book, poll: float, max_ticks: int | None = None, quiet: bool = False,
+         extension: Extension | None = None) -> None:
     last_seen, idle, ticks = None, 0, 0
     print("monitor is watching; Ctrl+C stops it", flush=True)
     while max_ticks is None or ticks < max_ticks:
         try:
+            if extension is not None:
+                extension.poll()   # new metric definitions in the incoming folder; answers itself, never raises
             newest = Clock(monitor.store).newest_hour()
             if newest is not None and (newest != last_seen or idle >= 4):   # also re-read when nothing new came
                 tick = monitor.tick()
@@ -96,6 +100,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--incidents", default=os.environ.get("INCIDENTS_DIR", "incidents"))
     ap.add_argument("--graph-out", default=os.environ.get("GRAPH_JSON"),
                     help="validate the graph and write its export here (live mode)")
+    ap.add_argument("--incoming", default=os.environ.get("INCOMING_METRICS_DIR", "incoming_metrics"),
+                    help="live: folder watched for new metric definitions (*.yaml); the answers are written next to "
+                         "them, and --fresh removes the old answers there (the YAML files stay)")
     ap.add_argument("--fresh", action="store_true", help="start with an empty incidents folder")
     ap.add_argument("--replay", action="store_true", help="walk the whole database hour by hour, then stop")
     ap.add_argument("--from", dest="start", help="replay: first clock value (default: after the minimum history)")
@@ -115,7 +122,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if a.graph_out:
                 export_graph(graph, store, Path(a.graph_out))
-            live(monitor, book, a.poll, a.max_ticks, a.quiet)
+            extension = Extension(graph, store, a.incoming, a.graph_out, monitor, fresh=a.fresh, quiet=a.quiet)
+            live(monitor, book, a.poll, a.max_ticks, a.quiet, extension)
     except KeyboardInterrupt:
         print("stopped")
     finally:
