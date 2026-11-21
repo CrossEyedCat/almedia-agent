@@ -193,8 +193,8 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [ ] **A+B** Agree the simulated clock: history start date, 4 weeks of backfill, demo speed (e.g. 1 simulated hour every 2 s).
 - [ ] **A+B** Agree who edits what: A only `sim/` and `ui/`, B only `brain/`; shared files (README, `docs/contracts/`) only after telling the other.
 - [ ] **A** Put contract fixtures in `docs/contracts/`: `facts_hourly.sql` (table DDL), `metric_example.yaml`.
-- [ ] **B** Put `docs/contracts/incident_example.json` there, with realistic values for S1.
-- [ ] **B** A stub in `brain/` that opens `data/market.db` and prints row counts per table — proof that the data contract works.
+- [x] **B** Put `docs/contracts/incident_example.json` there, with realistic values for S1.
+- [x] **B** A stub in `brain/` that opens `data/market.db` and prints row counts per table — proof that the data contract works.
 
 ### M1 Clean world + graph v1 — Sat 12:30–15:00
 
@@ -208,12 +208,12 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [ ] **Handoff to B by ~13:30:** a small database (2 weeks, 2 countries) committed to `docs/contracts/sample.db` or shared directly.
 
 **B — graph v1**
-- [ ] `brain/graph.py`: node and edge types (`formula`, `breakdown`, `may_affect`, `context`) with metadata (formula text, dimension, prior strength, status).
-- [ ] Core metric definitions in `brain/metrics/*.yaml` following the contract — about 15 metrics from `contribution` down to the funnel rates.
-- [ ] Evaluator: compute any metric for any segment and time window from the database.
-- [ ] Validation on load: every formula recomputed against its components; breakdowns of additive metrics sum to the parent.
-- [ ] Tree view in the terminal: `python -m brain.graph --tree`.
-- [ ] **Handoff to A by ~13:30:** `incident_example.json` and a `graph.json` export (nodes and edges) for the UI.
+- [x] `brain/graph.py`: node and edge types (`formula`, `breakdown`, `may_affect`, `context`) with metadata (formula text, dimension, prior strength, status).
+- [x] Core metric definitions in `brain/metrics/*.yaml` following the contract — about 15 metrics from `contribution` down to the funnel rates.
+- [x] Evaluator: compute any metric for any segment and time window from the database.
+- [x] Validation on load: every formula recomputed against its components; breakdowns of additive metrics sum to the parent.
+- [x] Tree view in the terminal: `python -m brain.graph --tree`.
+- [x] **Handoff to A by ~13:30:** `incident_example.json` and a `graph.json` export (nodes and edges) for the UI.
 
 ### M2 First fault — Sat 15:00–19:00
 
