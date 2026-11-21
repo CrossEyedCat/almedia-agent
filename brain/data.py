@@ -5,6 +5,7 @@ Column and dimension names are checked against the schema before they reach SQL.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from pathlib import Path
 
@@ -13,6 +14,10 @@ import pandas as pd
 from brain.metric_spec import DIMENSIONS
 
 FACTS = "facts_hourly"
+# The only tables the brain may read (guardrail 2: it never sees the scoring table).
+READABLE_TABLES = (FACTS, "ingestion_log", "releases", "calendar")
+_TABLE_REF = re.compile(r'\b(?:from|join)\s+(?:"([^"]+)"|`([^`]+)`|\[([^\]]+)\]|([A-Za-z_][A-Za-z0-9_]*))',
+                        re.IGNORECASE)
 TS_FORMAT = "%Y-%m-%dT%H:00:00Z"
 
 
@@ -47,8 +52,9 @@ class Store:
 
     # --------------------------------------------------------------- tables
     def tables(self) -> list[str]:
-        return [r[0] for r in self.conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+        """Readable contract tables present in the database."""
+        present = {r[0] for r in self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        return [t for t in READABLE_TABLES if t in present]
 
     def row_counts(self) -> dict[str, int]:
         return {t: self.conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in self.tables()}
@@ -60,6 +66,14 @@ class Store:
         return to_ts(lo), to_ts(hi)
 
     def read_sql(self, sql: str, params=()) -> pd.DataFrame:
+        """Run a query that reads only the contract tables (e.g. a contributed metric's SQL)."""
+        refs = {next(g for g in m.groups() if g) for m in _TABLE_REF.finditer(sql)}
+        lowered = sql.lower()
+        if "sqlite_master" in lowered or "attach" in lowered or "pragma" in lowered:
+            raise PermissionError("query touches the schema or other databases")
+        denied = sorted(r for r in refs if r not in READABLE_TABLES)
+        if denied:
+            raise PermissionError(f"query reads tables outside the contract: {denied}")
         return pd.read_sql_query(sql, self.conn, params=params)
 
     # ---------------------------------------------------------------- sums
