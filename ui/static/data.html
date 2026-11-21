@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulator data</title>
+<style>
+:root { --bg:#f6f7f9; --surface:#fff; --fg:#16202b; --muted:#5d6b7a; --line:#d5dbe3; --accent:#2b4a6f; --warn:#8a6a1f; --hot:#c4402f; --hot-bg:#fbe9e6; --focus:#2b6fd6; --ui: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+@media (prefers-color-scheme: dark) { :root { --bg:#11161c; --surface:#1a212a; --fg:#e8edf3; --muted:#98a6b5; --line:#323d4a; --accent:#8fb4e3; --warn:#e0b868; --hot:#ff7d6b; --hot-bg:#3a2020; --focus:#6fa6ff; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--ui); }
+header { display:flex; flex-wrap:wrap; gap:10px 20px; align-items:center; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--surface); }
+h1 { font-size:18px; margin:0; } a { color:var(--accent); font-weight:600; text-decoration:none; }
+.bar { display:flex; flex-wrap:wrap; gap:8px 12px; padding:10px 20px; align-items:end; border-bottom:1px solid var(--line); }
+.bar label { display:grid; gap:2px; font-size:12px; color:var(--muted); }
+select, input, button { font:inherit; padding:5px 8px; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--fg); }
+button { cursor:pointer; font-weight:600; } button:disabled { opacity:.4; cursor:default; }
+select:focus-visible, input:focus-visible, button:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+.tabs { display:flex; flex-wrap:wrap; gap:6px; padding:10px 20px 0; }
+.tab { padding:5px 12px; border:1px solid var(--line); border-radius:99px; background:var(--surface); cursor:pointer; font-weight:600; font-size:13px; }
+.tab.on { background:var(--fg); color:var(--bg); border-color:var(--fg); } .tab small { opacity:.7; font-weight:400; }
+.note { margin:10px 20px 0; padding:8px 12px; border:1px dashed var(--warn); border-radius:8px; color:var(--warn); font-size:13px; }
+.wrap { margin:10px 20px 30px; border:1px solid var(--line); border-radius:10px; background:var(--surface); overflow:auto; max-height:68vh; }
+table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
+th, td { padding:5px 10px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
+th { position:sticky; top:0; background:var(--surface); color:var(--muted); font-weight:600; font-size:12px; z-index:1; }
+td.l, th.l { text-align:left; } tr:hover td { background:rgba(120,140,160,.12); }
+tr.low td.psr { color:var(--hot); font-weight:700; }
+.pager { display:flex; gap:10px; align-items:center; padding:0 20px 20px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header><h1>Simulator data</h1><span style="color:var(--muted)">read only, straight from data/market.db</span><a href="/" style="margin-left:auto">&larr; Console</a></header>
+<div class="tabs" id="tabs"></div>
+<div class="note" id="note" hidden></div>
+<div class="bar" id="filters"></div>
+<div class="wrap"><table id="t"></table></div>
+<div class="pager"><button id="prev">&larr; Newer</button><button id="next">Older &rarr;</button><span id="count"></span></div>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var tables = [], cur = null, offset = 0, LIMIT = 50;
+  var NOTES = { ground_truth: 'This is the hidden answer: what was really injected. The monitor never reads this table; the scoring script does.',
+                facts_hourly: 'One row per hour and segment (country, platform, category, channel). All numbers are simulated.',
+                ingestion_log: 'When each source delivered the data for an hour. Normally a few minutes after the hour ends; a late source shows up here.',
+                releases: 'Deployments the monitor may use as context.', calendar: 'Planned events (promos) the monitor may use as context.',
+                sim_meta: 'Simulator bookkeeping: seed, first hour, countries.' };
+  function el(t, c, k) { var e = document.createElement(t); if (c) e.className = c; (k || []).forEach(function (x) { e.appendChild(typeof x === 'string' ? document.createTextNode(x) : x); }); return e; }
+  function get(u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); }
+
+  function filterControls() {
+    var f = $('filters'); f.textContent = '';
+    var cols = cur.columns;
+    ['country', 'platform', 'category', 'channel', 'source', 'kind'].forEach(function (n) {
+      if (cols.indexOf(n) < 0) return;
+      var i = el('input'); i.id = 'f-' + n; i.size = 11; i.placeholder = n;
+      f.appendChild(el('label', null, [n, i]));
+    });
+    ['ts_from', 'ts_to'].forEach(function (n) {
+      var i = el('input'); i.id = 'f-' + n; i.size = 20; i.placeholder = '2026-11-22T04:00:00Z';
+      f.appendChild(el('label', null, [n === 'ts_from' ? 'from (UTC)' : 'to (UTC)', i]));
+    });
+    var go = el('button', null, ['Apply']); go.onclick = function () { offset = 0; load(); }; f.appendChild(go);
+    var clr = el('button', null, ['Clear']); clr.onclick = function () { f.querySelectorAll('input').forEach(function (i) { i.value = ''; }); offset = 0; load(); }; f.appendChild(clr);
+  }
+  function query() {
+    var q = 'table=' + cur.name + '&limit=' + LIMIT + '&offset=' + offset;
+    document.querySelectorAll('#filters input').forEach(function (i) { if (i.value.trim()) q += '&' + i.id.slice(2) + '=' + encodeURIComponent(i.value.trim()); });
+    return q;
+  }
+  function load() {
+    get('/api/db/rows?' + query()).then(function (r) {
+      var t = $('t'); t.textContent = '';
+      var head = el('tr'); r.columns.forEach(function (c, i) { head.appendChild(el('th', i < 5 && typeof r.rows[0] !== 'undefined' && typeof r.rows[0][i] === 'string' ? 'l' : '', [c])); });
+      if (r.table === 'facts_hourly') head.appendChild(el('th', null, ['payment_success_rate']));
+      t.appendChild(head);
+      var ia = r.columns.indexOf('payment_attempts'), is = r.columns.indexOf('payment_successes');
+      r.rows.forEach(function (row) {
+        var tr = el('tr');
+        row.forEach(function (v) { tr.appendChild(el('td', typeof v === 'string' ? 'l' : '', [v == null ? '' : String(v)])); });
+        if (r.table === 'facts_hourly') {
+          var rate = row[ia] ? row[is] / row[ia] : null;
+          var td = el('td', 'psr', [rate == null ? '' : rate.toFixed(2)]);
+          if (rate != null && row[ia] >= 5 && rate < 0.75) tr.className = 'low';
+          tr.appendChild(td);
+        }
+        t.appendChild(tr);
+      });
+      $('count').textContent = r.total ? (offset + 1) + ' to ' + (offset + r.rows.length) + ' of ' + r.total.toLocaleString('en') + ' rows' : 'no rows';
+      $('prev').disabled = offset === 0; $('next').disabled = offset + LIMIT >= r.total;
+    }).catch(function (e) { $('count').textContent = 'Could not load: ' + e.message; });
+  }
+  function select(t) {
+    cur = t; offset = 0;
+    document.querySelectorAll('.tab').forEach(function (b) { b.classList.toggle('on', b.dataset.name === t.name); });
+    var n = $('note'); n.hidden = false; n.textContent = NOTES[t.name] || '';
+    filterControls(); load();
+  }
+  $('prev').onclick = function () { offset = Math.max(0, offset - LIMIT); load(); };
+  $('next').onclick = function () { offset += LIMIT; load(); };
+  get('/api/db/tables').then(function (ts) {
+    tables = ts; var tabs = $('tabs');
+    ts.forEach(function (t) {
+      var b = el('button', 'tab', [t.name + ' ', el('small', null, ['(' + t.rows.toLocaleString('en') + ')'])]);
+      b.dataset.name = t.name; b.onclick = function () { select(t); }; tabs.appendChild(b);
+    });
+    select(ts[0]);
+  }).catch(function (e) { $('count').textContent = 'No database: ' + e.message; });
+})();
+</script>
+</body>
+</html>

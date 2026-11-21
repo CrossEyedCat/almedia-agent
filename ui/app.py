@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from pathlib import Path
 
 import pandas as pd
@@ -152,3 +153,64 @@ def new_metric(req: NewMetric):
     except ValueError:                      # the folder was configured outside the repository
         saved = path.as_posix()
     return {"ok": True, "saved": saved, "name": name}
+
+# ---------------------------------------------------------------- data browser (read only)
+BROWSABLE = ("facts_hourly", "ingestion_log", "releases", "calendar", "ground_truth", "sim_meta")
+FILTERABLE = ("country", "platform", "category", "channel", "source", "kind")
+
+
+def _ro() -> sqlite3.Connection:
+    if not MARKET_DB.exists():
+        raise HTTPException(409, "no database yet")
+    return sqlite3.connect(f"file:{Path(MARKET_DB).resolve().as_posix()}?mode=ro", uri=True)
+
+
+@app.get("/data")
+def data_page():
+    return FileResponse(Path(__file__).parent / "static" / "data.html")
+
+
+@app.get("/api/db/tables")
+def db_tables():
+    con = _ro()
+    try:
+        out = []
+        for t in BROWSABLE:
+            cols = [r[1] for r in con.execute(f"PRAGMA table_info({t})")]
+            if cols:
+                out.append({"name": t, "columns": cols, "rows": con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]})
+        return out
+    finally:
+        con.close()
+
+
+@app.get("/api/db/rows")
+def db_rows(table: str, limit: int = 50, offset: int = 0, newest_first: bool = True, ts_from: str | None = None,
+            ts_to: str | None = None, country: str | None = None, platform: str | None = None,
+            category: str | None = None, channel: str | None = None, source: str | None = None, kind: str | None = None):
+    if table not in BROWSABLE:
+        raise HTTPException(422, f"table must be one of {BROWSABLE}")
+    limit, offset = max(1, min(limit, 500)), max(0, offset)
+    con = _ro()
+    try:
+        cols = [r[1] for r in con.execute(f"PRAGMA table_info({table})")]
+        where, args = [], []
+        for name, value in (("country", country), ("platform", platform), ("category", category),
+                            ("channel", channel), ("source", source), ("kind", kind)):
+            if value and name in cols:
+                where.append(f"{name} = ?")
+                args.append(value)
+        time_col = "ts" if "ts" in cols else "start_ts" if "start_ts" in cols else "injected_at" if "injected_at" in cols else None
+        if time_col and ts_from:
+            where.append(f"{time_col} >= ?")
+            args.append(ts_from)
+        if time_col and ts_to:
+            where.append(f"{time_col} < ?")
+            args.append(ts_to)
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        order = f" ORDER BY {time_col} {'DESC' if newest_first else 'ASC'}" if time_col else ""
+        total = con.execute(f"SELECT COUNT(*) FROM {table}{clause}", args).fetchone()[0]
+        rows = con.execute(f"SELECT * FROM {table}{clause}{order} LIMIT ? OFFSET ?", args + [limit, offset]).fetchall()
+        return {"table": table, "columns": cols, "total": total, "rows": rows}
+    finally:
+        con.close()

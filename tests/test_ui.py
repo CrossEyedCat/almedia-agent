@@ -105,3 +105,30 @@ def test_clicking_the_same_button_twice_does_not_stack(client):
 def test_the_page_marks_the_controls_as_demo(client):
     html = client.get("/").text
     assert 'class="demo-tag"' in html and "not part of the monitor" in html
+
+
+# ------------------------------------------------------------- data browser
+def test_data_browser_lists_tables_and_pages_through_rows(client):
+    tables = {t["name"]: t for t in client.get("/api/db/tables").json()}
+    assert tables["facts_hourly"]["rows"] == 48 * 180 and "payment_successes" in tables["facts_hourly"]["columns"]
+    r = client.get("/api/db/rows", params={"table": "facts_hourly", "limit": 5}).json()
+    assert len(r["rows"]) == 5 and r["total"] == 48 * 180 and r["rows"][0][0] == "2026-10-26T23:00:00Z"   # newest first
+    r = client.get("/api/db/rows", params={"table": "facts_hourly", "country": "DE", "platform": "iOS", "category": "fashion",
+                                           "channel": "organic", "ts_from": "2026-10-26T20:00:00Z", "limit": 50}).json()
+    assert r["total"] == 4 and {row[1] for row in r["rows"]} == {"DE"}
+
+
+def test_data_browser_refuses_unknown_tables_and_cannot_be_used_for_sql(client):
+    assert client.get("/api/db/rows", params={"table": "sqlite_master"}).status_code == 422
+    assert client.get("/api/db/rows", params={"table": "facts_hourly; DROP TABLE facts_hourly"}).status_code == 422
+    r = client.get("/api/db/rows", params={"table": "facts_hourly", "country": "DE' OR '1'='1"}).json()
+    assert r["total"] == 0                                              # a value, never SQL
+    assert client.get("/api/db/rows", params={"table": "facts_hourly", "limit": 100000}).json()["rows"].__len__() == 500
+    assert "Simulator data" in client.get("/data").text
+
+
+def test_data_browser_shows_the_answer_table_but_cannot_change_anything(client):
+    client.post("/api/inject", json={"kind": "promo", "country": "FR", "hours": 6})
+    r = client.get("/api/db/rows", params={"table": "ground_truth"}).json()
+    assert [row[1] for row in r["rows"]] == ["promo"]
+    assert client.post("/api/db/rows", json={}).status_code == 405
