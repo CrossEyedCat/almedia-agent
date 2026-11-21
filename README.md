@@ -266,13 +266,18 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 **B — monitor v1**
 - [x] Clock and completeness: `clock = MAX(ts) + 1 h`, arrived when `arrived_at <= clock + 10 min` (agreed in issue 14, `docs/contracts/`); an hour is pending until every source the metric depends on (`graph.sources`) has arrived. `brain/clock.py`.
 - [x] Expected rate per series from its own history, robust to a lasting fault and to promo hours (instead of an hour-of-week state of base columns: the rates have no daily pattern, and counts give an exact test). `brain/monitor.py`.
-- [x] Watch list from the graph: every atomic rate, in total, per dimension, per country × platform and per country × category.
-- [x] Detector: exact binomial tail for proportions, historical spread for other ratios, one hour and three hours, minimum change of 10 %. `brain/stats.py`. Volumes are not watched yet.
-- [x] Incidents: one file per fault, refined in place, resolved after three normal hours; impact through the formulas; releases around the onset as hypotheses with `kind`; notes for explained and pending. `brain/incidents.py`, `brain/impact.py`.
-- [x] Loop: `python -m brain.run --fresh` (live) and `python -m brain.run --replay --db data/eval.db --incidents runs/eval --fresh` (scoring).
-- [ ] Minimum impact in EUR as a gate (today: minimum change of the rate), and sessions with a seasonal baseline.
+- [x] Watch list from the graph: every atomic rate (15), in total, per dimension, per country × platform and per country × category (48 series).
+- [x] Detector: exact binomial tail for proportions, historical spread for other ratios, one hour and three hours, minimum change of 10 %. `brain/stats.py`.
+- [x] Watch after a release: the metrics linked to its system, in its scope, on the sum since the release; finds a fault in a small cell at night that the hourly scan cannot (the miss on seed 8 of the 49-day harness, issue 10).
+- [x] Incidents: one file per fault, refined in place; faults that only overlap stay separate (one place inside the other and metrics related in the graph); resolved only on evidence of health; impact through the formulas; releases around the onset as hypotheses with `kind`. `brain/incidents.py`, `brain/impact.py`.
+- [x] Innocent changes: a promo is written as `explained`, hours waiting for late data as `pending`, in the agreed file shape, no alert (issue 8).
+- [x] Loop: `python -m brain.run --fresh` (live, survives a failing tick) and `python -m brain.run --replay --db data/eval.db --incidents runs/eval --fresh` (scoring).
+- [x] Reviewed: an independent review of the monitor confirmed 35 findings; the ones that show on stage are fixed (a757828), the rest are listed in that commit.
+- [ ] Minimum impact in EUR as a gate (today: minimum change of the rate).
+- [ ] Sessions and other volumes with a seasonal baseline.
+- [ ] Known limits, not fixed: a monitor started in the middle of a fault takes it into its baseline (start on a fresh backfill with `--fresh`); a source more than 8 hours late is never judged; an incident stays alive about two hours after its fault ends.
 
-**A+B checkpoint (dinner):** live simulator with S1 → the brain detects it; write down the detection delay in simulated hours. Done 21 Nov: S1 from the console (DE × Android, started at 02:00 simulated time, the night trough) was raised after 2 simulated hours with the release as the supported cause. On five scoring databases never used for tuning (60 faults, 40 innocent events): 59 detected (the one miss is a correct incident that the scorer assigns to the previous fault, issue 10), 100 % localized, right cause for 54 of 59, 0 false alarms, 40 of 40 innocent events silent, mean delay 0.2 h after the first affected hour.
+**A+B checkpoint (dinner):** live simulator with S1 → the brain detects it; write down the detection delay in simulated hours. **Done 21 Nov.** S1 from the console (DE × Android) started at 02:00 simulated time, the night trough: raised after 2 simulated hours with the release as the supported cause. In the demo order (payment fault, stockouts, search regression, promo) the console shows three separate incidents with the right place and cause, and the promo as explained. Scoring, seeds never used for tuning: 28-day harness, seeds 4 to 8: 59 of 60 faults detected (the one miss is a correct incident that the scorer on `main` assigns to the previous fault, issue 10), 100 % localized, right cause 59 of 59, 0 false alarms, 40 of 40 innocent events silent, mean delay 0.0 to 0.2 h after the first affected hour. 49-day harness of PR 17 with routine releases, seeds 4, 8, 9, 10: 48 of 48 detected, right cause 46 of 48, 0 false alarms, 32 of 32 innocent events silent.
 
 ### M3 Investigation — Sat 19:00–00:00
 
