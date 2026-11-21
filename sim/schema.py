@@ -2,7 +2,7 @@
 
 Column names and units follow brain's fixture (tests/fixture_db.py), so the brain can read the
 simulator's database unchanged. Money is in EUR, timestamps are UTC hour starts like
-2026-11-01T13:00:00Z. Run `python -m sim.schema` to print the DDL (docs/contracts/facts_hourly.sql).
+2026-11-01T13:00:00Z. Run `python -m sim.schema` to print the DDL (docs/contracts/schema.sql).
 """
 from __future__ import annotations
 

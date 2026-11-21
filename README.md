@@ -80,9 +80,11 @@ ground_truth(injected_at, kind, scope, description)      -- hidden from brain/, 
 name: refund_rate
 description: Share of orders refunded
 formula: refunds / orders          # optional; the agent infers it when missing
-sql: SELECT ts, country, platform, category, SUM(refunds) * 1.0 / SUM(orders) AS value
-     FROM facts_hourly GROUP BY ts, country, platform, category
-dimensions: [country, platform, category]
+sql: >
+  SELECT ts, country, platform, category, channel,
+         SUM(refunds) * 1.0 / NULLIF(SUM(orders), 0) AS value
+  FROM facts_hourly GROUP BY ts, country, platform, category, channel
+dimensions: [country, platform, category, channel]
 unit: ratio
 ```
 
@@ -302,7 +304,7 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [x] S3: the payments source arrives 2 h late in `ingestion_log`. (Any source; `python -m sim.inject data_delay --source payments ...`.)
 - [x] Buttons in the UI: payment fault, promo, data delay, add metric.
 - [x] Report view: evidence numbers, hypotheses with status, trail, what remains uncertain.
-- [ ] "Add metric" endpoint: POST a metric YAML, hand it to the brain, show the result.
+- [x] "Add metric" endpoint: POST YAML to incoming_metrics and show the result file when B writes it (B integration pending).
 
 **B — extension and reasoning**
 - [ ] Extension agent, no language model needed: run the SQL with time and row limits → find or check the formula by search over existing metrics → compare row sets both ways and test the roll-up → detect aliases by signature → find the place (alternatives kept, `ambiguous` when several fit) → re-validate → monitor.
@@ -317,7 +319,7 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 ### M5 Polish — Sun 08:00–12:00
 
 **A**
-- [ ] S5 (feed pushing out-of-stock products), only if everything above works.
+- [x] S5 simulator: stockout_surge; search_regression and ad_budget_exhausted also available. Brain investigation still needs integration validation.
 - [x] Scoring harness: N random injections + random innocent events → detection rate, false alarms per simulated day, correct-cause rate, mean detection delay → `docs/results.md`. `python -m sim.score generate` then `score`; `docs/results.md` appears when it is run against the brain's incidents.
 - [x] Demo script `docs/demo.md`: exact clicks and timing, plus a fallback if something hangs. Draft is there; lines marked [B] need B's confirmation.
 
@@ -361,7 +363,10 @@ ui/          dashboard
 docs/        algorithm notes, demo script
 tests/       tests
 data/        SQLite database (not committed)
-incidents/   incident JSON output (not committed)
+incidents/   live incident JSON output (not committed)
+eval_incidents/ separate scoring output (not committed)
+incoming_metrics/ YAML handoff and result files (runtime)
+# sim_meta in the database stores seed/start/countries for simulator bookkeeping
 ```
 
 ## 9. Getting started
@@ -379,4 +384,4 @@ ANTHROPIC_API_KEY=...
 
 ## 10. Third-party libraries
 
-anthropic, fastapi, uvicorn, httpx, pandas, pytest, python-dotenv — used as published packages under their own licenses. More are added here as they come in.
+anthropic, fastapi, uvicorn, httpx, pandas, numpy, pydantic, pyyaml, scipy, pytest, python-dotenv — used as published packages under their own licenses. More are added here as they come in.

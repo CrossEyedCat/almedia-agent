@@ -63,3 +63,28 @@ def write_hours(con: sqlite3.Connection, first_idx: int, count: int) -> None:
 def hour_index(con: sqlite3.Connection, ts: pd.Timestamp) -> int:
     start = read_meta(con)["start"]
     return int((ts - start) / pd.Timedelta(hours=1))
+
+
+def add_release_context(con: sqlite3.Connection, hours: int) -> None:
+    """Routine deployments are context, not proof of a fault. They do not change facts."""
+    import numpy as np
+    from sim.world import PLATFORMS
+
+    meta = read_meta(con)
+    rng = np.random.default_rng(meta["seed"] + 701)
+    rows = []
+    for day in range((hours + 23) // 24):
+        idx = day * 24 + int(rng.integers(0, min(24, hours - day * 24)))
+        ts = (meta["start"] + pd.Timedelta(hours=idx)).strftime(TS_FORMAT)
+        system = str(rng.choice(("payments-sdk", "search", "pacing")))
+        country, platform = str(rng.choice(meta["countries"])), str(rng.choice(PLATFORMS))
+        rows.append((ts, system, country, platform, f"{system} rollout ({country}, {platform})"))
+    con.executemany("INSERT INTO releases VALUES (?, ?, ?, ?, ?)", rows)
+    # Past promotions predate the data window: useful calendar context without contaminating the clean baseline.
+    for days_ago in (7, 14):
+        start = meta["start"] - pd.Timedelta(days=days_ago)
+        end = start + pd.Timedelta(hours=12)
+        country = str(rng.choice(meta["countries"]))
+        con.execute("INSERT INTO calendar VALUES (?, ?, ?, ?, ?)",
+                    (start.strftime(TS_FORMAT), end.strftime(TS_FORMAT), country, "promo", f"{country} promo"))
+    con.commit()

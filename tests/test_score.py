@@ -44,8 +44,15 @@ def test_generated_events_fit_their_slots_and_do_not_overlap(truth):
     ordered = sorted(events, key=lambda e: e.start)
     for a, b in zip(ordered, ordered[1:]):
         assert a.end <= b.start
-    assert ordered[0].start >= start + pd.Timedelta(days=7)         # a clean week first
+    assert ordered[0].start >= start + pd.Timedelta(days=21)         # three clean baseline weeks first
     assert all(e.end <= end for e in events)
+    from sim import db
+    con = db.connect(truth[0])
+    try:
+        assert con.execute("SELECT COUNT(*) FROM releases").fetchone()[0] >= 49
+        assert con.execute("SELECT COUNT(*) FROM releases WHERE ts < ?", ((start + pd.Timedelta(days=21)).strftime("%Y-%m-%dT%H:00:00Z"),)).fetchone()[0] == 21
+    finally:
+        con.close()
 
 
 def test_generate_is_reproducible(tmp_path):
@@ -175,3 +182,69 @@ def test_a_hypothesis_without_a_kind_does_not_count_for_a_release_cause(truth):
         h.pop("kind")
     r = sc.score(events, [inc], end, days)
     assert r["detected"] == 1 and r["correct_cause_rate"] == 0
+
+
+def test_second_fault_is_not_consumed_by_previous_fault():
+    s = pd.Timestamp('2026-11-20T08:00:00Z')
+    first = sc.Event('stockout_surge', s, s + pd.Timedelta(hours=4), {'category': 'home'})
+    second = sc.Event('payment_failure', s + pd.Timedelta(hours=6), s + pd.Timedelta(hours=10),
+                      {'country': 'DE', 'platform': 'Android'})
+    r = sc.score([first, second], [incident(1, first, 1), incident(2, second, 1)], s + pd.Timedelta(days=1), 1)
+    assert r['detected'] == 2 and r['false_alarms'] == 0
+
+
+def test_duplicate_ids_in_different_files_do_not_hide_false_alarms(tmp_path):
+    for n in range(2):
+        (tmp_path / f'{n}.json').write_text(json.dumps({'id': 'same', 'first_seen': '2026-11-20T08:00:00Z'}))
+    r = sc.score([], sc.load_incidents(tmp_path), pd.Timestamp('2026-11-21T00:00:00Z'), 1)
+    assert r['false_alarms'] == 2
+
+
+@pytest.mark.parametrize('value', [[], {}, {'id': 'x'}, {'id': 'x', 'first_seen': '2026-11-20T08:00:00'},
+    {'id': 'x', 'first_seen': '2026-11-20T08:00:00Z', 'hypotheses': None},
+    {'id': 'x', 'first_seen': '2026-11-20T08:00:00Z', 'segment': 'DE'}])
+def test_bad_file_names_its_path(tmp_path, value):
+    p = tmp_path / 'broken.json'
+    p.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match='broken.json'):
+        sc.load_incidents(tmp_path)
+
+
+def test_missing_or_empty_incidents_never_publish_results(tmp_path):
+    for folder in (tmp_path / 'missing', tmp_path):
+        out = tmp_path / 'results.md'
+        with pytest.raises(SystemExit) as exc:
+            sc.main(['score', '--incidents', str(folder), '--out', str(out)])
+        assert exc.value.code == 2 and not out.exists()
+
+
+def test_routine_releases_have_no_effect_on_facts(tmp_path):
+    from sim.run import backfill
+    from sim import db
+    a = backfill(tmp_path / 'plain.db', 48, countries=('DE',), add_context=False)
+    b = backfill(tmp_path / 'context.db', 48, countries=('DE',), add_context=True)
+    ca, cb = db.connect(a), db.connect(b)
+    try:
+        assert ca.execute('SELECT * FROM facts_hourly ORDER BY ts, country, platform, category, channel').fetchall() == cb.execute('SELECT * FROM facts_hourly ORDER BY ts, country, platform, category, channel').fetchall()
+        assert cb.execute('SELECT COUNT(*) FROM releases').fetchone()[0] == 2
+        assert cb.execute('SELECT COUNT(*) FROM ground_truth').fetchone()[0] == 0
+        assert cb.execute('SELECT COUNT(*) FROM calendar WHERE end_ts < ?', ('2026-10-25T00:00:00Z',)).fetchone()[0] == 2
+    finally:
+        ca.close(); cb.close()
+
+
+def test_invalid_generation_keeps_existing_database(tmp_path):
+    p = tmp_path / 'keep.db'
+    p.write_bytes(b'keep me')
+    with pytest.raises(ValueError):
+        sc.generate(p, faults=0, innocents=0)
+    assert p.read_bytes() == b'keep me'
+
+
+def test_contract_example_localizes_and_names_the_cause():
+    from pathlib import Path
+    i = json.loads(Path('docs/contracts/incident_example.json').read_text())
+    start = pd.Timestamp(i['first_seen'])
+    f = sc.Event('payment_failure', start, start + pd.Timedelta(hours=4), dict(i['segment']))
+    r = sc.score([f], [i], start + pd.Timedelta(days=1), 1)
+    assert r['localized_rate'] == r['correct_cause_rate'] == 1

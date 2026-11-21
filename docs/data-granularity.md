@@ -36,7 +36,7 @@ attempts, for the same reason.
 
 ## Consequences for the demo
 
-- The faults we inject (payment failure by country and platform, promo by country, late data by source) can all be
+- The faults we inject (payment failure by country and platform, stockouts by category, search regression and ad budget exhaustion by country, promo by country, late data by source) can all be
   expressed in these dimensions. A fault by payment method could not be injected without adding a column.
 - Changing a column or a dimension changes the data contract; it has to be changed in `sim/`, `docs/contracts/` and
   `brain/metrics/` together.

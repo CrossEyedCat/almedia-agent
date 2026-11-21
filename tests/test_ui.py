@@ -319,3 +319,15 @@ def test_the_page_reads_the_typed_links_and_survives_odd_fields(client):
                  "Where in the segments", "/api/metric/", "function str(", "function list("):
         assert word in html, word
     assert "explained" in client.get("/static/console.css").text                   # grey, not counted
+
+
+def test_page_metric_yaml_is_accepted_by_brain(client, tmp_path):
+    import re
+    from brain.metric_spec import load_specs
+    html = client.get('/').text
+    literal = re.search(r"var y = '([^']+)';", html).group(1)
+    yaml_text = literal.replace('\\n', '\n')
+    response = client.post('/api/metric', json={'yaml_text': yaml_text})
+    assert response.status_code == 200
+    specs = load_specs(tmp_path / 'incoming' / 'refund_rate.yaml')
+    assert len(specs) == 1 and specs[0].name == 'refund_rate'

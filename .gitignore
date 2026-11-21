@@ -6,3 +6,5 @@ __pycache__/
 data/
 incidents/
 incoming_metrics/
+
+eval_incidents/
