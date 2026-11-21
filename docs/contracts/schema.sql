@@ -26,7 +26,10 @@ CREATE TABLE IF NOT EXISTS facts_hourly (
   PRIMARY KEY (ts, country, platform, category, channel)
 );
 
--- how fresh each source is, per hour (completeness gate for the monitor)
+-- how fresh each source is, per hour (completeness gate for the monitor).
+-- The clock rule (agreed with B, issue 14): clock = MAX(facts_hourly.ts) + 1 hour; a source's hour has arrived when
+-- arrived_at <= clock + 10 minutes. On time, arrived_at is ts + 1 h + 2..9 minutes, so the jitter must stay under 10
+-- minutes (tests/test_sim.py checks it); a data delay adds delay_hours.
 CREATE TABLE IF NOT EXISTS ingestion_log (source TEXT NOT NULL, ts TEXT NOT NULL, arrived_at TEXT NOT NULL,
   PRIMARY KEY (source, ts));
 -- deployments the brain may use as context
