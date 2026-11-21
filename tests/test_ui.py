@@ -52,7 +52,7 @@ def test_incidents_fall_back_to_the_marked_example_then_show_real_ones(client, t
 
 def test_inject_works_and_is_recorded(client):
     r = client.post("/api/inject", json={"kind": "payment_failure", "country": "DE", "platform": "Android", "severity": 0.4})
-    assert r.status_code == 200 and r.json()["start"] == "2026-10-27T00:00:00Z"
+    assert r.status_code == 200 and r.json()["start"] == "2026-10-26T23:00:00Z"      # the latest hour: it shows at once
     kinds = [i["kind"] for i in client.get("/api/state").json()["injected"]]
     assert kinds == ["payment_failure"]
     assert client.post("/api/inject", json={"kind": "promo", "country": "FR", "hours": 6}).status_code == 200
@@ -233,7 +233,7 @@ def test_a_fault_can_be_ended_from_the_page_and_stops_being_active(client):
     injected = client.get("/api/state").json()["injected"]
     assert injected[0]["active"] is True and isinstance(injected[0]["id"], int)
     r = client.post("/api/end", json={"id": injected[0]["id"]})
-    assert r.status_code == 200 and r.json()["ended_from"] == "2026-10-27T00:00:00Z"
+    assert r.status_code == 200 and r.json()["ended_from"] == "2026-10-26T23:00:00Z"
     assert client.get("/api/state").json()["injected"][0]["active"] is False
     assert client.post("/api/end", json={"id": injected[0]["id"]}).status_code == 409      # already ended
     assert client.post("/api/end", json={"id": 999}).status_code == 404

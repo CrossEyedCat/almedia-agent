@@ -53,6 +53,6 @@ The scoring script (`python -m sim.score generate`) mixes all four with promos a
 
 ## Things to rehearse
 
-- The first fault always at the same hour offset so the timing is the same on every run (`--now` starts at the next hour).
+- The first fault always at the same hour offset so the timing is the same on every run (`--now` starts at the latest hour, so the change shows at once).
 - Reset between rehearsals: stop `sim.live`, run `python -m sim.run --backfill 28d --force`, restart.
 - Fault severity in the button is 0.4 (payment success falls by 40%), promo is 12 hours, late data is 2 hours.

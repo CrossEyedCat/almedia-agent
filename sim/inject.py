@@ -4,7 +4,7 @@
     python -m sim.inject stockout_surge --category electronics
     python -m sim.inject search_regression --country DE
     python -m sim.inject ad_budget_exhausted --country FR --start 2026-11-20T23:00:00Z
-    python -m sim.inject end --id 3            # roll back: the fault stops from the next hour
+    python -m sim.inject end --id 3            # roll back: the fault stops from the latest hour
     python -m sim.inject promo --country FR --start 2026-11-20T08:00:00Z --end 2026-11-20T20:00:00Z
     python -m sim.inject data_delay --source payments --start 2026-11-21T06:00:00Z --end 2026-11-21T09:00:00Z
 
@@ -55,9 +55,25 @@ class AlreadyInjected(ValueError):
     """The same injection (kind and parameters, same start) is already on record. Repeating it would stack."""
 
 
+TARGET_KEYS = ("country", "platform", "category", "channel", "source")
+
+
+def _target(params: dict) -> dict:
+    return {k: params[k] for k in TARGET_KEYS if params.get(k)}
+
+
+def _overlaps(a: Injection, b: Injection) -> bool:
+    return (a.end is None or b.start < a.end) and (b.end is None or a.start < b.end)
+
+
 def _record(con, inj: Injection, description: str) -> None:
     if con.execute("SELECT 1 FROM ground_truth WHERE kind = ? AND scope = ?", (inj.kind, inj.to_scope_json())).fetchone():
         raise AlreadyInjected(f"{inj.kind} with the same settings and start is already scheduled")
+    for kind, scope in con.execute("SELECT kind, scope FROM ground_truth WHERE kind = ?", (inj.kind,)).fetchall():
+        other = Injection.from_row(kind, scope)
+        if _target(other.params) == _target(inj.params) and _overlaps(other, inj):
+            # a second copy on the same target would stack on the first one
+            raise AlreadyInjected(f"{inj.kind} is already in effect on the same target; end it first")
     con.execute("INSERT INTO ground_truth VALUES (?, ?, ?, ?)", (_fmt(inj.start), inj.kind, inj.to_scope_json(), description))
     con.commit()
 
@@ -172,7 +188,7 @@ def main(argv=None) -> int:
     ap.add_argument("--platform")
     ap.add_argument("--source")
     ap.add_argument("--start", help="UTC hour; default: 6 hours before the end of the data")
-    ap.add_argument("--now", action="store_true", help="start with the next hour (use while sim.live is running)")
+    ap.add_argument("--now", action="store_true", help="start with the current (latest) hour, so the effect shows at once")
     ap.add_argument("--end", help="UTC hour; default: until the end of the simulation")
     ap.add_argument("--severity", type=float, default=0.35)
     ap.add_argument("--delay-hours", type=float, default=2)
@@ -184,14 +200,14 @@ def main(argv=None) -> int:
         if a.start:
             start = pd.Timestamp(a.start)
         elif a.now:
-            start = last + pd.Timedelta(hours=1)
+            start = last
         else:
             start = last - pd.Timedelta(hours=5)
         end = pd.Timestamp(a.end) if a.end else None
         if a.kind == "end":
             if a.id is None:
                 ap.error("end needs --id")
-            at = pd.Timestamp(a.start) if a.start else last + pd.Timedelta(hours=1)
+            at = pd.Timestamp(a.start) if a.start else last
             n = end_injection(con, a.id, at)
             print(f"injection {a.id} ended from {_fmt(at)}, {n} hours replayed")
             return 0

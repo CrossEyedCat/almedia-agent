@@ -231,7 +231,8 @@ def test_the_same_injection_cannot_be_recorded_twice(tmp_path):
     with pytest.raises(inject.AlreadyInjected):
         inject.payment_failure(con, "DE", "Web", start, severity=0.4)
     after = con.execute("SELECT COUNT(*) FROM ground_truth").fetchone()[0], con.execute("SELECT COUNT(*) FROM releases").fetchone()[0]
-    inject.payment_failure(con, "DE", "Web", start, severity=0.5)         # different settings: allowed
+    with pytest.raises(inject.AlreadyInjected):                            # other settings, same segment, still in effect
+        inject.payment_failure(con, "DE", "Web", start + pd.Timedelta(hours=3), severity=0.5)
     inject.payment_failure(con, "FR", "Web", start, severity=0.4)         # different segment: allowed
     con.close()
     assert before == after == (1, 1)
@@ -363,3 +364,32 @@ def test_default_database_has_the_published_totals(tmp_path):
     row = con.execute("SELECT COUNT(*), SUM(sessions), SUM(orders), ROUND(SUM(gmv), 2), ROUND(SUM(ad_spend), 2) FROM facts_hourly").fetchone()
     con.close()
     assert row == (120960, 3081260, 181185, 11631523.55, 64859.08)
+
+
+# ------------------------------------------------------------- effect at once, no stacking
+def test_a_fault_started_at_the_latest_hour_shows_at_once(clean_db, tmp_path):
+    path = fresh_copy(tmp_path)
+    con = db.connect(path)
+    last = db.last_hour(con)
+    inject.payment_failure(con, "DE", "Android", last, severity=0.5)       # "now" = the latest hour
+    con.close()
+    clean, now = key(facts(clean_db)), key(facts(path))
+    ts = pd.to_datetime(clean.ts)
+    target = (clean.country == "DE") & (clean.platform == "Android") & (ts == last)
+    assert now[target].payment_successes.sum() < 0.8 * clean[target].payment_successes.sum()
+    pd.testing.assert_frame_equal(clean[~target], now[~target])             # only the latest hour of that segment moved
+
+
+def test_a_later_click_on_the_same_target_does_not_stack_but_a_finished_one_can_be_repeated(tmp_path):
+    path = fresh_copy(tmp_path, hours=3 * 24)
+    con = db.connect(path)
+    s = pd.Timestamp("2026-10-26T06:00:00Z")
+    inject.search_regression(con, "ES", s, severity=0.4)
+    with pytest.raises(inject.AlreadyInjected):                            # three hours later, same target, still on
+        inject.search_regression(con, "ES", s + pd.Timedelta(hours=3), severity=0.4)
+    (rowid,) = con.execute("SELECT rowid FROM ground_truth").fetchone()
+    inject.end_injection(con, rowid, s + pd.Timedelta(hours=5))
+    inject.search_regression(con, "ES", s + pd.Timedelta(hours=8), severity=0.4)    # after it ended: allowed
+    inject.promo(con, "FR", s, s + pd.Timedelta(hours=4))
+    inject.promo(con, "FR", s + pd.Timedelta(hours=4), s + pd.Timedelta(hours=8))   # back to back, no overlap: allowed
+    con.close()

@@ -139,7 +139,8 @@ def do_inject(req: Inject):
 
 def _inject(con, req: "Inject"):
     last = db.last_hour(con)
-    start = last + pd.Timedelta(hours=1) if req.when == "now" else last - pd.Timedelta(hours=5)
+    # "now" is the latest hour of data: the effect shows at once and carries on as the clock moves
+    start = last if req.when == "now" else last - pd.Timedelta(hours=5)
     end = start + pd.Timedelta(hours=req.hours)
     if req.kind == "payment_failure":
         if req.country not in COUNTRIES or req.platform not in PLATFORMS:
@@ -178,12 +179,12 @@ class End(BaseModel):
 
 @app.post("/api/end")
 def end_fault(req: End):
-    """Demo: someone rolls the change back. The injection stops from the next simulated hour."""
+    """Demo: someone rolls the change back. The injection stops from the latest hour, so the effect shows at once."""
     if not MARKET_DB.exists():
         raise HTTPException(409, "no database yet")
     con = db.connect(MARKET_DB)
     try:
-        at = db.last_hour(con) + pd.Timedelta(hours=1)
+        at = db.last_hour(con)
         inject.end_injection(con, req.id, at)
         return {"ok": True, "id": req.id, "ended_from": at.strftime("%Y-%m-%dT%H:00:00Z")}
     except NoSuchInjection as exc:
