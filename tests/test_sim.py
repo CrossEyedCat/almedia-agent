@@ -393,3 +393,43 @@ def test_a_later_click_on_the_same_target_does_not_stack_but_a_finished_one_can_
     inject.promo(con, "FR", s, s + pd.Timedelta(hours=4))
     inject.promo(con, "FR", s + pd.Timedelta(hours=4), s + pd.Timedelta(hours=8))   # back to back, no overlap: allowed
     con.close()
+
+
+# ------------------------------------------------------------ command line slips (issue 11)
+def test_unknown_values_are_refused_before_anything_is_written(tmp_path):
+    path = fresh_copy(tmp_path, hours=2 * 24)
+    con = db.connect(path)
+    s = pd.Timestamp("2026-10-26T06:00:00Z")
+    for call in (lambda: inject.payment_failure(con, "de", "Android", s),
+                 lambda: inject.payment_failure(con, "DE", "android", s),
+                 lambda: inject.stockout_surge(con, "Electronics", s),
+                 lambda: inject.search_regression(con, "XX", s),
+                 lambda: inject.data_delay(con, "payment", s, s + pd.Timedelta(hours=2))):
+        with pytest.raises(ValueError, match="unknown"):
+            call()
+    counts = [con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("ground_truth", "releases", "calendar")]
+    con.close()
+    assert counts == [0, 0, 0]
+
+
+def test_a_time_without_a_zone_is_taken_as_utc(tmp_path):
+    assert inject.utc("2026-10-26T06:00:00") == inject.utc("2026-10-26T06:00:00Z") == pd.Timestamp("2026-10-26T06:00:00Z")
+    path = fresh_copy(tmp_path, hours=2 * 24)
+    con = db.connect(path)
+    inject.payment_failure(con, "DE", "Android", pd.Timestamp("2026-10-26T06:00:00"), severity=0.5)    # naive: used to crash in replay
+    n = con.execute("SELECT COUNT(*) FROM ground_truth").fetchone()[0]
+    con.close()
+    assert n == 1
+
+
+def test_the_command_line_rejects_a_wrong_value_with_a_usage_error(tmp_path):
+    path = fresh_copy(tmp_path, hours=2 * 24)
+    for argv in (["payment_failure", "--country", "de", "--platform", "Android"],
+                 ["payment_failure", "--country", "DE", "--platform", "android"],
+                 ["data_delay", "--source", "payment", "--end", "2026-10-26T10:00:00Z"]):
+        with pytest.raises(SystemExit) as exc:
+            inject.main(argv + ["--db", str(path)])
+        assert exc.value.code == 2
+    con = db.connect(path)
+    assert con.execute("SELECT COUNT(*) FROM ground_truth").fetchone()[0] == 0
+    con.close()

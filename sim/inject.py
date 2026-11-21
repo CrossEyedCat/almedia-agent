@@ -20,13 +20,28 @@ import sqlite3
 
 import pandas as pd
 
-from sim import db
-from sim.schema import TS_FORMAT
+from sim import db, world
+from sim.schema import SOURCES, TS_FORMAT
 from sim.world import Injection
 
 
 def _fmt(ts: pd.Timestamp) -> str:
     return ts.strftime(TS_FORMAT)
+
+
+def utc(ts) -> pd.Timestamp:
+    """Any time as a UTC timestamp: a time without a zone is taken as UTC (2026-11-20T08:00:00 works like ...Z)."""
+    t = pd.Timestamp(ts)
+    return t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
+
+
+def _check(country=None, platform=None, category=None, source=None) -> None:
+    """Refuse a value the simulator does not know before anything is written (a lower-case de used to be accepted,
+    recorded in ground_truth and a release, and then changed no row)."""
+    for name, value, allowed in (("country", country, world.COUNTRIES), ("platform", platform, world.PLATFORMS),
+                                 ("category", category, world.CATEGORIES), ("source", source, SOURCES)):
+        if value is not None and value not in allowed:
+            raise ValueError(f"unknown {name} {value!r}; use one of {', '.join(allowed)}")
 
 
 def replay(con: sqlite3.Connection, start: pd.Timestamp) -> int:
@@ -81,6 +96,8 @@ def _record(con, inj: Injection, description: str) -> None:
 def payment_failure(con, country: str, platform: str, start: pd.Timestamp, severity: float = 0.35,
                     end: pd.Timestamp | None = None, replay_now: bool = True) -> int:
     """A payment SDK release breaks payments for one country and platform (scenario S1)."""
+    _check(country=country, platform=platform)
+    start, end = utc(start), None if end is None else utc(end)
     inj = Injection("payment_failure", start, end, {"country": country, "platform": platform, "severity": severity})
     _record(con, inj, f"payment success rate drops {severity:.0%} for {country} {platform} after a payments-sdk release")
     con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
@@ -92,6 +109,8 @@ def payment_failure(con, country: str, platform: str, start: pd.Timestamp, sever
 def promo(con, country: str, start: pd.Timestamp, end: pd.Timestamp, traffic_lift: float = 0.4,
           conversion_lift: float = 0.2, extra_discount: float = 0.03, replay_now: bool = True) -> int:
     """A planned promotion: more traffic and orders, listed in the calendar (scenario S2)."""
+    _check(country=country)
+    start, end = utc(start), utc(end)
     inj = Injection("promo", start, end, {"country": country, "traffic_lift": traffic_lift,
                                           "conversion_lift": conversion_lift, "extra_discount": extra_discount})
     _record(con, inj, f"planned promo in {country}: harmless uplift in traffic and orders")
@@ -103,6 +122,8 @@ def promo(con, country: str, start: pd.Timestamp, end: pd.Timestamp, traffic_lif
 def data_delay(con, source: str, start: pd.Timestamp, end: pd.Timestamp, delay_hours: float = 2,
                replay_now: bool = True) -> int:
     """One source arrives late; the facts stay correct, only ingestion_log shows it (scenario S3)."""
+    _check(source=source)
+    start, end = utc(start), utc(end)
     inj = Injection("data_delay", start, end, {"source": source, "delay_hours": delay_hours})
     _record(con, inj, f"{source} data arrives {delay_hours:g} h late")
     return replay(con, start) if replay_now else 0
@@ -112,6 +133,8 @@ def stockout_surge(con, category: str, start: pd.Timestamp, end: pd.Timestamp | 
                    country: str | None = None, replay_now: bool = True) -> int:
     """Popular listings in one category run out (scenario S5): more views land on unavailable products, so the
     add-to-cart rate falls while feed clicks stay up or rise. No release explains it."""
+    _check(category=category, country=country)
+    start, end = utc(start), None if end is None else utc(end)
     params = {"category": category, "multiplier": multiplier, "feed_ctr_lift": 0.25}
     if country:
         params["country"] = country
@@ -124,6 +147,8 @@ def stockout_surge(con, category: str, start: pd.Timestamp, end: pd.Timestamp | 
 def search_regression(con, country: str, start: pd.Timestamp, severity: float = 0.4, end: pd.Timestamp | None = None,
                       replay_now: bool = True) -> int:
     """A search release makes results less relevant in one country: fewer clicks per search, fewer product views."""
+    _check(country=country)
+    start, end = utc(start), None if end is None else utc(end)
     inj = Injection("search_regression", start, end, {"country": country, "severity": severity})
     _record(con, inj, f"search clicks per search drop {severity:.0%} in {country} after a search release")
     con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
@@ -137,6 +162,8 @@ def ad_budget_exhausted(con, country: str, start: pd.Timestamp, end: pd.Timestam
     """The pacing controller ignores its schedule (scenario S6): sponsored impressions per session jump for the first
     `boost_hours` of the window, then the budget is spent and they almost stop. Traffic itself does not change.
     Start the window at local midnight (23:00 UTC) and use 10 hours to get "the budget is gone by 10:00"."""
+    _check(country=country)
+    start, end = utc(start), utc(end)
     inj = Injection("ad_budget_exhausted", start, end, {"country": country, "boost": boost, "boost_hours": boost_hours, "after": after})
     _record(con, inj, f"ad impressions per session x{boost:g} for {boost_hours} h, then budget spent, in {country}")
     con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
@@ -158,6 +185,7 @@ def list_injections(con, after: pd.Timestamp) -> list[dict]:
 def end_injection(con, rowid: int, at: pd.Timestamp, replay_now: bool = True) -> int:
     """Stop an injection from hour `at` on (someone rolled the change back) and regenerate the hours from `at`.
     A release or fault that wrote a release gets a rollback release. Returns the number of hours replayed."""
+    at = utc(at)
     row = con.execute("SELECT kind, scope FROM ground_truth WHERE rowid = ?", (rowid,)).fetchone()
     if row is None:
         raise NoSuchInjection(f"no injection with id {rowid}")
@@ -179,14 +207,14 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("kind", choices=["payment_failure", "stockout_surge", "search_regression", "ad_budget_exhausted", "promo", "data_delay", "end"])
     ap.add_argument("--id", type=int, help="end: the injection to stop (see ground_truth)")
-    ap.add_argument("--category")
+    ap.add_argument("--category", choices=world.CATEGORIES)
     ap.add_argument("--multiplier", type=float, default=12.0)
     ap.add_argument("--boost", type=float, default=3.0)
     ap.add_argument("--boost-hours", type=int, default=10)
     ap.add_argument("--db", default=db.DEFAULT_DB)
-    ap.add_argument("--country")
-    ap.add_argument("--platform")
-    ap.add_argument("--source")
+    ap.add_argument("--country", choices=world.COUNTRIES)
+    ap.add_argument("--platform", choices=world.PLATFORMS)
+    ap.add_argument("--source", choices=SOURCES)
     ap.add_argument("--start", help="UTC hour; default: 6 hours before the end of the data")
     ap.add_argument("--now", action="store_true", help="start with the current (latest) hour, so the effect shows at once")
     ap.add_argument("--end", help="UTC hour; default: until the end of the simulation")
@@ -198,16 +226,16 @@ def main(argv=None) -> int:
     try:
         last = db.last_hour(con)
         if a.start:
-            start = pd.Timestamp(a.start)
+            start = utc(a.start)
         elif a.now:
             start = last
         else:
             start = last - pd.Timedelta(hours=5)
-        end = pd.Timestamp(a.end) if a.end else None
+        end = utc(a.end) if a.end else None
         if a.kind == "end":
             if a.id is None:
                 ap.error("end needs --id")
-            at = pd.Timestamp(a.start) if a.start else last
+            at = utc(a.start) if a.start else last
             n = end_injection(con, a.id, at)
             print(f"injection {a.id} ended from {_fmt(at)}, {n} hours replayed")
             return 0
