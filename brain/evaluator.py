@@ -2,18 +2,23 @@
 
 Column metrics are summed in SQL; derived metrics are evaluated on those sums, so a ratio is
 always a ratio of sums (never an average of ratios) at whatever level it is asked for.
+Missing data stays visible: an hour with no rows comes back as NaN, not as a gap or a zero.
 """
 from __future__ import annotations
 
 import pandas as pd
 
-from brain.data import Store
+from brain.data import Store, iso_hour
 from brain.formula import Formula
 from brain.graph import MetricGraph
 
 
 class NotComputable(ValueError):
-    pass
+    """The metric cannot be computed from columns yet (SQL-only: awaits the extension agent)."""
+
+
+class DataMissing(NotComputable):
+    """A column the metric depends on is absent from the data: the contract is broken."""
 
 
 class _LazyEnv:
@@ -35,12 +40,15 @@ class Evaluator:
         s = self.graph.specs[metric]
         if s.column:
             if s.column not in self.store.measures:
-                raise NotComputable(f"{metric}: column {s.column} is not in the data")
+                raise DataMissing(f"{metric}: column {s.column} is missing from facts_hourly")
             return {s.column}
         if s.formula is not None:
             cols: set[str] = set()
             for n in s.formula.names:
-                cols |= self.base_columns(n, _stack + (metric,))
+                try:
+                    cols |= self.base_columns(n, _stack + (metric,))
+                except DataMissing as e:
+                    raise DataMissing(f"{metric}: depends on {n}; {e}") from None
             return cols
         raise NotComputable(f"{metric}: defined only by SQL; needs the extension agent to infer a formula")
 
@@ -53,12 +61,17 @@ class Evaluator:
 
     def frame(self, metrics, start=None, end=None, segment: dict | None = None,
               group_by=(), by_hour: bool = False) -> pd.DataFrame:
-        """One row per (hour?, group) with a column per requested metric."""
+        """One row per (hour?, group) with a column per requested metric. With by_hour, a start
+        and an end, and no group_by, every hour of the window is present (NaN where data is missing)."""
         metrics = list(dict.fromkeys(metrics))
         cols: set[str] = set()
         for m in metrics:
             cols |= self.base_columns(m)
         raw = self.store.sums(sorted(cols), start, end, segment, group_by, by_hour)
+        if by_hour and not group_by and start is not None and end is not None:
+            hours = pd.date_range(pd.Timestamp(iso_hour(start)), pd.Timestamp(iso_hour(end)),
+                                  freq="h", inclusive="left")
+            raw = raw.set_index("ts").reindex(hours).rename_axis("ts").reset_index()
         keys = (["ts"] if by_hour else []) + list(group_by)
         out = raw[keys].copy()
         cache: dict[str, pd.Series] = {}

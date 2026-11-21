@@ -56,20 +56,26 @@ def make_frame(days: int = 7, start: str = "2026-11-01T00:00:00Z", seed: int = 0
     return grid
 
 
-def make_fixture_db(path: str | Path, days: int = 7, seed: int = 0) -> Path:
+def make_fixture_db(path: str | Path, days: int = 7, seed: int = 0, mutate=None,
+                    releases: list[tuple] = ()) -> Path:
+    """mutate(df) -> df changes the facts before they are written (for contract-breaking tests);
+    releases are (ts, system, country, platform, description) rows."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         path.unlink()
     facts = make_frame(days=days, seed=seed)
+    hours = sorted(facts["ts"].unique())
+    if mutate is not None:
+        facts = mutate(facts)
     con = sqlite3.connect(path)
     try:
         facts.to_sql("facts_hourly", con, index=False)
-        hours = sorted(facts["ts"].unique())
         arrived = [(s, h, (pd.Timestamp(h) + pd.Timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"))
                    for h in hours for s in SOURCES]
         pd.DataFrame(arrived, columns=["source", "ts", "arrived_at"]).to_sql("ingestion_log", con, index=False)
         con.execute("CREATE TABLE releases (ts TEXT, system TEXT, country TEXT, platform TEXT, description TEXT)")
+        con.executemany("INSERT INTO releases VALUES (?, ?, ?, ?, ?)", list(releases))
         con.execute("CREATE TABLE calendar (start_ts TEXT, end_ts TEXT, country TEXT, kind TEXT, description TEXT)")
         con.execute("CREATE TABLE ground_truth (injected_at TEXT, kind TEXT, scope TEXT, description TEXT)")
         con.commit()

@@ -75,7 +75,9 @@ class MetricGraph:
                 raise GraphError(f"duplicate metric {s.name}")
             g.specs[s.name] = s
         g._check_references()
+        g._check_definition_cycles()
         g._infer_additivity()
+        g._sources = {m: g._compute_sources(m) for m in g.specs}
         g._build()
         g._check_formula_cycles()
         return g
@@ -97,6 +99,36 @@ class MetricGraph:
                     raise GraphError(f"{s.name}: may_affect points to unknown metric {link.metric}")
                 if link.metric == s.name:
                     raise GraphError(f"{s.name}: may_affect points to itself")
+
+    def _check_definition_cycles(self) -> None:
+        """A metric's formula (how it is computed) must not depend on itself, directly or not."""
+        deps = {m: (s.formula.names if s.formula is not None and not s.column else ()) for m, s in self.specs.items()}
+        state: dict[str, int] = {}
+
+        def visit(m: str, path: list[str]) -> None:
+            state[m] = 1
+            for d in deps.get(m, ()):
+                if state.get(d) == 1:
+                    raise GraphError("definition cycle: " + " -> ".join(path[path.index(d):] + [d]))
+                if d not in state:
+                    visit(d, path + [d])
+            state[m] = 2
+
+        for m in self.specs:
+            if m not in state:
+                visit(m, [m])
+
+    def _compute_sources(self, metric: str) -> set[str]:
+        """Data sources a metric depends on: its own, plus those of every metric in its formula."""
+        s = self.specs[metric]
+        out = {s.source} if s.source else set()
+        if s.formula is not None and not s.column:
+            for n in s.formula.names:
+                out |= self._compute_sources(n)
+        return out
+
+    def sources(self, metric: str) -> list[str]:
+        return sorted(self._sources[metric])
 
     def _infer_additivity(self) -> None:
         """Column metrics are additive; a sum of additive metrics is additive; others are not."""
@@ -128,6 +160,7 @@ class MetricGraph:
                 attrs={"unit": s.unit, "description": s.description, "origin": s.origin,
                        "additive": self.additive[s.name], "dimensions": list(s.dimensions),
                        "direction": s.direction, "systems": list(s.systems), "source": s.source,
+                       "sources": sorted(self._sources[s.name]),
                        "formula": s.formula.text if s.formula else None,
                        "decomposition": s.investigative_formula.text if s.investigative_formula else None,
                        "column": s.column},
@@ -161,11 +194,12 @@ class MetricGraph:
                                                            label="promo and holiday calendar",
                                                            attrs={"table": "calendar"}))
                     self._add_edge("calendar", s.name, "context", via="calendar.country")
-            if s.source:
-                cid = f"freshness:{s.source}"
-                self.nodes.setdefault(cid, Node(id=cid, kind="context", label=f"freshness of {s.source}",
-                                                attrs={"table": "ingestion_log", "source": s.source}))
-                self._add_edge(cid, s.name, "context", via="ingestion_log.source")
+            for src in sorted(self._sources[s.name]):
+                cid = f"freshness:{src}"
+                self.nodes.setdefault(cid, Node(id=cid, kind="context", label=f"freshness of {src}",
+                                                attrs={"table": "ingestion_log", "source": src}))
+                self._add_edge(cid, s.name, "context", via="ingestion_log.source",
+                               inherited=src != s.source)
 
     def _add_edge(self, src: str, dst: str, kind: str, **attrs) -> Edge:
         e = Edge(src, dst, kind, attrs)
@@ -313,11 +347,13 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8")
 
     graph = MetricGraph.load(a.metrics)
+    failed = False
     if a.validate:
         from brain.data import Store
         from brain.validate import summarize, validate_graph
         store = Store(a.db)
         checks = validate_graph(graph, store, days=a.days)
+        failed = any(c.status == "fail" for c in checks)
         print(summarize(checks))
         print()
     if a.tree is not None or not (a.validate or a.export):
@@ -326,7 +362,7 @@ def main(argv: list[str] | None = None) -> int:
         Path(a.export).parent.mkdir(parents=True, exist_ok=True)
         Path(a.export).write_text(json.dumps(graph.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"wrote {a.export}")
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
