@@ -161,6 +161,13 @@ class Cube:
     def segment(self, k: int) -> dict:
         return dict(zip(self.dims, self.keys[k]))
 
+    def add_columns(self, columns) -> None:
+        """Keep more base columns from now on. Their past hours are NaN until the lookback is loaded again."""
+        for c in columns:
+            if c not in self.data:
+                self.columns.append(c)
+                self.data[c] = np.full((self.rows, len(self.keys)), np.nan)
+
     def _grow(self, rows: int) -> None:
         for c, old in self.data.items():
             if old.shape == (rows, len(self.keys)):
@@ -211,6 +218,20 @@ class Monitor:
         self.open_episodes: list[tuple] = []      # (metric, segment, onset) of incidents that are still open
         self._watch_seen: set[tuple] = set()      # (release, metric) that has alerted, by scan or watch
         self._watch_closed: set[tuple] = set()    # ... and whose episode is over: never raised again
+
+    def rewatch(self) -> list[str]:
+        """Bring the watch list in line with the graph after the extension agent changed it: a rate that
+        joined is judged from the next tick, a rate that left is dropped. Returns the names that are new."""
+        known = {w.metric for w in self.watched}
+        self.watched = watch_list(self.graph)
+        self.sources = sorted({s for w in self.watched for s in w.sources})
+        cubes = list(self.cubes.values()) + [self.leaf]
+        missing = sorted({c for w in self.watched for c in (w.numerator, w.denominator)} - set(cubes[0].columns))
+        if missing:
+            for cube in cubes:
+                cube.add_columns(missing)
+            self._loaded_until = None   # a new column has no history in the cubes: the next tick loads the lookback again
+        return [w.metric for w in self.watched if w.metric not in known]
 
     # ------------------------------------------------------------------ data
     def _refresh(self, now: pd.Timestamp) -> None:
