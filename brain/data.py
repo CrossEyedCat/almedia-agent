@@ -8,6 +8,7 @@ A missing value is never summed as zero: a group with any NULL comes back as NaN
 from __future__ import annotations
 
 import sqlite3
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -97,14 +98,39 @@ class Store:
         except sqlite3.DatabaseError:
             return []
 
-    def read_sql(self, sql: str, params=()) -> pd.DataFrame:
-        """Run a read-only query; anything outside the contract tables is refused by SQLite."""
+    def read_sql(self, sql: str, params=(), timeout: float | None = None,
+                 max_rows: int | None = None) -> pd.DataFrame:
+        """Run a read-only query; anything outside the contract tables is refused by SQLite.
+        A contributed query is run with limits: SQLite is interrupted and TimeoutError raised when it
+        takes longer than `timeout` seconds; OverflowError when it returns more than `max_rows` rows."""
+        deadline = None if timeout is None else time.monotonic() + timeout
+        if deadline is not None:
+            self.conn.set_progress_handler(lambda: time.monotonic() > deadline, 20_000)
         try:
-            return pd.read_sql_query(sql, self.conn, params=params)
+            if max_rows is None:
+                return pd.read_sql_query(sql, self.conn, params=params)
+            cursor = self.conn.execute(sql, params)
+            try:
+                if cursor.description is None:
+                    raise ValueError("the query returns no columns")
+                rows = cursor.fetchmany(max_rows + 1)
+                if len(rows) > max_rows:
+                    raise OverflowError(f"the query returns more than {max_rows} rows")
+                return pd.DataFrame.from_records(rows, columns=[d[0] for d in cursor.description],
+                                                 coerce_float=True)
+            finally:
+                cursor.close()
+        except OverflowError:
+            raise
         except Exception as e:  # pandas wraps sqlite3 errors in its own DatabaseError
+            if deadline is not None and time.monotonic() > deadline:
+                raise TimeoutError(f"the query took longer than {timeout:g} s and was stopped") from e
             if "not authorized" in str(e) or "is prohibited" in str(e):
                 raise PermissionError(f"query reads outside the contract tables {READABLE_TABLES}") from e
             raise
+        finally:
+            if deadline is not None:
+                self.conn.set_progress_handler(None, 0)
 
     # ---------------------------------------------------------------- sums
     def sums(self, columns, start=None, end=None, segment: dict | None = None,
