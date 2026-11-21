@@ -1,6 +1,6 @@
 # Demo script (3 minutes)
 
-Status: integrated monitor a26fbe7 has been replay-tested. Live recovery and the three-minute timing still need rehearsal. The new-metric handover is still pending B's implementation; do not present it as complete.
+Status: integrated monitor a757828 has been replay-tested, and run live in the order of this script (payment fault, stockouts, search regression, promo: three separate incidents, the promo explained). Live recovery and the three-minute timing still need rehearsal. The new-metric handover is still pending B's implementation; do not present it as complete.
 
 ## Before we start (all terminals at the repository root)
 
@@ -13,8 +13,9 @@ Status: integrated monitor a26fbe7 has been replay-tested. Live recovery and the
 
 ```
 python -m sim.run --backfill 28d --db data/market.db --force
-python -m brain.run --db data/market.db --incidents incidents --graph-out data/graph.json
-# Start only with an empty/archived run folder. --fresh clears monitor output; do not use it on a run to preserve.
+python -m brain.run --db data/market.db --incidents incidents --graph-out data/graph.json --fresh
+# --fresh empties incidents/ (archive it first, step 2, if the run is worth keeping). Without it a restarted
+# monitor leaves the previous run's incident and pending files as they were and opens duplicates beside them.
 python -m sim.live --speed 2 --db data/market.db
 ```
 
