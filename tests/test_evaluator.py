@@ -80,4 +80,16 @@ def test_store_guards(db_path, tmp_path):
         st.sums(["orders"], group_by=["planet"])
     with pytest.raises(KeyError):
         st.sums(["orders"], segment={"planet": "Mars"})
-    assert {"facts_hourly", "ingestion_log", "releases", "calendar", "ground_truth"} <= set(st.row_counts())
+    counts = st.row_counts()
+    assert set(counts) == {"facts_hourly", "ingestion_log", "releases", "calendar"}
+
+
+def test_brain_cannot_read_the_answer(db_path):
+    """Guardrail 2: brain/ reads only the contract tables, never the scoring table."""
+    st = Store(db_path)
+    assert "ground_truth" not in st.tables()
+    with pytest.raises(PermissionError):
+        st.read_sql("SELECT * FROM ground_truth")
+    with pytest.raises(PermissionError):
+        st.read_sql("SELECT f.ts FROM facts_hourly f JOIN ground_truth g ON 1=1")
+    assert len(st.read_sql('SELECT COUNT(*) AS n FROM "releases"')) == 1
