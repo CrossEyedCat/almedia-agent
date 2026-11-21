@@ -169,3 +169,44 @@ def test_the_page_has_the_domain_selector_and_keeps_the_demo_controls_folded(cli
     html = client.get("/").text
     assert 'id="domains"' in html and "Business domain" in html
     assert '<details id="demo-controls">' in html and "open" not in html.split('<details id="demo-controls"')[1][:3]
+
+
+# ------------------------------------------------------------- visual style
+def _tokens(block):
+    import re
+    return dict(re.findall(r"--([a-z-]+):\s*(#[0-9A-Fa-f]{6})", block))
+
+
+def _contrast(a, b):
+    def lum(h):
+        h = h.lstrip("#")
+        r, g, bl = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(bl)
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_console_colours_meet_contrast_in_both_themes():
+    css = (ui.Path(ui.__file__).parent / "static" / "console.css").read_text(encoding="utf-8")
+    light = _tokens(css.split("@media")[0])
+    dark = _tokens(css.split(':root[data-theme="dark"] {')[1].split("}")[0])
+    text_pairs = [("ink", "bg"), ("ink", "block"), ("muted", "bg"), ("muted", "block"), ("sel-fg", "sel-bg"),
+                  ("hot", "block"), ("hot", "hot-bg"), ("amber", "block"), ("amber", "amber-bg"), ("ok", "block"), ("ok", "ok-bg")]
+    for name, t in (("light", light), ("dark", dark)):
+        for a, b in text_pairs:
+            assert _contrast(t[a], t[b]) >= 4.5, f"{name}: {a} on {b}"
+        for a, b in (("accent", "bg"), ("accent", "block"), ("edge", "block")):
+            assert _contrast(t[a], t[b]) >= 1.8 if a == "edge" else _contrast(t[a], t[b]) >= 3, f"{name}: {a} on {b}"
+
+
+def test_style_stays_flat_and_both_pages_share_it(client):
+    import re
+    css = (ui.Path(ui.__file__).parent / "static" / "console.css").read_text(encoding="utf-8")
+    rules = re.sub(r"/\*.*?\*/", "", css, flags=re.S)                  # comments may talk about gradients
+    assert "gradient" not in rules and "box-shadow" not in rules and "text-shadow" not in rules
+    for page in ("/", "/data"):
+        html = client.get(page).text
+        assert "/static/console.css" in html and "gradient" not in html and "box-shadow" not in html
+        assert "prefers-color-scheme" not in html                      # themes live in one place
+    assert client.get("/static/console.css").status_code == 200

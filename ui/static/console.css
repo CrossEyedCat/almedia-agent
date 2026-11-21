@@ -1,0 +1,71 @@
+/* Console style: Precise, quiet, intentional.
+   Warm neutrals, one accent (amber), flat surfaces (no gradients, shadows, glow), radius 8px at most, 8px grid,
+   weights 400/500/700, everything left aligned. Status is shown with words and one small colour, not with animation.
+   Both themes are defined here; ?theme=light|dark (or data-theme on <html>) overrides the system setting. */
+:root {
+  --bg: #FAF7F2;        /* paper */
+  --block: #F0EBE2;     /* colour block behind cards */
+  --line: #D9D1C3;
+  --edge: #A89F8F;      /* graph lines and node outlines */
+  --ink: #1C1917;
+  --muted: #57534E;
+  --accent: #B45309;    /* focus ring and small marks; buttons stay ink in light mode */
+  --sel-bg: #1C1917;    /* selected chip / primary button */
+  --sel-fg: #FAF7F2;
+  --hot: #B42318;   --hot-bg: #F9E1DC;      /* open incident */
+  --amber: #7A5200; --amber-bg: #F3E4BD;    /* ongoing */
+  --ok: #1F6F5C;    --ok-bg: #D5ECE4;       /* resolved */
+  --ui: Inter, "Noto Sans SC", system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12100D; --block: #1C1915; --line: #332E27; --edge: #5E574B; --ink: #F5F1EA; --muted: #A8A196; --accent: #F59E0B;
+    --sel-bg: #F59E0B; --sel-fg: #12100D;
+    --hot: #FF8A7A; --hot-bg: #3A1F1B; --amber: #E0B35C; --amber-bg: #352B14; --ok: #6FD0BD; --ok-bg: #15302A;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12100D; --block: #1C1915; --line: #332E27; --edge: #5E574B; --ink: #F5F1EA; --muted: #A8A196; --accent: #F59E0B;
+  --sel-bg: #F59E0B; --sel-fg: #12100D;
+  --hot: #FF8A7A; --hot-bg: #3A1F1B; --amber: #E0B35C; --amber-bg: #352B14; --ok: #6FD0BD; --ok-bg: #15302A;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/1.6 var(--ui); font-variant-numeric: tabular-nums; }
+h1, h2, h3 { margin: 0; line-height: 1.2; }
+h1 { font-size: 24px; font-weight: 700; }
+a { color: var(--ink); font-weight: 500; text-underline-offset: 3px; }
+
+.page { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; padding: 24px 0 16px; }
+.top .grow { margin-left: auto; }
+.muted { color: var(--muted); }
+
+/* controls */
+button, select, input { font: inherit; color: var(--ink); background: var(--block); border: 1px solid var(--line); border-radius: 8px; padding: 8px 16px; }
+input { padding: 8px; }
+select { padding: 8px; }
+button { cursor: pointer; font-weight: 500; }
+button:hover { border-color: var(--ink); }
+button.primary, button.on { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-bg); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .45; cursor: default; }
+
+/* status: words, one colour, no outline */
+.pill { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+.pill.open { color: var(--hot); } .pill.ongoing, .pill.plausible, .pill.example { color: var(--amber); }
+.pill.example { text-transform: none; letter-spacing: 0; font-weight: 500; white-space: normal; }
+.pill.resolved, .pill.supported { color: var(--ok); } .pill.rejected { color: var(--muted); }
+
+/* a quiet surface: colour block, no border, no shadow */
+.card { background: var(--block); border-radius: 8px; }
+.card > h2 { padding: 16px 24px 8px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.empty { padding: 16px 24px 24px; color: var(--muted); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 0 24px; }
+.kv span:nth-child(odd) { color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

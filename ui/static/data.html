@@ -4,41 +4,39 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Simulator data</title>
+<script>var t = new URLSearchParams(location.search).get('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;</script>
+<link rel="stylesheet" href="/static/console.css">
 <style>
-:root { --bg:#f6f7f9; --surface:#fff; --fg:#16202b; --muted:#5d6b7a; --line:#d5dbe3; --accent:#2b4a6f; --warn:#8a6a1f; --hot:#c4402f; --hot-bg:#fbe9e6; --focus:#2b6fd6; --ui: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-@media (prefers-color-scheme: dark) { :root { --bg:#11161c; --surface:#1a212a; --fg:#e8edf3; --muted:#98a6b5; --line:#323d4a; --accent:#8fb4e3; --warn:#e0b868; --hot:#ff7d6b; --hot-bg:#3a2020; --focus:#6fa6ff; color-scheme: dark; } }
-* { box-sizing: border-box; }
-body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--ui); }
-header { display:flex; flex-wrap:wrap; gap:10px 20px; align-items:center; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--surface); }
-h1 { font-size:18px; margin:0; } a { color:var(--accent); font-weight:600; text-decoration:none; }
-.bar { display:flex; flex-wrap:wrap; gap:8px 12px; padding:10px 20px; align-items:end; border-bottom:1px solid var(--line); }
-.bar label { display:grid; gap:2px; font-size:12px; color:var(--muted); }
-select, input, button { font:inherit; padding:5px 8px; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--fg); }
-button { cursor:pointer; font-weight:600; } button:disabled { opacity:.4; cursor:default; }
-select:focus-visible, input:focus-visible, button:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
-.tabs { display:flex; flex-wrap:wrap; gap:6px; padding:10px 20px 0; }
-.tab { padding:5px 12px; border:1px solid var(--line); border-radius:99px; background:var(--surface); cursor:pointer; font-weight:600; font-size:13px; }
-.tab.on { background:var(--fg); color:var(--bg); border-color:var(--fg); } .tab small { opacity:.7; font-weight:400; }
-.note { margin:10px 20px 0; padding:8px 12px; border:1px dashed var(--warn); border-radius:8px; color:var(--warn); font-size:13px; }
-.wrap { margin:10px 20px 30px; border:1px solid var(--line); border-radius:10px; background:var(--surface); overflow:auto; max-height:68vh; }
-table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
-th, td { padding:5px 10px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
-th { position:sticky; top:0; background:var(--surface); color:var(--muted); font-weight:600; font-size:12px; z-index:1; }
-td.l, th.l { text-align:left; } tr:hover td { background:rgba(120,140,160,.12); }
-tr.low td { background:var(--hot-bg); }
-tr.low td.psr { color:var(--hot); font-weight:700; }
-.legend { margin:8px 20px 0; font-size:12.5px; color:var(--muted); }
-.legend b { color:var(--hot); }
-.pager { display:flex; gap:10px; align-items:center; padding:0 20px 20px; color:var(--muted); }
+.note { color: var(--muted); max-width: 72ch; margin: 0 0 8px; }
+.legend { color: var(--muted); font-size: 12px; margin: 0 0 16px; }
+.legend b { color: var(--hot); font-weight: 700; }
+#filters { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; padding: 0 0 16px; }
+#filters label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.wrap { background: var(--block); border-radius: 8px; overflow: auto; max-height: 66vh; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 8px 16px; text-align: right; white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--block); color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; z-index: 1; }
+td.l, th.l { text-align: left; }
+tr:hover td { background: var(--bg); }
+tr.low td { background: var(--hot-bg); }
+tr.low td.psr { color: var(--hot); font-weight: 700; }
+.pager { display: flex; gap: 16px; align-items: center; padding: 16px 0 48px; color: var(--muted); }
+@media (max-width: 900px) { .page { padding: 0 16px; } }
 </style>
 </head>
 <body>
-<header><h1>Simulator data</h1><span style="color:var(--muted)">read only, straight from data/market.db</span><a href="/" style="margin-left:auto">&larr; Console</a></header>
-<div class="note" id="note" hidden></div>
-<div class="legend" id="legend" hidden><b>Red rows</b>: payment success rate below 0.75 in an hour with at least 5 payment attempts (fewer attempts are too noisy to call).</div>
-<div class="bar" id="filters"></div>
+<div class="page">
+<header class="top">
+  <h1>Simulator data</h1>
+  <span class="muted">read only, straight from data/market.db</span>
+  <a class="grow" href="/">&larr; Console</a>
+</header>
+<p class="note" id="note" hidden></p>
+<p class="legend" id="legend" hidden><b>Red rows</b>: payment success rate below 0.75 in an hour with at least 5 payment attempts (fewer attempts are too noisy to call).</p>
+<div id="filters"></div>
 <div class="wrap"><table id="t"></table></div>
 <div class="pager"><button id="prev">&larr; Newer</button><button id="next">Older &rarr;</button><span id="count"></span></div>
+</div>
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
