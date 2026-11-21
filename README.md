@@ -90,19 +90,27 @@ unit: ratio
 
 ```json
 {
-  "id": "inc-0007", "status": "open | ongoing | resolved",
+  "id": "inc-0007", "status": "open | ongoing | resolved | explained | pending",
   "first_seen": "...", "last_seen": "...",
   "metric": "orders", "segment": {"country": "DE", "platform": "Android"},
   "change": {"observed": 812, "expected": 1190, "delta_pct": -31.8, "z": -7.4},
   "impact": {"gmv_per_hour": -15300},
   "contributions": [{"node": "payment_success_rate", "share_of_delta": 0.86}],
-  "hypotheses": [{"cause": "release payments-sdk 4.2 (DE, Android)", "status": "supported", "evidence": ["..."]},
-                 {"cause": "traffic drop", "status": "rejected", "evidence": ["..."]}],
+  "hypotheses": [{"cause": "release payments-sdk: payments-sdk 4.2 rollout (DE, Android)", "kind": "release", "status": "supported", "evidence": ["..."]},
+                 {"cause": "traffic drop", "kind": "metric", "status": "rejected", "evidence": ["..."]}],
   "trail": [{"step": 1, "action": "decompose orders", "result": "..."}],
   "uncertain": ["..."],
   "report": "plain-language summary"
 }
 ```
+
+Rules for an incident file (agreed in the review of 21 Nov, issue 14; details in `docs/contracts/README.md`):
+
+- `first_seen` is the newest data hour at the tick that raised the incident; the onset goes to `change.window.start`.
+- Every hypothesis has a `kind`: `release`, `metric`, `calendar` or `freshness`. The cause of a release is built from the row,
+  `release <system>: <description>`; a rollback row ends a release, it is not a new cause.
+- `explained` (a calendar event covers the deviation) and `pending` (hours held because a source has not arrived) use the same
+  file shape. The scorer skips both; the console shows them in grey. Until they are shipped, keep them in `incidents/notes/`.
 
 ### 3.2 Metric graph
 

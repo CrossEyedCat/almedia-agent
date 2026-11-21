@@ -50,3 +50,21 @@ It is generated from the code: `python docs/build_system_overview.py`.
 3. Can each metric in `brain/metrics/*.yaml` get a `domain:` field? The console groups metrics by business domain with
    a table in `ui/domains.py`; a field on the metric would remove the second copy.
 4. Will `brain/` pick up `incoming_metrics/*.yaml` (the console's "Add refund_rate" button writes there)?
+
+## Agreed with B in the review of 21 Nov (issue 14)
+
+1. **Clock.** `clock = MAX(facts_hourly.ts) + 1 hour`. A source's hour has arrived when `arrived_at <= clock + 10 minutes`.
+   On time `arrived_at = ts + 1 h + 2..9 min`; a data delay adds `delay_hours`. The jitter must stay under 10 minutes.
+2. **`first_seen`** is the newest data hour at the tick that raised the incident. The onset goes to `change.window.start`.
+   The scorer measures delay as `first_seen - fault start`.
+3. **Hypothesis `kind`**: `release`, `metric`, `calendar`, `freshness`. The cause of a release is built from the row:
+   `release <system>: <description>`. A row whose description says rollback ends that release; it is not a new cause.
+4. **Statuses `explained` and `pending`**, same folder, same file shape. `explained` carries the metric, segment, change and
+   one hypothesis of kind `calendar`. `pending` carries the sources and the held hours. The scorer skips both; the console
+   shows them in grey and keeps them out of the open count and the node colours. Until the console and scorer ship this,
+   the brain keeps them in `incidents/notes/`, which both ignore.
+5. **Result of adding a metric**: the brain writes `<name>.result.json` next to the YAML in `$INCOMING_METRICS_DIR`
+   (a `message`, a `status`) and re-exports the graph to `$GRAPH_JSON`. The console reads it with `GET /api/metric/{name}`.
+6. **Injections start at the latest hour** (`now`), so the newest hour is rewritten; the brain re-reads the last hours on every tick.
+7. **Answers to the open questions** (from B): the monitor starts with `python -m brain.run`; `contribution` and the column
+   list are right; each metric may carry a `domain` field; `incoming_metrics/*.yaml` is picked up.

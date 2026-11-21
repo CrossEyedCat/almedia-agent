@@ -9,12 +9,17 @@ The numbers in docs/results.md come from this script, not from hand-picked runs.
 
 Matching rules (kept simple on purpose, so they can be explained on a slide):
 - Faults are payment_failure, stockout_surge, search_regression and ad_budget_exhausted.
+- Only incidents with status open, ongoing or resolved (or no status) count. `explained` and `pending` are skipped: they
+  are neither a detection nor a false alarm.
+- `first_seen` is read as the time of detection (the newest data hour at the tick that raised the incident), so
+  delay = first_seen - fault start. The onset belongs in change.window.start.
 - A fault is DETECTED by an incident whose segment does not contradict the fault's scope (country, platform,
   category, channel) and whose first_seen lies from the fault start to 6 hours after its end (or the end of the data).
   The earliest such incident counts, and one incident can belong to one fault only.
 - DELAY = first_seen - fault start, in hours.
 - LOCALIZED when the incident's segment names every dimension of the fault's scope, with the same values.
-- CORRECT CAUSE, by kind, needs a hypothesis with status 'supported':
+- CORRECT CAUSE, by kind, needs a hypothesis with status 'supported' and the `kind` set (a hypothesis without a kind
+  never counts for the release causes):
     payment_failure   a release that names the country and the platform
     search_regression a release of search that names the country
     ad_budget_exhausted  pacing or ad_load named
@@ -102,7 +107,11 @@ def named_cause(f: Event, incident: dict) -> bool:
     return False
 
 
+COUNTED_STATUSES = ("open", "ongoing", "resolved")
+
+
 def score(events: list[Event], incidents: list[dict], data_end: pd.Timestamp, days: float) -> dict:
+    incidents = [i for i in incidents if i.get("status", "open") in COUNTED_STATUSES]
     faults = [e for e in events if e.kind in FAULT_KINDS]
     innocents = [e for e in events if e.kind in ("promo", "data_delay")]
     used: set[str] = set()

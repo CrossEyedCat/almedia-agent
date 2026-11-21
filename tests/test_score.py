@@ -148,3 +148,30 @@ def test_one_incident_cannot_detect_two_faults(truth):
     twin = sc.Event("payment_failure", first.start + pd.Timedelta(hours=1), first.end, dict(first.scope))
     r = sc.score([first, twin], [incident(1, first, hours_after=2)], end, days)
     assert r["faults"] == 2 and r["detected"] == 1
+
+
+# ------------------------------------------------------- statuses explained and pending
+def test_explained_and_pending_incidents_are_skipped_by_the_scorer(truth):
+    _, events, _, end, days = truth
+    promo = next(e for e in events if e.kind == "promo")
+    delay = next(e for e in events if e.kind == "data_delay")
+    start = lambda e, h: (e.start + pd.Timedelta(hours=h)).strftime("%Y-%m-%dT%H:00:00Z")
+    explained = {"id": "inc-e", "status": "explained", "first_seen": start(promo, 1), "segment": {"country": promo.scope["country"]}, "hypotheses": []}
+    pending = {"id": "inc-p", "status": "pending", "first_seen": start(delay, 1), "segment": {}, "hypotheses": []}
+    r = sc.score(events, [explained, pending], end, days)
+    assert r["false_alarms"] == 0 and r["detected"] == 0
+    assert r["innocents_silent"] == r["innocents"]
+    f = payment(events)
+    counted = dict(explained, status="open")                                # the same file as an alarm in the promo window
+    assert sc.score(events, [counted], end, days)["false_alarms"] == 1
+    assert sc.score(events, [incident(1, f)], end, days)["detected"] == 1  # no status at all still counts
+
+
+def test_a_hypothesis_without_a_kind_does_not_count_for_a_release_cause(truth):
+    _, events, _, end, days = truth
+    f = payment(events)
+    inc = incident(1, f)
+    for h in inc["hypotheses"]:
+        h.pop("kind")
+    r = sc.score(events, [inc], end, days)
+    assert r["detected"] == 1 and r["correct_cause_rate"] == 0
