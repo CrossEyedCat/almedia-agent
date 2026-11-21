@@ -9,6 +9,8 @@ seeing it first, and that review stays attached to the change it is about.
 These are the places where `sim/`, `ui/` and `brain/` meet; almost every problem found so far was here.
 
 - `docs/contracts/` and `sim/schema.py` (tables, columns, units, the clock rule)
+- any change to what the four readable tables contain, or what ui/ reads from incidents/, the graph export or incoming_metrics/ (including changes in sim/inject.py, sim/world.py, sim/live.py and ui/app.py)
+- scripts/check_guardrails.py, tests/fixture_db.py and tests/conftest.py (shared checks and fixtures)
 - the incident file format (README 3.1, `docs/contracts/incident_example.json`) and the statuses
 - `sim/score.py` rules (what counts as detected, localized, the right cause, a false alarm)
 - `README.md` sections that describe contracts, `requirements.txt`, `.github/`, `docs/GUARDRAILS.md`, this file
@@ -24,9 +26,9 @@ If a change touches both, split it: the shared part goes through a pull request 
 - Say what changed, why, and **how you checked it**: the commands you ran and what they printed. Say what you did not check.
 - Open it as soon as the change is ready. Do not stack other changes on it.
 - The author merges after approval, with a merge commit that keeps the history readable. No force-push to `main`.
-- If the other side has not answered in **20 minutes** and the change only adds (a new column, a new field, a new status;
+- If the other side has not answered in **20 minutes** and the change only adds (a new optional field that existing readers safely ignore;
   nothing existing changes meaning), the author may merge when CI is green and write "merged without review, additive" in
-  the pull request. Anything that changes an existing meaning waits for review.
+  the pull request. No CI run counts as not green: rebase/merge current main first. New statuses require compatible readers and review. Anything that changes an existing meaning waits for review.
 
 ## A review
 
