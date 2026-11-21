@@ -15,7 +15,7 @@ DEFAULT_DB = "data/market.db"
 def connect(path: str | Path = DEFAULT_DB) -> sqlite3.Connection:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(p)
+    con = sqlite3.connect(p, timeout=30)
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA synchronous=NORMAL")
     return con

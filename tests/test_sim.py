@@ -193,3 +193,27 @@ def test_data_delay_changes_only_the_ingestion_log(clean_db, tmp_path):
         lag = pd.Timestamp(arrived) - pd.Timestamp(ts)
         assert pd.Timedelta(hours=3) <= lag <= pd.Timedelta(hours=3, minutes=10)
     assert pd.Timestamp(other[1]) - pd.Timestamp(other[0]) < pd.Timedelta(hours=1, minutes=10)
+
+
+# -------------------------------------------------------------------- live
+def test_live_mode_appends_hours_and_picks_up_a_fault_scheduled_for_the_next_hour(tmp_path):
+    from sim.live import run_live
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    base = backfill(str(tmp_path / "a" / "x.db"), 48, START, seed=5)
+    with_fault = backfill(str(tmp_path / "b" / "x.db"), 48, START, seed=5)
+
+    con = db.connect(with_fault)
+    next_hour = db.last_hour(con) + pd.Timedelta(hours=1)
+    inject.payment_failure(con, "ES", "Android", next_hour, severity=0.5)   # nothing to replay yet
+    con.close()
+    assert run_live(base, speed=0, hours=6) == 6
+    assert run_live(with_fault, speed=0, hours=6) == 6
+
+    a, b = key(facts(base)), key(facts(with_fault))
+    assert len(a) == 54 * 180 == len(b)
+    new = pd.to_datetime(a.ts) >= next_hour
+    target = (a.country == "ES") & (a.platform == "Android")
+    pd.testing.assert_frame_equal(a[~(new & target)], b[~(new & target)])       # nothing else moved
+    ok = lambda df: df[new & target].payment_successes.sum() / df[new & target].payment_attempts.sum()
+    assert ok(b) < 0.7 * ok(a)

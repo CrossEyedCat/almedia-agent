@@ -77,6 +77,7 @@ def main(argv=None) -> int:
     ap.add_argument("--platform")
     ap.add_argument("--source")
     ap.add_argument("--start", help="UTC hour; default: 6 hours before the end of the data")
+    ap.add_argument("--now", action="store_true", help="start with the next hour (use while sim.live is running)")
     ap.add_argument("--end", help="UTC hour; default: until the end of the simulation")
     ap.add_argument("--severity", type=float, default=0.35)
     ap.add_argument("--delay-hours", type=float, default=2)
@@ -85,7 +86,12 @@ def main(argv=None) -> int:
     con = db.connect(a.db)
     try:
         last = db.last_hour(con)
-        start = pd.Timestamp(a.start) if a.start else last - pd.Timedelta(hours=5)
+        if a.start:
+            start = pd.Timestamp(a.start)
+        elif a.now:
+            start = last + pd.Timedelta(hours=1)
+        else:
+            start = last - pd.Timedelta(hours=5)
         end = pd.Timestamp(a.end) if a.end else None
         if a.kind == "payment_failure":
             if not (a.country and a.platform):
