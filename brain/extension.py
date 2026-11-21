@@ -6,15 +6,21 @@ is `<name>.result.json` next to the YAML (docs/contracts/README.md, item 5), and
 written again when the graph changed. No language model is used.
 
 When a file is taken. The console writes the file in place, so a look can catch it empty or half
-written. An empty file and a file that is not readable YAML are looked at again on the next poll and
-never answered. A readable file is taken when it reads the same on two looks in a row. A file is
-remembered by its content: the same text written again does nothing, a changed text is taken again
-and replaces what the file defined before (a text that is rejected withdraws the metric).
+written. An empty file and a file that is not readable YAML are never answered: an empty one is looked
+at again on the next poll, an unreadable text is parsed once and read again when it changes. A
+readable file is taken when it reads the same on two looks in a row. A file is remembered by its
+content: the same text written again does nothing, a changed text is taken again and replaces what the
+file defined before (a text that is rejected withdraws the metric). A file above 64 KB is not a
+definition: it is answered (rejected) without being parsed. Files of one look can build on each other
+whatever their names: a definition that uses a metric the graph lacks is judged again after the other
+files of the look, waits while another file is still being written, and only then gets its rejection.
 
 What is done with a definition, in this order; every step leaves a check with its numbers:
 
   read        a mapping with a new lower_snake_case name and a formula, a query or both; the formula
-              uses metrics the graph has
+              uses metrics the graph has; the name is not a column of the data (ts, value, a dimension,
+              a measure); a tolerance, when given, is above 0 and at most 1e-4, so a definition cannot
+              loosen the comparison of its own query with its formula
   sql         the query runs inside the contract tables with a time and a row limit and returns ts,
               value and the dimensions it groups by, one row per hour and segment
   formula     the given one; with a query only, every formula of the shapes "a", "a / b", "a * b",
@@ -23,12 +29,20 @@ What is done with a definition, in this order; every step leaves a check with it
   definition  the query against the formula at the query's grain, row by row
   rows        both directions: rows the query has and the facts lack (rejected), rows the facts have
               and the query lacks or leaves empty (a filtered metric: tentative)
+  split       is the query a function of sums? At the grain of the facts a group is one fact row, so
+              an average, a maximum or a count of rows equals the formula there and the row-by-row
+              comparison cannot tell. The query is run again on a private in-memory copy of the last
+              24 hours (Store.rerun_on_split_rows), as they are and with every fact row split in two:
+              a function of sums returns the same values, anything else changes (tentative)
   alias       its numeric signature (brain/signature.py) against every metric: the same definition
-              under another name is reported and not added
+              under another name is reported and not added. One exception: when the twin is a
+              tentative contribution and this definition has no caveat, this one takes the place and
+              the twin's file is judged again (it is then the alias)
   rollup      what the breakdown links promise: the values in the segments, added up (an additive
               metric) or weighted by the denominator (a ratio of two additive metrics), give the
               formula on the totals, for every dimension; segments with a numerator and a zero
-              denominator have no value of their own and are counted
+              denominator have no value of their own and are counted. Once the query equals the
+              formula row by row this holds by algebra; the test of the query itself is `split`
   coverage    brain/validate.py on the whole graph with the metric in it (also bounds, when declared)
   placement   identities that hold for any data and link the new metric m to two existing ones, found
               by signature. A product or a sum (x = y * m, x = y + m) makes x a whole and m a part of
@@ -75,8 +89,12 @@ from brain.signature import N_POINTS, same, signatures
 from brain.validate import rel_error, validate_graph
 
 SETTLE_LOOKS = 2          # a readable file is taken when it reads the same on this many looks in a row
-SQL_TIMEOUT = 10.0        # seconds a contributed query may run
+MAX_BYTES = 64 * 1024     # a definition file is at most this large; a larger one is answered without being parsed
+MAX_TOLERANCE = 1e-4      # the loosest tolerance a definition may ask for itself (the default is 1e-6)
+SQL_TIMEOUT = 3.0         # seconds a contributed query may run: the monitor's loop waits for it (the page's takes 0.3)
 SQL_MAX_ROWS = 500_000    # rows it may return (28 days at the finest grain are about 121,000)
+SPLIT_HOURS = 24          # the query is run again on a copy of this many hours with every fact row split in two
+SPLIT_TOL = 1e-9          # a function of sums differs between the two runs by rounding only
 VALIDATE_DAYS = 7         # the window brain/validate.py checks the graph on, as at the monitor's start
 MAX_ATTEMPTS = 3          # looks on which an unexpected error is tried again before the file is answered with it
 ABS_TOL = 1e-9            # two values this close are equal whatever their size (sums of money that cancel)
@@ -92,6 +110,10 @@ class Rejected(Exception):
     def __init__(self, check: str, reason: str, **extra):
         super().__init__(reason)
         self.check, self.reason, self.extra = check, reason, extra
+
+
+class Later(Exception):
+    """The definition uses a metric the graph does not have, and another file of this look may bring it."""
 
 
 @dataclass
@@ -294,41 +316,71 @@ class Extension:
     def poll(self) -> list[dict]:
         """One look at the incoming folder; returns the answers written during it. Never raises: a
         definition gets its answer or waits for the next look, and the monitor goes on."""
-        written = []
+        written: list[dict] = []
         try:
             paths = sorted(self.incoming.glob("*.yaml")) if self.incoming.is_dir() else []
         except OSError:
             return written
-        for path in paths:
-            try:
-                result = self._look(path)
-            except Exception:    # one file must not stop the others, or the monitor
-                traceback.print_exc()
-                result = None
-            if result is not None:
-                written.append(result)
-                self._say(result["message"])
+        try:
+            waiting = self._round(paths, written)
+            # A definition built on a metric the graph does not have may find it in another file of this
+            # look (after a restart every file is taken at once, in the order of the names): it is judged
+            # again after the others, for as long as a round brings one more of them in.
+            while waiting:
+                still = self._round(waiting, written)
+                if len(still) < len(waiting):
+                    waiting = still
+                    continue
+                being_written = any(self._seen.get(p.name, ("", self.settle))[1] < self.settle for p in paths)
+                if not being_written:        # nothing more can come in this look: answered as they stand
+                    self._round(still, written, last=True)
+                break
+        except Exception:
+            traceback.print_exc()
         return written
 
-    def _say(self, text: str) -> None:
-        if not self.quiet:
-            print(f"extension: {text}", flush=True)
+    def _round(self, paths: list[Path], written: list[dict], last: bool = False) -> list[Path]:
+        """Look at each file once; returns the files that wait for a metric another file may bring."""
+        waiting = []
+        for path in paths:
+            try:
+                result = self._look(path, last)
+                if result is not None:
+                    written.append(result)
+                    self._say(result["message"])
+            except Later:
+                waiting.append(path)
+            except Exception:    # one file must not stop the others, or the monitor
+                traceback.print_exc()
+        return waiting
 
-    def _look(self, path: Path) -> dict | None:
+    def _say(self, text: str) -> None:
+        if self.quiet:
+            return
+        line = f"extension: {text}"
         try:
-            data = path.read_bytes()
+            print(line, flush=True)
+        except UnicodeEncodeError:           # a console that lacks a character of the definition (cp1251 on Windows)
+            print(line.encode("ascii", "backslashreplace").decode("ascii"), flush=True)
+
+    def _look(self, path: Path, last: bool = False) -> dict | None:
+        try:
+            with path.open("rb") as f:
+                data = f.read(MAX_BYTES + 1)
+            stat = path.stat()
         except OSError:                      # being written or replaced right now
             return None
         key, answer = path.name, self._answer_path(path)
         if not data.strip():                 # opened by its writer, nothing in it yet
             self._seen.pop(key, None)
             return None
-        content = hashlib.sha256(data).hexdigest()
+        large = len(data) > MAX_BYTES        # not read to its end and never parsed: known by its size and time
+        content = f"{stat.st_size} bytes at {stat.st_mtime_ns}" if large else hashlib.sha256(data).hexdigest()
         if self._done.get(key) == content and answer.exists():
             self._seen.pop(key, None)
             return None                      # the same text again: it has its answer
-        last = self._seen.get(key)
-        looks = last[1] + 1 if last and last[0] == content else 1
+        seen = self._seen.get(key)
+        looks = seen[1] + 1 if seen and seen[0] == content else 1
         self._seen[key] = (content, looks)
         if looks == 1:
             try:
@@ -337,17 +389,27 @@ class Extension:
                 pass                             # a reader holds it; it is replaced when the new answer is written
         if looks < self.settle:
             return None
+        if large:
+            reason = f"the file is {stat.st_size} bytes; a definition is at most {MAX_BYTES // 1024} KB"
+            self._withdraw(path.stem)
+            result = self._result(path.stem, "rejected", [_check("read", "fail", reason)],
+                                  f"{path.stem} rejected: {reason}", source=path.name)
+            return self._answered(key, content, answer, result)
+        if self._told.get(key) == content:
+            return None                      # this text was not readable and has not changed: not parsed again
         try:
             raw = yaml.safe_load(data.decode("utf-8"))
-        except (UnicodeDecodeError, yaml.YAMLError) as e:
-            self._not_ready(key, content, str(e).splitlines()[0])
+        except (UnicodeDecodeError, yaml.YAMLError, RecursionError) as e:
+            self._not_ready(key, content, (str(e).splitlines() or [type(e).__name__])[0])
             return None
         if raw is None or isinstance(raw, (str, int, float, bool)):
             self._not_ready(key, content, "it holds no fields yet")
             return None
 
         try:
-            result = self._judge(path, raw)
+            result = self._judge(path, raw, last)
+        except Later:
+            raise
         except Exception as e:
             # a busy database or a fault of ours: try again a few times, then answer with the error
             self._errors[content] = self._errors.get(content, 0) + 1
@@ -358,6 +420,9 @@ class Extension:
             reason = f"it could not be checked: {type(e).__name__}: {str(e).splitlines()[0] if str(e) else ''}"
             result = self._result(path.stem, "rejected", [_check("internal", "fail", reason)],
                                   f"{path.stem} rejected: {reason}", source=path.name)
+        return self._answered(key, content, answer, result)
+
+    def _answered(self, key: str, content: str, answer: Path, result: dict) -> dict:
         write_json(answer, result)
         self._done[key] = content
         self._seen.pop(key, None)
@@ -366,7 +431,7 @@ class Extension:
     def _not_ready(self, key: str, content: str, why: str) -> None:
         if self._told.get(key) != content:
             self._told[key] = content
-            self._say(f"{key} is not a readable definition yet ({why}); it is looked at again on every poll")
+            self._say(f"{key} is not a readable definition yet ({why}); it is read again when it changes")
 
     def _answer_path(self, path: Path) -> Path:
         return path.with_name(path.stem + ".result.json")
@@ -386,10 +451,11 @@ class Extension:
         specs = [replace(s, decomposition=given[s.name]) if s.name in given else s for s in self.core]
         return specs + [a.spec for a in accepted.values()]
 
-    def _others(self, stem: str) -> dict[str, Accepted]:
-        """What the other files added. A contribution that was built on the one being replaced cannot
-        stay as it is: it leaves the graph and its file is judged again on the next look."""
-        others = {s: a for s, a in self.accepted.items() if s != stem}
+    def _others(self, stem: str, without: tuple[str, ...] = ()) -> dict[str, Accepted]:
+        """What the other files added (`without`: except these). A contribution that was built on one
+        that is being replaced cannot stay as it is: it leaves the graph and its file is judged again on
+        the next look."""
+        others = {s: a for s, a in self.accepted.items() if s != stem and s not in without}
         while True:
             try:
                 MetricGraph.from_specs(self._specs(others))
@@ -416,9 +482,14 @@ class Extension:
             traceback.print_exc()
 
     def _adopt(self, accepted: dict[str, Accepted]) -> tuple[MetricGraph, list]:
-        """Build the graph with these contributions and validate all of it on the data."""
-        trial = MetricGraph.from_specs(self._specs(accepted))
-        checks = validate_graph(trial, self.store, days=VALIDATE_DAYS)
+        """Build the graph with these contributions and validate all of it on the data. The queries are
+        left out of that: each was compared with its formula on all the data when its file was judged,
+        and validate_graph would run every one of them again, without a limit, on every change."""
+        specs = self._specs(accepted)
+        trial = MetricGraph.from_specs(specs)
+        probe = MetricGraph.from_specs([replace(s, sql=None) if s.origin != "core" else s for s in specs])
+        checks = validate_graph(probe, self.store, days=VALIDATE_DAYS)
+        trial.status.update(probe.status)     # the same metrics and links: the statuses are theirs
         for a in accepted.values():
             if a.status == "tentative":
                 trial.status[a.spec.name] = "tentative"
@@ -438,12 +509,13 @@ class Extension:
         return {w.metric for w in self.monitor.watched}
 
     # ------------------------------------------------------------------------------ one definition
-    def _judge(self, path: Path, raw) -> dict:
+    def _judge(self, path: Path, raw, last: bool = True) -> dict:
+        """`last`: nothing more can bring a metric the definition lacks; otherwise it may raise Later."""
         checks: list[dict] = []
         stem = path.stem
         others = self._others(stem)
         try:
-            return self._examine(path, raw, others, checks)
+            return self._examine(path, raw, others, checks, last)
         except Rejected as e:
             checks.append(_check(e.check, "fail", e.reason))
             given = raw.get("name") if isinstance(raw, dict) else None
@@ -453,7 +525,8 @@ class Extension:
                 self._publish(others, trial)
             return self._result(name, "rejected", checks, f"{name} rejected: {e.reason}", **{"source": path.name, **e.extra})
 
-    def _examine(self, path: Path, raw, others: dict[str, Accepted], checks: list[dict]) -> dict:
+    def _examine(self, path: Path, raw, others: dict[str, Accepted], checks: list[dict], last: bool = True,
+                 gave_way: Accepted | None = None) -> dict:
         stem = path.stem
         base_specs = self._specs(others)
         base = MetricGraph.from_specs(base_specs)
@@ -474,14 +547,30 @@ class Extension:
         if name in base.specs:
             owner = next((f"defined by {a.source}" for a in others.values() if a.spec.name == name), "a core metric")
             raise Rejected("read", f"the name already exists in the graph ({owner}); a new metric needs a new name")
+        if name in ("ts", "value") + DIMENSIONS or name in self.store.columns:
+            # every table the brain builds has these as its keys; a metric of that name would overwrite one
+            raise Rejected("read", f"the name {name} is a column of the data; a metric needs another name")
+        if "tolerance" in raw:
+            try:
+                tolerance = float(raw["tolerance"])
+            except (TypeError, ValueError):
+                tolerance = float("nan")
+            if not 0 < tolerance <= MAX_TOLERANCE:   # with 1 any two values of the same sign are "equal"
+                raise Rejected("read", f"tolerance must be a number above 0 and at most {MAX_TOLERANCE:g}, got "
+                                       f"{raw['tolerance']!r}: a definition may not loosen the comparison of its own "
+                                       f"query with its formula")
         try:
             spec = spec_from_dict(raw, origin="contributed")
         except SpecError as e:
             raise Rejected("read", str(e).removeprefix(f"{name}: ")) from None
+        except (TypeError, ValueError) as e:
+            raise Rejected("read", f"a field has a value of the wrong kind: {e}") from None
         if spec.column:
             raise Rejected("read", "a contributed metric is defined by a formula or a query, not by a raw column")
         for label, f in (("formula", spec.formula), ("decomposition", spec.decomposition)):
             missing = [n for n in (f.names if f else ()) if n not in base.specs]
+            if missing and not last:
+                raise Later()
             if missing:
                 near = [m for n in missing for m in difflib.get_close_matches(n, list(base.specs), n=1)]
                 raise Rejected("read", f"the {label} uses unknown metrics {missing}"
@@ -537,6 +626,7 @@ class Extension:
                                                     f"the query: {_words(fits[:5])}; took {formula.text}, the first; more "
                                                     f"data would tell them apart"))
         self._row_checks(spec, stats, grain, checks, extra)
+        checks.append(self._split(spec, reading, grain))
 
         # ---- alias
         sig = signatures(trial)
@@ -544,9 +634,13 @@ class Extension:
             raise Rejected("formula", f"{formula.text} cannot be computed from the columns of facts_hourly", **extra)
         twin = next((m for m in base.specs if m in sig and same(sig[m], sig[name])), None)
         if twin is not None:
-            raise Rejected("alias", f"it is an alias of {twin}: {formula.text} gives the same value as {twin} for "
-                                    f"any data, so no new node was added", alias_of=twin,
-                           placed=f"not placed: {name} is the existing metric {twin} under another name", **extra)
+            holder = next((s for s, a in others.items() if a.spec.name == twin and a.status == "tentative"), None)
+            if holder is not None and not any(c["status"] == "warn" for c in checks):
+                # the twin is in the graph with a caveat and this definition has none so far: it is judged
+                # without the twin and, when it gets in, takes the place; the twin's file is judged again
+                del checks[:]
+                return self._examine(path, raw, self._others(stem, (holder,)), checks, last, others[holder])
+            raise self._alias(name, formula.text, twin, others[holder].source if holder is not None else "", extra)
         checks.append(_check("alias", "pass", f"no existing metric has this definition: its signature on {N_POINTS} random "
                                               f"points differs from each of the {len(base.specs)} metrics"))
 
@@ -558,6 +652,11 @@ class Extension:
         settled = not any(c["status"] == "warn" for c in checks)
         final, found, applied = self._place(base, base_specs, others, spec, raw, sig, settled)
         status = "validated" if settled and not any(c["status"] == "ambiguous" for c in found) else "tentative"
+        if gave_way is not None and status != "validated":
+            # it would be tentative as well: the one that was there first stays (and two such definitions
+            # would otherwise take each other's place for ever)
+            del checks[[c["check"] for c in checks].index("alias"):]
+            raise self._alias(name, formula.text, gave_way.spec.name, gave_way.source, extra)
         mine = Accepted(final, status, applied["parent"] if applied else None,
                         applied["decomposition"] if applied else None, path.name)
         accepted = {**others, stem: mine}
@@ -575,6 +674,11 @@ class Extension:
 
         # ---- it is in: publish, and see whether the monitor takes it
         watching = self._publish(accepted, trial)
+        if gave_way is not None:
+            self._done.pop(gave_way.source, None)
+            next(c for c in checks if c["check"] == "alias")["detail"] += (
+                f"; the tentative contribution {gave_way.spec.name} ({gave_way.source}) has the same formula and gives "
+                f"way to this definition, which has no caveat: its file is judged again")
         rate = next((w for w in watch_list(self.graph) if w.metric == name), None)
         if rate is None:
             checks.append(_check("monitoring", "skip", "not a ratio of two column metrics: the hourly scan judges rates"))
@@ -593,6 +697,14 @@ class Extension:
         placed = self._placed_sentence(final, found, applied)
         message = self._message(name, status, spec, source, stats, reading, checks, found, applied, watch)
         return self._result(name, status, checks, message, placed=placed, links=links, **extra)
+
+    @staticmethod
+    def _alias(name: str, formula: str, twin: str, source: str, extra: dict) -> Rejected:
+        """`source`: the file of the twin when the twin is a tentative contribution."""
+        what = f"the tentative contribution {twin} ({source})" if source else twin
+        return Rejected("alias", f"it is an alias of {what}: {formula} gives the same value as {twin} for any data, so "
+                                 f"no new node was added", alias_of=twin,
+                        placed=f"not placed: {name} is the existing metric {twin} under another name", **extra)
 
     # ----------------------------------------------------------------------------------- reading
     def _query(self, spec: MetricSpec, declared: bool) -> tuple[pd.DataFrame, list[str], float]:
@@ -692,6 +804,43 @@ class Extension:
             checks.append(_check("rows", "pass", f"the same rows on both sides: {s['facts']} hour-and-segment groups of "
                                                  f"facts_hourly, none only in the SQL, none only in the formula"))
 
+    # ------------------------------------------------------------------------------------- split
+    def _split(self, spec: MetricSpec, reading: Reading, grain: str) -> dict:
+        """Is the query a function of sums? At the grain of the facts every group is one fact row, so an
+        average, a maximum or a count of rows equals the formula there and nowhere else, and no comparison
+        of values can tell. The query is run again on a private copy of the newest hours, as they are and
+        with every fact row split in two: a function of sums returns the same values both times."""
+        if not spec.sql:
+            return _check("split", "skip", "no SQL to run again: the formula is computed from sums at every level")
+        try:
+            whole, halves, rows = self.store.rerun_on_split_rows(spec.sql, SPLIT_HOURS, timeout=self.sql_timeout,
+                                                                max_rows=SQL_MAX_ROWS)
+            sides = [pd.DataFrame({**{k: df[k].astype(str) for k in reading.keys},
+                                   side: pd.to_numeric(df["value"], errors="coerce").astype(float)})
+                     for side, df in (("whole", whole), ("halves", halves))]
+            both = sides[0].merge(sides[1], on=reading.keys, how="outer")
+        except Exception as e:   # it ran on the market a moment ago: whatever this is, the question stays open
+            why = (str(e).strip().splitlines() or [type(e).__name__])[0][:200]
+            return _check("split", "warn", f"could not be told whether the query is a function of sums: its rerun on a "
+                                           f"copy of the last {SPLIT_HOURS} hours with every fact row split in two failed ({why})")
+        w, h = both["whole"].to_numpy(float), both["halves"].to_numpy(float)
+        valued, paired = np.isfinite(w) | np.isfinite(h), np.isfinite(w) & np.isfinite(h)
+        with np.errstate(invalid="ignore"):
+            changed = int((valued & ~(paired & _equal(w, h, SPLIT_TOL))).sum())
+        compared = int(valued.sum())
+        worst = rel_error(w[paired], h[paired])[0] if paired.any() else float("nan")
+        where = f"each of the {rows} fact rows of the last {SPLIT_HOURS} hours"
+        if not compared:
+            return _check("split", "warn", f"could not be told whether the query is a function of sums: run again on a "
+                                           f"private copy of {where}, it returns no value to compare")
+        if changed:
+            return _check("split", "warn", f"the query is not a function of sums: {changed} of {compared} values change "
+                                           f"when {where} is split in two (max relative change {worst:.1e}); at grain "
+                                           f"{grain} a group can be one fact row, so a query over rows equals "
+                                           f"{spec.formula.text} there without being it")
+        return _check("split", "pass", f"a function of sums: run again on a private copy with {where} split in two, none "
+                                       f"of {compared} values changes (max relative change {worst:.1e})")
+
     # ------------------------------------------------------------------------------------ rollup
     def _rollup(self, spec: MetricSpec, trial: MetricGraph, evaluator: Evaluator, reading: Reading,
                 fine: np.ndarray) -> dict:
@@ -751,8 +900,10 @@ class Extension:
             return _check("rollup", "warn", f"does not roll up over {_words(dims)}: the segments' values, {how}, differ from "
                                             f"the formula on the totals in {off} of {compared} groups (max relative error "
                                             f"{worst:.1e}, over {where}){note}")
+        basis = ("; this follows from the query being equal to the formula row by row, the query itself is tested by split"
+                 if spec.sql else "; this holds by construction, the formula is computed from sums")
         return _check("rollup", "pass", f"rolls up over {_words(dims)}: the segments' values, {how}, give the formula on "
-                                        f"the totals in all {compared} groups (max relative error {worst:.1e}){note}")
+                                        f"the totals in all {compared} groups (max relative error {worst:.1e}){note}{basis}")
 
     # --------------------------------------------------------------------------------- placement
     def _place(self, base: MetricGraph, base_specs: list[MetricSpec], others: dict[str, Accepted], spec: MetricSpec,
@@ -890,6 +1041,11 @@ class Extension:
                 caveats.append(f"the SQL returns only part of the rows ({stats['sql']} of {stats['facts']})")
             if status_of.get("formula") == "warn":
                 caveats.append("more than one formula fits the SQL")
+            if status_of.get("split") == "warn":
+                detail = next(c["detail"] for c in checks if c["check"] == "split")
+                caveats.append("the SQL is not a function of sums: its values change when the fact rows are split in two"
+                               if detail.startswith("the query is not") else
+                               "the SQL could not be run again on split fact rows, so it is not known to be a function of sums")
             if status_of.get("rollup") == "warn":
                 caveats.append("its values in the segments do not roll up to the formula on the totals")
             if any(c["status"] == "ambiguous" for c in found):
