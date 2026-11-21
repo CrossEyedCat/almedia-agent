@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System overview</title>
+<script>var t = new URLSearchParams(location.search).get('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;</script>
+<style>
+/* Console style: Precise, quiet, intentional.
+   Warm neutrals, one accent (amber), flat surfaces (no gradients, shadows, glow), radius 8px at most, 8px grid,
+   weights 400/500/700, everything left aligned. Status is shown with words and one small colour, not with animation.
+   Both themes are defined here; ?theme=light|dark (or data-theme on <html>) overrides the system setting. */
+:root {
+  --bg: #FAF7F2;        /* paper */
+  --block: #F0EBE2;     /* colour block behind cards */
+  --line: #D9D1C3;
+  --edge: #A89F8F;      /* graph lines and node outlines */
+  --ink: #1C1917;
+  --muted: #57534E;
+  --accent: #B45309;    /* focus ring and small marks; buttons stay ink in light mode */
+  --sel-bg: #1C1917;    /* selected chip / primary button */
+  --sel-fg: #FAF7F2;
+  --hot: #B42318;   --hot-bg: #F9E1DC;      /* open incident */
+  --amber: #7A5200; --amber-bg: #F3E4BD;    /* ongoing */
+  --ok: #1F6F5C;    --ok-bg: #D5ECE4;       /* resolved */
+  --ui: Inter, "Noto Sans SC", system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12100D; --block: #1C1915; --line: #332E27; --edge: #5E574B; --ink: #F5F1EA; --muted: #A8A196; --accent: #F59E0B;
+    --sel-bg: #F59E0B; --sel-fg: #12100D;
+    --hot: #FF8A7A; --hot-bg: #3A1F1B; --amber: #E0B35C; --amber-bg: #352B14; --ok: #6FD0BD; --ok-bg: #15302A;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12100D; --block: #1C1915; --line: #332E27; --edge: #5E574B; --ink: #F5F1EA; --muted: #A8A196; --accent: #F59E0B;
+  --sel-bg: #F59E0B; --sel-fg: #12100D;
+  --hot: #FF8A7A; --hot-bg: #3A1F1B; --amber: #E0B35C; --amber-bg: #352B14; --ok: #6FD0BD; --ok-bg: #15302A;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }      /* a hidden element stays hidden even where a rule sets display */
+html { background: var(--bg); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/1.6 var(--ui); font-variant-numeric: tabular-nums; }
+h1, h2, h3 { margin: 0; line-height: 1.2; }
+h1 { font-size: 24px; font-weight: 700; }
+a { color: var(--ink); font-weight: 500; text-underline-offset: 3px; }
+
+.page { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; padding: 24px 0 16px; }
+.top .grow { margin-left: auto; }
+.muted { color: var(--muted); }
+
+/* controls */
+button, select, input { font: inherit; color: var(--ink); background: var(--block); border: 1px solid var(--line); border-radius: 8px; padding: 8px 16px; }
+input { padding: 8px; }
+select { padding: 8px; }
+button { cursor: pointer; font-weight: 500; }
+button:hover { border-color: var(--ink); }
+button.primary, button.on { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-bg); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .45; cursor: default; }
+
+/* status: words, one colour, no outline */
+.pill { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+.pill.open { color: var(--hot); } .pill.ongoing, .pill.plausible, .pill.example { color: var(--amber); }
+.pill.example { text-transform: none; letter-spacing: 0; font-weight: 500; white-space: normal; }
+.pill.resolved, .pill.supported { color: var(--ok); } .pill.rejected { color: var(--muted); }
+
+/* a quiet surface: colour block, no border, no shadow */
+.card { background: var(--block); border-radius: 8px; }
+.card > h2 { padding: 16px 24px 8px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.empty { padding: 16px 24px 24px; color: var(--muted); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 0 24px; }
+.kv span:nth-child(odd) { color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+
+    .page { max-width: 1100px; }
+    h2 { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 48px 0 16px; }
+    p { max-width: 72ch; margin: 0 0 16px; }
+    .lead { font-size: 16px; max-width: 70ch; }
+    .meta { color: var(--muted); font-size: 12px; letter-spacing: .04em; margin-bottom: 8px; }
+    .stats { display: flex; flex-wrap: wrap; gap: 8px 32px; margin: 16px 0 0; }
+    .stats b { font-size: 20px; font-weight: 700; margin-right: 8px; }
+    .tw { background: var(--block); border-radius: 8px; overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { padding: 8px 16px; text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+    .dia { background: var(--block); border-radius: 8px; padding: 16px; overflow-x: auto; }
+    svg { width: 100%; min-width: 720px; height: auto; }
+    .box { fill: var(--bg); stroke: var(--edge); stroke-width: 1.3; } .box.strong { stroke: var(--ink); stroke-width: 1.6; }
+    .box.dashed { stroke-dasharray: 5 4; }
+    .t { fill: var(--ink); font: 700 13px var(--ui); } .s { fill: var(--muted); font: 400 12px var(--ui); } .l { fill: var(--muted); font: 400 11px var(--ui); }
+    .arrow { stroke: var(--muted); stroke-width: 1.4; } .arrow.dashed { stroke-dasharray: 4 3; } .head { fill: var(--muted); }
+    .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+    
+</style>
+</head>
+<body>
+<div class="page">
+<header class="top"><div>
+  <div class="meta">EYE OF THE SYSTEM · HACKLAB #2 BERLIN · ALMEDIA TRACK</div>
+  <h1>How the whole system fits together</h1>
+</div></header>
+<p class="lead">A simulated marketplace produces hourly numbers. A monitor reads them, notices a change, traces it to a cause and
+reports it. A console shows what the monitor found. Around them: a way to put faults into the world, and a script that
+scores the monitor against the truth. This page covers the world, the console and the scoring; the monitor has its own page:
+<a href="brain-architecture.html">brain-architecture.html</a>.</p>
+<div class="stats"><span><b>180</b>segments per hour</span><span><b>120,960</b>rows in 28 days</span>
+<span><b>6</b>scenarios</span><span><b>134</b>test functions</span></div>
+
+<h2>The parts</h2>
+<div class="dia">
+<svg viewBox="0 0 1000 420" role="img" aria-label="How the parts fit together">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="head"/></marker></defs>
+<rect class="box" x="20" y="30" width="210" height="78" rx="8"/>
+<text class="t" x="32" y="52">inject</text>
+<text class="s" x="32" y="72">faults, promo, late data,</text>
+<text class="s" x="32" y="88">rollback (sim/inject.py)</text>
+<rect class="box strong" x="20" y="150" width="210" height="78" rx="8"/>
+<text class="t" x="32" y="172">world</text>
+<text class="s" x="32" y="192">180 segments x 24 h</text>
+<text class="s" x="32" y="208">funnel, seasonality, noise</text>
+<rect class="box" x="20" y="270" width="210" height="78" rx="8"/>
+<text class="t" x="32" y="292">live clock</text>
+<text class="s" x="32" y="312">one simulated hour per tick</text>
+<text class="s" x="32" y="328">(sim/live.py)</text>
+<rect class="box strong" x="310" y="150" width="230" height="130" rx="8"/>
+<text class="t" x="322" y="172">database  data/market.db</text>
+<text class="s" x="322" y="192">facts_hourly</text>
+<text class="s" x="322" y="208">ingestion_log   releases   calendar</text>
+<text class="s" x="322" y="224">ground_truth  (the hidden answer)</text>
+<text class="s" x="322" y="240">sim_meta</text>
+<rect class="box dashed" x="620" y="30" width="360" height="90" rx="8"/>
+<text class="t" x="632" y="52">brain/  (B, own page)</text>
+<text class="s" x="632" y="72">solid: graph, evaluator, validation</text>
+<text class="s" x="632" y="88">planned: monitor, investigator,</text>
+<text class="s" x="632" y="104">reporter, extension agent</text>
+<rect class="box dashed" x="620" y="160" width="170" height="60" rx="8"/>
+<text class="t" x="632" y="182">incidents/*.json</text>
+<text class="s" x="632" y="202">written by the brain</text>
+<rect class="box strong" x="620" y="270" width="360" height="78" rx="8"/>
+<text class="t" x="632" y="292">console  ui/</text>
+<text class="s" x="632" y="312">domains, graph, incident report, data browser</text>
+<text class="s" x="632" y="328">DEMO controls (inject, rollback)</text>
+<rect class="box" x="310" y="320" width="230" height="78" rx="8"/>
+<text class="t" x="322" y="342">score  sim/score.py</text>
+<text class="s" x="322" y="362">compares incidents with</text>
+<text class="s" x="322" y="378">ground_truth, writes results.md</text>
+<line class="arrow" x1="125" y1="108" x2="125" y2="150" marker-end="url(#ah)"/><text class="l" x="135" y="134">writes truth</text>
+<line class="arrow" x1="230" y1="74" x2="330" y2="150" marker-end="url(#ah)"/>
+<line class="arrow" x1="230" y1="189" x2="310" y2="189" marker-end="url(#ah)"/><text class="l" x="270.0" y="183.0">hours</text>
+<line class="arrow" x1="125" y1="270" x2="125" y2="228" marker-end="url(#ah)"/><text class="l" x="135" y="254">next hour</text>
+<line class="arrow dashed" x1="540" y1="170" x2="620" y2="85" marker-end="url(#ah)"/><text class="l" x="560" y="140">read only,</text><text class="l" x="560" y="153">4 tables</text>
+<line class="arrow dashed" x1="705" y1="120" x2="705" y2="160" marker-end="url(#ah)"/>
+<line class="arrow dashed" x1="790" y1="190" x2="880" y2="270" marker-end="url(#ah)"/><text class="l" x="860" y="226">reports</text>
+<line class="arrow" x1="540" y1="250" x2="620" y2="300" marker-end="url(#ah)"/><text class="l" x="555" y="290">state, data</text>
+<line class="arrow" x1="425" y1="280" x2="425" y2="320" marker-end="url(#ah)"/><text class="l" x="435" y="306">answer</text>
+<line class="arrow dashed" x1="620" y1="200" x2="540" y2="345" marker-end="url(#ah)"/>
+</svg>
+</div>
+<p class="note">Solid boxes exist and are tested. Dashed boxes belong to the monitor (B) and are not finished; until the monitor writes
+incidents, the console shows the example incident from <code>docs/contracts/incident_example.json</code>, marked as an example.
+The database is read-only for the monitor and the table <code>ground_truth</code> is refused to it.</p>
+
+<h2>What the world contains</h2>
+<p>One row per hour and segment. A segment is a combination of country (4), platform (3), category (5), channel (3): 180 segments.
+The purchase funnel is built from counts and rates, so the graph's formulas hold exactly in the data:
+sessions, product views, add to cart, checkouts, payment attempts, payment successes, orders, then money.</p>
+<p>Columns (19): sessions, searches, search_clicks, feed_impressions, feed_clicks, product_views, add_to_cart, checkouts, payment_attempts, payment_successes, orders, gmv, discounts, marketplace_fees, refunds, ad_impressions, ad_clicks, ad_spend, stockouts. Sources that report data: traffic, search, recommendations, orders, payments, ads, inventory.</p>
+<p>Daily and weekly rhythm, a slow trend, one shared shock per country and hour, and the noise of small counts.
+At the row level 91% of rows have fewer than 5 payment attempts, so a single row can show a rate of 0.0 or 1.0 by chance;
+see <a href="data-granularity.md">data-granularity.md</a> for what each level of aggregation can and cannot show.</p>
+
+<h2>Faults and innocent changes</h2>
+<div class="tw"><table><thead><tr><th>Name</th><th>Kind</th><th>What changes in the data</th><th>Left as context</th><th>Where a monitor should end up</th></tr></thead><tbody><tr><td>payment_failure</td><td>Fault</td><td>Payment success rate falls in one country and platform</td><td>release: payments-sdk</td><td>orders, payment success rate, the country and platform, the release</td></tr><tr><td>stockout_surge</td><td>Fault</td><td>More views land on out-of-stock listings in one category; add-to-cart rate falls, feed clicks rise</td><td>none</td><td>orders, add-to-cart rate, the category, stockout rate</td></tr><tr><td>search_regression</td><td>Fault</td><td>Clicks per search fall in one country, so fewer product views</td><td>release: search</td><td>orders, views per session, search clicks per search, the country, the release</td></tr><tr><td>ad_budget_exhausted</td><td>Fault</td><td>Sponsored impressions per session jump, then collapse; traffic unchanged</td><td>release: pacing</td><td>ad spend, ad load (not sessions), the country</td></tr><tr><td>promo</td><td>Innocent</td><td>Traffic and orders rise in one country</td><td>calendar: promo</td><td>explained by the calendar, no alert</td></tr><tr><td>data_delay</td><td>Innocent</td><td>One source arrives late; the facts stay correct</td><td>ingestion_log only</td><td>held as pending, no alert</td></tr></tbody></table></div>
+<p class="note">Every injection is written to <code>ground_truth</code> with its full settings, so it can be replayed. A rollback sets the end of
+an injection and writes a rollback release. The same fault with the same settings cannot be recorded twice.</p>
+
+<h2>Why one change moves nothing else</h2>
+<p>Every value in an hour gets its own uniform random number, drawn up front, and is turned into a count through the inverse
+distribution. A change to one segment's rate therefore changes only that segment's values: the random numbers of every other
+segment stay where they were. Backfill, live mode and replaying an injection give identical rows wherever the injection does not
+reach. The tests compare whole tables row by row to prove it.</p>
+
+<h2>The console</h2>
+<p>Top bar: the domain selector. The graph shows the formula tree, coloured by incident status; picking a domain keeps that domain's boxes
+and their path to the top. The right side lists the incidents of the domain, then a report, or the details of a clicked metric.
+The folded DEMO bar holds the controls that write simulated faults. The Data page browses the tables read-only.</p>
+<div class="tw"><table><thead><tr><th>Domain</th><th>Metrics</th></tr></thead><tbody><tr><td>Traffic</td><td>sessions</td></tr><tr><td>Search</td><td>searches, search_clicks, search_ctr</td></tr><tr><td>Recommendations</td><td>feed_impressions, feed_clicks, feed_ctr</td></tr><tr><td>Cart &amp; checkout</td><td>product_views, views_per_session, add_to_cart, add_to_cart_rate, checkouts, checkout_rate</td></tr><tr><td>Payments</td><td>payment_attempts, payment_attempt_rate, payment_successes, payment_success_rate</td></tr><tr><td>Orders</td><td>orders, order_rate, conversion_rate, refunds</td></tr><tr><td>Revenue</td><td>contribution, gmv, aov, marketplace_fees, take_rate, discounts, discount_rate</td></tr><tr><td>Ads</td><td>ad_spend, ad_clicks, ad_impressions, ad_load, ad_ctr, ad_cpc</td></tr><tr><td>Inventory</td><td>stockouts, stockout_rate</td></tr></tbody></table></div>
+<p class="note">The domain table lives in <code>ui/domains.py</code>. A <code>domain</code> field on each metric in <code>brain/metrics</code> would remove the second copy.</p>
+
+<h2>Scoring</h2>
+<p><code>python -m sim.score generate</code> builds a database with random faults, promos and late data in separate slots after a clean week.
+<code>python -m sim.score score</code> compares the monitor's <code>incidents/*.json</code> with <code>ground_truth</code>:
+detection rate, delay, localization, the right cause, false alarms per day, and how many innocent events stayed silent.
+An incident counts for a fault only inside the fault's window (up to 6 hours after its end), and for one fault only.</p>
+
+<h2>Modules</h2>
+<div class="tw"><table><thead><tr><th>Module</th><th>Job</th><th>Lines</th></tr></thead><tbody><tr><td>sim/world.py</td><td>One hour of the marketplace for every segment: sessions to orders, money, ads, stockouts; seasonality and noise; faults and promos applied</td><td>209</td></tr><tr><td>sim/schema.py</td><td>The tables and columns (the contract, printed as docs/contracts/schema.sql)</td><td>61</td></tr><tr><td>sim/db.py</td><td>SQLite access, write or rewrite hours with every injection on record</td><td>65</td></tr><tr><td>sim/run.py</td><td>Backfill a clean history (28 days in about 3 s)</td><td>63</td></tr><tr><td>sim/live.py</td><td>Move the simulated clock forward, one hour per tick</td><td>55</td></tr><tr><td>sim/inject.py</td><td>Faults, promos, late data, and the rollback; each one is recorded in ground_truth</td><td>229</td></tr><tr><td>sim/score.py</td><td>Random scenarios and the scoring of what the monitor reported</td><td>253</td></tr><tr><td>ui/app.py</td><td>The console&#x27;s API: graph, incidents, state, injection, rollback, data browser</td><td>279</td></tr><tr><td>ui/domains.py</td><td>Which metric belongs to which business domain</td><td>22</td></tr><tr><td>ui/static/index.html</td><td>Console: domain selector, graph, incidents, report, DEMO controls</td><td>412</td></tr><tr><td>ui/static/data.html</td><td>Read-only browser of the simulator tables</td><td>114</td></tr><tr><td>ui/static/console.css</td><td>One style for both pages, light and dark</td><td>72</td></tr></tbody></table></div>
+
+<h2>Tests</h2>
+<div class="tw"><table><thead><tr><th>Test file</th><th>Tests</th></tr></thead><tbody><tr><td>test_evaluator.py</td><td>8</td></tr><tr><td>test_formula.py</td><td>7</td></tr><tr><td>test_graph.py</td><td>10</td></tr><tr><td>test_plan_fixes.py</td><td>15</td></tr><tr><td>test_review_fixes.py</td><td>24</td></tr><tr><td>test_score.py</td><td>13</td></tr><tr><td>test_sim.py</td><td>24</td></tr><tr><td>test_ui.py</td><td>27</td></tr><tr><td>test_validate.py</td><td>6</td></tr><tr><td>total</td><td>134</td></tr></tbody></table></div>
+<p class="note">The tests of <code>brain/</code> are B's. The totals above count every test file in the repository.</p>
+<p class="note">Generated by <code>docs/build_system_overview.py</code> from the code. All data is simulated.</p>
+</div>
+</body>
+</html>

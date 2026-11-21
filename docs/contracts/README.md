@@ -40,6 +40,9 @@ uvicorn ui.app:app --port 8000                # console; /data browses the table
 python -m sim.score generate && python -m sim.score score   # needs incidents/*.json from brain/
 ```
 
+See `docs/system-overview.html` for the whole picture (world, console, scoring; the monitor links to its own page).
+It is generated from the code: `python docs/build_system_overview.py`.
+
 ## Open questions for B (answer by editing this file)
 
 1. Which command starts the monitor, so `docs/demo.md` can use it? `[B]`
