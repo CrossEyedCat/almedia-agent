@@ -1,20 +1,25 @@
 """The extension agent (README 3.3, issue 3, demo scenario S4): a metric arrives as a definition file,
 the brain checks it against the data, finds its place in the graph and answers next to the file."""
 import importlib
+import io
 import json
 import re
 import sqlite3
+import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+import brain.extension
 from brain.data import Store
 from brain.extension import Extension
 from brain.formula import parse
 from brain.graph import MetricGraph
+from brain.incidents import Book
 from brain.metric_spec import SpecError, spec_from_dict
 from brain.monitor import Config, Monitor, watch_list
+from brain.run import live
 from brain.run import main as run_main
 from sim.run import backfill
 
@@ -288,7 +293,7 @@ def test_a_metric_built_on_a_withdrawn_one_is_judged_again(ext):
 def test_an_error_of_ours_is_tried_again_then_answered_and_the_loop_goes_on(ext, monkeypatch):
     calls = []
 
-    def broken(path, raw):
+    def broken(path, raw, *more):
         calls.append(path.name)
         raise RuntimeError("database is locked")
 
@@ -561,3 +566,306 @@ def test_with_the_proposed_monitor_change_the_new_rate_is_judged_from_the_next_t
     assert r["status"] == "rejected" and "refund_rate" not in {w.metric for w in monitor.watched}
     assert monitor.tick().judged_series == judged_before
     store.conn.close()
+
+
+# ------------------------------------------------------------- what the two reviews found (C1-C3, V1-V6)
+RATE_SQL = "SUM(refunds) * 1.0 / NULLIF(SUM(orders), 0)"
+
+
+def contributed(ext: Extension) -> list[str]:
+    return [m for m, s in ext.graph.specs.items() if s.origin != "core"]
+
+
+def test_a_definition_built_on_another_file_of_the_same_look_is_judged_after_it(ext):
+    """C1. After a restart every file is taken in one look, in the order of the file names."""
+    drop(ext.incoming, "a_gap", definition("a_gap", formula="z_rate - aov"))
+    drop(ext.incoming, "z_rate", definition("z_rate", formula="refunds / orders"))
+    results = {r["name"]: r for r in look(ext)}
+    assert results["z_rate"]["status"] == "validated"
+    assert results["a_gap"]["status"] == "validated", results["a_gap"]["message"]
+    assert contributed(ext) == ["z_rate", "a_gap"]
+    assert answer(ext, "a_gap")["status"] == "validated"
+
+
+def test_a_chain_of_definitions_in_the_worst_order_is_taken_in_one_look(ext):
+    drop(ext.incoming, "a_third", definition("a_third", formula="b_second * add_to_cart_rate"))
+    drop(ext.incoming, "b_second", definition("b_second", formula="c_first * conversion_rate"))
+    drop(ext.incoming, "c_first", definition("c_first", formula="refunds / orders"))
+    results = {r["name"]: r["status"] for r in look(ext)}
+    assert results == {"c_first": "validated", "b_second": "validated", "a_third": "validated"}
+    assert contributed(ext) == ["c_first", "b_second", "a_third"]
+
+
+def test_definitions_that_need_each_other_get_their_answers_and_nothing_waits_for_ever(ext):
+    drop(ext.incoming, "a_one", definition("a_one", formula="b_two + orders"))
+    drop(ext.incoming, "b_two", definition("b_two", formula="a_one + orders"))
+    drop(ext.incoming, "c_broken", "name: c_broken\nformula: [refunds / orders\n")     # never readable
+    results = look(ext)
+    assert sorted(r["name"] for r in results) == ["a_one", "b_two"]
+    assert all(r["status"] == "rejected" and "unknown metrics" in r["message"] for r in results)
+    assert contributed(ext) == []
+
+
+def test_a_definition_waits_for_a_file_that_is_still_being_written(ext):
+    drop(ext.incoming, "a_gap", definition("a_gap", formula="z_rate - aov"))
+    assert ext.poll() == []
+    drop(ext.incoming, "z_rate", definition("z_rate", formula="refunds / orders"))
+    assert ext.poll() == []            # a_gap is settled, z_rate was seen once: no answer yet, and not a rejection
+    assert not (ext.incoming / "a_gap.result.json").exists()
+    results = {r["name"]: r["status"] for r in look(ext, 2)}
+    assert results == {"z_rate": "validated", "a_gap": "validated"}
+
+
+@pytest.mark.parametrize("tolerance", ["1", "0.05", "-1", "0", "loose", "[1, 2]"])
+def test_a_definition_may_not_loosen_its_own_tolerance(ext, tolerance, capsys):
+    """C2, V1. With tolerance 1 any two values of the same sign are "equal"."""
+    drop(ext.incoming, "wrong_tol", definition("wrong_tol", RATE_SQL, formula="discounts / orders", tolerance=tolerance))
+    [r] = look(ext)
+    assert r["status"] == "rejected" and "tolerance" in r["message"], r["message"]
+    assert by_check(r)["read"]["status"] == "fail" and list(by_check(r)) == ["read"]
+    assert contributed(ext) == []
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_a_tolerance_inside_the_limit_is_kept(ext):
+    drop(ext.incoming, "refund_rate", page_yaml() + "tolerance: 1e-9\n")
+    [r] = look(ext)
+    assert r["status"] == "validated" and ext.graph.specs["refund_rate"].tolerance == 1e-9
+    assert "tolerance 1e-09" in by_check(r)["definition"]["detail"]
+
+
+def test_a_field_of_the_wrong_kind_is_answered_at_once(ext, capsys):
+    drop(ext.incoming, "odd_bounds", "name: odd_bounds\nformula: refunds / orders\nbounds: [low, high]\n")
+    [r] = look(ext)
+    assert r["status"] == "rejected" and by_check(r)["read"]["status"] == "fail" and "low" in r["message"]
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_poll_keeps_its_promise_when_the_message_cannot_be_printed(ext, monkeypatch):
+    """C3. A console in cp1251 cannot print every character a definition may hold."""
+    out = io.TextIOWrapper(io.BytesIO(), encoding="cp1251")
+    monkeypatch.setattr(sys, "stdout", out)
+    ext.quiet = False
+    drop(ext.incoming, "cafe", "name: café_rate\nformula: refunds / orders\n")
+    [r] = look(ext)                                   # it did not raise, and the answer is returned
+    assert r["status"] == "rejected" and "bad metric name" in r["message"]
+    out.flush()
+    assert b"bad metric name" in out.buffer.getvalue()
+
+
+def test_poll_does_not_raise_when_saying_fails(ext, monkeypatch):
+    def cannot(text):
+        raise OSError("the console is gone")
+
+    monkeypatch.setattr(ext, "_say", cannot)
+    drop(ext.incoming, "refund_rate", page_yaml())
+    [r] = look(ext)
+    assert r["status"] == "validated" and answer(ext, "refund_rate") == r
+
+
+def test_a_failing_look_at_the_incoming_folder_does_not_cost_the_monitor_its_tick(market, tmp_path, capsys):
+    class Stop(BaseException):
+        pass
+
+    class Broken:
+        calls = 0
+
+        def poll(self):
+            self.calls += 1
+            if self.calls > 40:
+                raise Stop
+            raise RuntimeError("the incoming folder cannot be read")
+
+    store = Store(market)
+    monitor = Monitor(MetricGraph.load(), store, Config())
+    broken = Broken()
+    try:
+        live(monitor, Book(monitor, tmp_path / "incidents", fresh=True), poll=0.0, max_ticks=2, quiet=True, extension=broken)
+    except Stop:
+        pytest.fail("the monitor did not tick once in 40 polls: every failed look at the folder cost it its tick")
+    finally:
+        store.conn.close()
+    captured = capsys.readouterr()
+    assert "the incoming folder cannot be read" in captured.err and "tick failed" not in captured.err
+
+
+@pytest.mark.parametrize("name, value_sql, formula", [
+    ("avg_fine", "AVG(refunds * 1.0 / NULLIF(orders, 0))", None),
+    ("avg_given", "AVG(refunds * 1.0 / NULLIF(orders, 0))", "refunds / orders"),
+    ("max_ratio", "MAX(refunds * 1.0 / NULLIF(orders, 0))", "refunds / orders"),
+    ("avg_net", "AVG(gmv) - AVG(discounts)", None),
+    ("per_row", "SUM(refunds) * 1.0 / COUNT(*) / NULLIF(SUM(orders), 0)", "refunds / orders"),
+])
+def test_a_query_that_is_not_a_function_of_sums_is_tentative(ext, name, value_sql, formula):
+    """V2. At the finest grain a group is one fact row, so an average or a maximum of rows equals the formula
+    there. The query is run again on a copy in which every fact row is two rows."""
+    drop(ext.incoming, name, definition(name, value_sql, **({"formula": formula} if formula else {})))
+    [r] = look(ext)
+    split = by_check(r)["split"]
+    assert r["status"] == "tentative" and split["status"] == "warn", r
+    changed, compared = map(int, re.search(r"(\d+) of (\d+) values", split["detail"]).groups())
+    assert 0 < changed <= compared
+    assert "not a function of sums" in r["message"]
+    assert ext.graph.status[name] == "tentative"
+    assert ext.graph.out_edges("refunds", "formula") == []      # a tentative metric decomposes nothing
+
+
+def test_a_query_of_sums_passes_the_split_rerun_and_the_market_is_not_written(ext, market):
+    before = Path(market).stat().st_mtime_ns, Path(market).stat().st_size
+    drop(ext.incoming, "refund_rate", page_yaml())
+    [r] = look(ext)
+    split = by_check(r)["split"]
+    assert r["status"] == "validated" and split["status"] == "pass"
+    rows, values = map(int, re.search(r"(\d+) fact rows.* none of (\d+) values", split["detail"]).groups())
+    assert rows == 24 * 180 and 0 < values <= rows
+    assert (Path(market).stat().st_mtime_ns, Path(market).stat().st_size) == before
+    drop(ext.incoming, "net_gmv", definition("net_gmv", formula="gmv - discounts"))
+    [r] = look(ext)
+    assert by_check(r)["split"]["status"] == "skip"             # no query to run again
+
+
+def test_the_split_rerun_runs_on_a_private_copy_inside_the_contract(market):
+    store = Store(market)
+    try:
+        whole, halves, rows = store.rerun_on_split_rows(
+            "SELECT COUNT(*) AS n, SUM(orders) AS orders, SUM(gmv) AS gmv, MAX(orders) AS top FROM facts_hourly", hours=6)
+        assert rows == 6 * 180 and whole["n"][0] == rows and halves["n"][0] == 2 * rows
+        assert halves["orders"][0] == whole["orders"][0]                    # counts are split into whole numbers
+        assert halves["gmv"][0] == pytest.approx(whole["gmv"][0], rel=1e-12)
+        assert halves["top"][0] < whole["top"][0]
+        assert whole["orders"][0] == store.sums(["orders"], store.time_range()[1] - 5 * brain.extension.HOUR)["orders"][0]
+        again = store.rerun_on_split_rows("SELECT SUM(orders) AS orders, MAX(orders) AS top FROM facts_hourly", hours=6)
+        assert again[1]["top"][0] == halves["top"][0]                       # the same split every time
+        with pytest.raises(PermissionError):
+            store.rerun_on_split_rows("SELECT name FROM sqlite_master")
+        with pytest.raises(Exception, match="no such table"):
+            store.rerun_on_split_rows("SELECT * FROM ground_truth")
+        with pytest.raises(TimeoutError):
+            store.rerun_on_split_rows("SELECT COUNT(*) AS n FROM facts_hourly a, facts_hourly b, facts_hourly c", timeout=0.2)
+        assert len(store.read_sql("SELECT ts FROM facts_hourly LIMIT 3")) == 3   # the market's connection is as it was
+    finally:
+        store.conn.close()
+
+
+def test_an_accepted_query_is_not_run_again_without_limits(ext, monkeypatch):
+    """V3. The monitor's loop waits while a contributed query runs."""
+    runs, real = [], ext.store.read_sql
+
+    def recorded(sql, params=(), timeout=None, max_rows=None):
+        if "refunds" in sql:
+            runs.append((timeout, max_rows))
+        return real(sql, params, timeout=timeout, max_rows=max_rows)
+
+    monkeypatch.setattr(ext.store, "read_sql", recorded)
+    drop(ext.incoming, "refund_rate", page_yaml())
+    [r] = look(ext)
+    assert r["status"] == "validated"
+    assert runs and all(timeout and max_rows for timeout, max_rows in runs), runs
+    assert brain.extension.SQL_TIMEOUT <= 3
+    count = len(runs)
+    drop(ext.incoming, "net_gmv", definition("net_gmv", formula="gmv - discounts"))
+    [r] = look(ext)
+    assert r["status"] == "validated" and len(runs) == count     # another file does not run this query again
+    assert ext.graph.specs["refund_rate"].sql and ext.graph.status["refund_rate"] == "validated"
+
+
+@pytest.fixture
+def parses(monkeypatch):
+    """How many times the YAML parser was called."""
+    calls, real = [], brain.extension.yaml.safe_load
+
+    def counted(stream):
+        calls.append(len(stream))
+        return real(stream)
+
+    monkeypatch.setattr(brain.extension.yaml, "safe_load", counted)
+    return calls
+
+
+def test_an_unreadable_file_is_parsed_once_per_content(ext, parses):
+    """V4."""
+    path = drop(ext.incoming, "broken", "name: broken\nformula: refunds / orders\nsystems: [a, a, a\n")
+    assert look(ext, 6) == [] and len(parses) == 1
+    assert not (ext.incoming / "broken.result.json").exists()            # still never rejected
+    path.write_bytes(b"name: broken\nformula: refunds / orders\nsystems: [a, a\n")
+    assert look(ext, 6) == [] and len(parses) == 2                       # a changed text is read again
+    drop(ext.incoming, "broken", definition("broken_no_more", formula="refunds / orders"))
+    assert [r["status"] for r in look(ext)] == ["validated"]
+
+
+def test_a_file_too_large_to_be_a_definition_is_answered_once_and_never_parsed(ext, parses):
+    drop(ext.incoming, "refund_rate", page_yaml())
+    assert [r["status"] for r in look(ext)] == ["validated"] and len(parses) == 1
+    drop(ext.incoming, "refund_rate", page_yaml() + "description: " + "a" * 70_000 + "\n")
+    [r] = look(ext, 4)
+    assert r["status"] == "rejected" and "64 KB" in r["message"] and re.search(r"7\d\d\d\d bytes", r["message"])
+    assert answer(ext, "refund_rate") == r and len(parses) == 1
+    assert contributed(ext) == []                                        # what the file defined before is withdrawn
+    assert look(ext, 3) == []
+
+
+def test_a_deeply_nested_file_does_not_print_a_traceback_on_every_poll(ext, parses, capsys):
+    drop(ext.incoming, "deep", "name: deep\nformula: refunds / orders\nsystems: " + "[" * 3000 + "]" * 3000 + "\n")
+    drop(ext.incoming, "refund_rate", page_yaml())
+    results = look(ext, 6)
+    assert [r["name"] for r in results] == ["refund_rate"]               # the other file is not held up
+    assert "Traceback" not in capsys.readouterr().err
+    assert len(parses) == 2
+
+
+@pytest.mark.parametrize("name, with_sql", [("ts", False), ("value", True), ("value", False), ("country", False),
+                                            ("platform", True)])
+def test_a_name_that_is_a_column_of_the_data_is_refused(ext, name, with_sql, capsys):
+    """V5. Such a metric would overwrite a key column of every frame the brain builds."""
+    drop(ext.incoming, "taken", definition(name, RATE_SQL if with_sql else None, formula="refunds / orders"))
+    [r] = look(ext)
+    assert r["status"] == "rejected" and "is a column of the data" in r["message"], r["message"]
+    assert name not in ext.graph.specs and "Traceback" not in capsys.readouterr().err
+
+
+def test_a_complete_definition_takes_the_place_of_a_tentative_one_with_the_same_formula(ext):
+    """V6. A query that returns part of the rows is registered with the formula it matches; the whole
+    definition that comes later is not its alias."""
+    drop(ext.incoming, "de_only", definition("de_only", RATE_SQL, where="WHERE country = 'DE'", formula="refunds / orders"))
+    [first] = look(ext)
+    assert first["status"] == "tentative"
+    drop(ext.incoming, "refund_rate", page_yaml())
+    results = {r["name"]: r for r in look(ext, 4)}
+    r = results["refund_rate"]
+    assert r["status"] == "validated", r["message"]
+    assert by_check(r)["alias"]["status"] == "pass" and "de_only" in by_check(r)["alias"]["detail"]
+    assert results["de_only"]["status"] == "rejected" and results["de_only"]["alias_of"] == "refund_rate"
+    assert answer(ext, "de_only") == results["de_only"]
+    assert contributed(ext) == ["refund_rate"]
+    assert {e.dst for e in ext.graph.out_edges("refunds", "formula")} == {"orders", "refund_rate"}
+
+
+def test_a_tentative_definition_does_not_displace_a_tentative_one(ext):
+    for stem, country in (("de_only", "DE"), ("fr_only", "FR")):
+        drop(ext.incoming, stem, definition(stem, RATE_SQL, where=f"WHERE country = '{country}'", formula="refunds / orders"))
+        look(ext)
+    assert answer(ext, "de_only")["status"] == "tentative"
+    r = answer(ext, "fr_only")
+    assert r["status"] == "rejected" and r["alias_of"] == "de_only" and "tentative" in r["message"]
+    assert contributed(ext) == ["de_only"]
+
+
+def test_two_definitions_that_would_both_be_tentative_do_not_take_each_others_place(market, tmp_path):
+    """Both have no caveat until their place is looked for, and there it is ambiguous for both."""
+    core = [spec_from_dict(raw) for raw in (
+        {"name": "orders", "column": "orders", "unit": "count", "source": "orders"},
+        {"name": "purchases", "column": "orders", "unit": "count", "source": "orders"},
+        {"name": "refunds", "column": "refunds", "unit": "count", "source": "orders"})]
+    store = Store(market)
+    ext = Extension(MetricGraph.from_specs(core), store, tmp_path / "incoming", graph_out=tmp_path / "graph.json", quiet=True)
+    drop(ext.incoming, "refund_rate", page_yaml())
+    [first] = look(ext)
+    drop(ext.incoming, "refund_share", page_yaml().replace("name: refund_rate", "name: refund_share"))
+    [second] = look(ext)
+    later = look(ext, 6)
+    store.conn.close()
+    assert first["status"] == "tentative" and "ambiguous" in first["message"]
+    assert second["status"] == "rejected" and second["alias_of"] == "refund_rate" and "tentative" in second["message"]
+    assert [c["check"] for c in second["checks"] if c["check"] == "alias"] == ["alias"]
+    assert by_check(second)["alias"]["status"] == "fail"
+    assert later == [] and contributed(ext) == ["refund_rate"]
