@@ -51,6 +51,6 @@ countries or an hour apart. `docs/pitch-script.md` has a 3-minute script and a s
 
 ## Where to read first
 
-`docs/system-overview.html` (the whole system, generated from the code), `docs/brain-architecture.html` (the monitor),
+`docs/system-overview.html` (the whole system, generated from the code), `docs/brain-architecture.html` (the brain),
 `docs/contracts/README.md` (the agreements between the two sides), `docs/demo.md` (script and reset), `docs/results.md` (numbers),
 `CONTRIBUTING.md` (how we merge), `docs/GUARDRAILS.md`.

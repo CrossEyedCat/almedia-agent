@@ -40,7 +40,7 @@ uvicorn ui.app:app --port 8000                # console; /data browses the table
 python -m sim.score generate && python -m sim.score score   # one run: needs the brain's replay in eval_incidents/, writes data/eval-results.md
 ```
 
-See `docs/system-overview.html` for the whole picture (world, console, scoring; the monitor links to its own page).
+See `docs/system-overview.html` for the whole picture (world, brain, console, scoring); the brain has its own page, `docs/brain-architecture.html`.
 It is generated from the code: `python docs/build_system_overview.py`.
 
 ## Open questions for B (answer by editing this file)

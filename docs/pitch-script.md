@@ -78,7 +78,7 @@ false alarm was a one-hour jump in ad click-through in Poland on the web that cl
 ## The 5-minute slides
 
 1. **The problem** (30 s): too many numbers; failures that are not outages; nobody asks the question.
-2. **How it sees the business** (45 s): the graph, one picture from `docs/system-overview.html`; four kinds of line.
+2. **How it sees the business** (45 s): the metric graph figure of `docs/brain-architecture.html` (formula, breakdown, possible cause, context); the parts picture of `docs/system-overview.html` if there is time.
 3. **The loop that runs by itself** (60 s): read, expect, detect, locate, explain, keep tracking; one fault is one incident, updated in place.
 4. **Demo** (60 s): a screenshot of the console with an incident and the lit path.
 5. **Results** (60 s): the table from `docs/results.md`; say the caveat on the same slide.
