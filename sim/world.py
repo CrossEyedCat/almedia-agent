@@ -43,6 +43,7 @@ ADD_TO_CART_CHANNEL = {"organic": 1.0, "ads": 0.9, "recommendations": 1.1}
 AOV = {"electronics": 120.0, "fashion": 55.0, "home": 80.0, "beauty": 35.0, "sports": 60.0}
 AOV_COUNTRY = {"DE": 1.0, "FR": 0.95, "ES": 0.85, "PL": 0.75}
 TAKE_RATE = {"electronics": 0.08, "fashion": 0.15, "home": 0.12, "beauty": 0.15, "sports": 0.13}
+STOCKOUT_RATE = 0.015  # share of product views that land on an out-of-stock listing
 DISCOUNT_RATE = {"electronics": 0.03, "fashion": 0.06, "home": 0.04, "beauty": 0.05, "sports": 0.05}
 
 
@@ -61,7 +62,7 @@ DIURNAL = _diurnal()  # indexed by local hour
 @dataclass(frozen=True)
 class Injection:
     """A fault or an innocent event, replayable from the ground_truth table."""
-    kind: str                      # payment_failure | promo | data_delay
+    kind: str                      # payment_failure | stockout_surge | search_regression | ad_budget_exhausted | promo | data_delay
     start: pd.Timestamp
     end: pd.Timestamp | None       # None = until the end of the simulation
     params: dict = field(default_factory=dict)
@@ -131,12 +132,28 @@ def generate_hour(seg: Segments, ts: pd.Timestamp, idx: int, seed: int, injectio
     conv_mult = np.ones(n)
     psr = seg.psr.copy()
     disc_extra = np.zeros(n)
+    stock_mult = np.ones(n)
+    feed_boost = np.ones(n)
+    search_mult = np.ones(n)
+    ad_mult = np.ones(n)
     for inj in injections:
         if not inj.active(ts):
             continue
         m = _mask(seg, inj.params)
         if inj.kind == "payment_failure":
             psr[m] *= 1.0 - float(inj.params.get("severity", 0.3))
+        elif inj.kind == "stockout_surge":
+            # popular listings run out: more views land on unavailable products, the feed still gets clicked
+            stock_mult[m] *= float(inj.params.get("multiplier", 12.0))
+            feed_boost[m] *= 1.0 + float(inj.params.get("feed_ctr_lift", 0.25))
+        elif inj.kind == "search_regression":
+            search_mult[m] *= 1.0 - float(inj.params.get("severity", 0.4))
+        elif inj.kind == "ad_budget_exhausted":
+            # the pacing controller ignores its schedule: sponsored impressions per session jump for the first
+            # boost_hours, then the budget is gone and they fall to almost nothing
+            hours_in = (ts - inj.start) / pd.Timedelta(hours=1)
+            ad_mult[m] *= float(inj.params.get("boost", 3.0)) if hours_in < float(inj.params.get("boost_hours", 10)) \
+                else float(inj.params.get("after", 0.05))
         elif inj.kind == "promo":
             traffic_mult[m] *= 1.0 + float(inj.params.get("traffic_lift", 0.4))
             conv_mult[m] *= 1.0 + float(inj.params.get("conversion_lift", 0.2))
@@ -145,12 +162,13 @@ def generate_hour(seg: Segments, ts: pd.Timestamp, idx: int, seed: int, injectio
     mean_sessions = SCALE * seg.share * DIURNAL[local.hour] * weekend * trend * shock * traffic_mult
     sessions = poisson(0, mean_sessions)
     searches = poisson(1, sessions * 0.9)
-    search_clicks = binomial(2, searches, 0.40)
+    search_clicks = binomial(2, searches, 0.40 * search_mult)
     feed_impressions = poisson(3, sessions * 5.0)
-    feed_clicks = binomial(4, feed_impressions, 0.05)
+    feed_clicks = binomial(4, feed_impressions, 0.05 * feed_boost)
     direct_views = poisson(5, sessions * 0.9)
     product_views = search_clicks + feed_clicks + direct_views
-    add_to_cart = binomial(6, product_views, seg.a2c * conv_mult)
+    stockouts = binomial(17, product_views, STOCKOUT_RATE * stock_mult)
+    add_to_cart = binomial(6, product_views - stockouts, seg.a2c * conv_mult)
     checkouts = binomial(7, add_to_cart, 0.5)
     payment_attempts = checkouts + binomial(8, checkouts, 0.05)
     payment_successes = binomial(9, payment_attempts, psr)
@@ -161,10 +179,9 @@ def generate_hour(seg: Segments, ts: pd.Timestamp, idx: int, seed: int, injectio
     discounts = np.round(gmv * (seg.disc + disc_extra) * (0.85 + 0.30 * u[12]), 2)
     marketplace_fees = np.round(gmv * seg.take, 2)
     refunds = binomial(13, orders, 0.03)
-    ad_impressions = poisson(14, sessions * 3.0)
+    ad_impressions = poisson(14, sessions * 3.0 * ad_mult)
     ad_clicks = binomial(15, ad_impressions, 0.02)
     ad_spend = np.round(ad_clicks * (0.25 + 0.20 * u[16]), 2)
-    stockouts = poisson(17, 2.0 * np.ones(n))
 
     frame = {
         "ts": np.full(n, ts.strftime(TS_FORMAT)),

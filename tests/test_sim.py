@@ -65,6 +65,8 @@ def test_funnel_is_consistent_and_non_negative(clean_db):
     assert (f.add_to_cart <= f.product_views).all()
     assert (f.checkouts <= f.add_to_cart).all()
     assert (f.refunds <= f.orders).all()
+    assert (f.stockouts <= f.product_views).all()
+    assert 0.01 < f.stockouts.sum() / f.product_views.sum() < 0.02      # about 1.5% of views meet an unavailable listing
     assert (f.product_views >= f.search_clicks + f.feed_clicks).all()
     assert not f.isna().any().any()
 
@@ -233,3 +235,71 @@ def test_the_same_injection_cannot_be_recorded_twice(tmp_path):
     inject.payment_failure(con, "FR", "Web", start, severity=0.4)         # different segment: allowed
     con.close()
     assert before == after == (1, 1)
+
+
+# ------------------------------------------------- S5 stockouts, search, S6 ad pacing
+def _compare(clean_path, faulty_path, mask_fn, window):
+    c, f = key(facts(clean_path)), key(facts(faulty_path))
+    ts = pd.to_datetime(c.ts)
+    inside = (ts >= window[0]) & (ts < window[1]) & mask_fn(c)
+    pd.testing.assert_frame_equal(c[~inside], f[~inside])           # nothing outside the fault moved
+    return c[inside], f[inside]
+
+
+def test_stockout_surge_hits_one_category_and_lowers_add_to_cart_rate(clean_db, tmp_path):
+    path = fresh_copy(tmp_path)
+    s, e = pd.Timestamp("2026-10-28T08:00:00Z"), pd.Timestamp("2026-10-29T08:00:00Z")
+    con = db.connect(path)
+    inject.stockout_surge(con, "electronics", s, e, multiplier=12)
+    con.close()
+    c, f = _compare(clean_db, path, lambda d: d.category == "electronics", (s, e))
+    rate = lambda d: d.stockouts.sum() / d.product_views.sum()
+    assert rate(f) > 8 * rate(c)
+    atc = lambda d: d.add_to_cart.sum() / d.product_views.sum()
+    assert atc(f) < 0.9 * atc(c)
+    assert (f.feed_clicks.sum() / f.feed_impressions.sum()) > 1.15 * (c.feed_clicks.sum() / c.feed_impressions.sum())
+    assert f.orders.sum() < c.orders.sum()
+
+
+def test_search_regression_hits_one_country_and_writes_a_search_release(clean_db, tmp_path):
+    path = fresh_copy(tmp_path)
+    s = pd.Timestamp("2026-10-28T08:00:00Z")
+    con = db.connect(path)
+    inject.search_regression(con, "DE", s, severity=0.5)
+    rel = con.execute("SELECT system, country, platform FROM releases").fetchall()
+    con.close()
+    c, f = _compare(clean_db, path, lambda d: d.country == "DE", (s, pd.Timestamp("2027-01-01T00:00:00Z")))
+    ctr = lambda d: d.search_clicks.sum() / d.searches.sum()
+    assert ctr(f) < 0.65 * ctr(c)
+    assert f.product_views.sum() < 0.9 * c.product_views.sum()
+    assert rel == [("search", "DE", None)]
+
+
+def test_ad_budget_exhausted_spikes_early_then_stops_and_leaves_traffic_alone(clean_db, tmp_path):
+    path = fresh_copy(tmp_path)
+    s, e = pd.Timestamp("2026-10-27T23:00:00Z"), pd.Timestamp("2026-10-28T23:00:00Z")   # one local day, 00:00 to 24:00 CET
+    con = db.connect(path)
+    inject.ad_budget_exhausted(con, "FR", s, e)
+    rel = con.execute("SELECT system, country FROM releases").fetchall()
+    con.close()
+    c, f = _compare(clean_db, path, lambda d: d.country == "FR", (s, e))
+    local = (pd.to_datetime(f.ts) + pd.Timedelta(hours=1)).dt.hour
+    early, late = local < 10, local >= 10
+    assert f[early].ad_impressions.sum() > 2.5 * c[early].ad_impressions.sum()
+    assert f[late].ad_impressions.sum() < 0.1 * c[late].ad_impressions.sum()
+    assert f.sessions.sum() == c.sessions.sum()                    # traffic did not change
+    assert rel == [("pacing", "FR")]
+
+
+def test_new_faults_cannot_be_recorded_twice_and_are_replayable(tmp_path):
+    path = fresh_copy(tmp_path, hours=3 * 24)
+    con = db.connect(path)
+    s = pd.Timestamp("2026-10-26T06:00:00Z")
+    inject.stockout_surge(con, "home", s)
+    with pytest.raises(inject.AlreadyInjected):
+        inject.stockout_surge(con, "home", s)
+    inject.search_regression(con, "ES", s)
+    inject.ad_budget_exhausted(con, "PL", s, s + pd.Timedelta(hours=24))
+    kinds = [r[0] for r in con.execute("SELECT kind FROM ground_truth ORDER BY rowid")]
+    con.close()
+    assert kinds == ["stockout_surge", "search_regression", "ad_budget_exhausted"]

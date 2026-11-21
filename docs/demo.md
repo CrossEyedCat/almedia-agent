@@ -21,7 +21,7 @@ contract example until the brain writes its first incident).
 |---|---|---|---|
 | 0:00 | "A marketplace has thousands of metrics and nobody can watch them all. This system watches by itself." | Header and graph on screen | Moving clock, formula tree |
 | 0:20 | "It knows how the business works: orders are checkouts times payment success. Each line has a meaning." | Point at the tree; name the four line types | Tree from contribution down |
-| 0:45 | "Fault: a payment release breaks Android payments in Germany." | Click **Payment failure** (DE, Android) | Toast "Payment failure injected from ..." |
+| 0:45 | "Fault: a payment release breaks Android payments in Germany." | Choose **Payment failure** (DE, Android) in the DEMO bar, click **Inject fault** | Toast "Payment failure injected from ..." |
 | 1:00 | "It notices, follows the graph, and tells us where and why." | Wait for the incident (about 3 to 6 simulated hours = 6 to 12 s) [B] | Incident appears; path orders to payment success lit in red |
 | 1:20 | Read the report: impact in euros, 91% of the change in payment success, Germany, Android, the release; what is still uncertain | Click the incident | Impact, hypotheses with evidence, trail |
 | 1:45 | "Not everything unusual is a problem: a planned French promo lifts orders." | Click **Promo (12 h)** (FR) | No new incident; the calendar explains it [B] |
@@ -38,6 +38,17 @@ contract example until the brain writes its first incident).
    recording kept next to this file) instead of waiting.
 3. Network or API problem: the core loop does not use the language model; the report falls back to a template.
 4. Last resort: play the recorded video.
+
+## Other faults the DEMO bar can inject
+
+| Fault | What changes in the data | Where a monitor should end up |
+|---|---|---|
+| Payment failure | Payment success rate falls for one country and platform; a payments-sdk release is on record | orders, payment success rate, the country and platform, the release |
+| Stockouts | More product views meet an unavailable listing in one category; add-to-cart rate falls, feed clicks rise | orders, add-to-cart rate, the category, stockout rate (no release) |
+| Search regression | Clicks per search fall in one country; a search release is on record | orders, views per session, search clicks per search, the country, the release |
+| Ad budget gone early | Sponsored impressions per session jump, then collapse after a few hours; traffic is unchanged; a pacing release is on record | ad spend, ad load (not sessions), the country |
+
+The scoring script (`python -m sim.score generate`) mixes all four with promos and late data.
 
 ## Things to rehearse
 

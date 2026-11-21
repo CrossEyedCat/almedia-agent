@@ -8,11 +8,17 @@
 The numbers in docs/results.md come from this script, not from hand-picked runs.
 
 Matching rules (kept simple on purpose, so they can be explained on a slide):
-- A fault is DETECTED by an incident whose segment does not contradict the fault's country/platform and whose
-  first_seen lies between the fault start and the end of the data. The earliest such incident counts.
+- Faults are payment_failure, stockout_surge, search_regression and ad_budget_exhausted.
+- A fault is DETECTED by an incident whose segment does not contradict the fault's scope (country, platform,
+  category, channel) and whose first_seen lies from the fault start to 6 hours after its end (or the end of the data).
+  The earliest such incident counts, and one incident can belong to one fault only.
 - DELAY = first_seen - fault start, in hours.
-- LOCALIZED when the incident's segment names exactly the fault's country and platform.
-- CORRECT CAUSE when a hypothesis with status 'supported' and kind 'release' names both country and platform.
+- LOCALIZED when the incident's segment names every dimension of the fault's scope, with the same values.
+- CORRECT CAUSE, by kind, needs a hypothesis with status 'supported':
+    payment_failure   a release that names the country and the platform
+    search_regression a release of search that names the country
+    ad_budget_exhausted  pacing or ad_load named
+    stockout_surge    stockouts named
 - An incident that matches no fault is a FALSE ALARM. An innocent event (promo, data delay) is SILENT when
   no unmatched incident starts inside its window (and, for a promo, concerns its country).
 """
@@ -30,9 +36,12 @@ import pandas as pd
 from sim import db, inject
 from sim.run import DEFAULT_START
 from sim.world import COUNTRIES, PLATFORMS
-from sim.schema import SOURCES
+from sim.schema import DIMENSIONS, SOURCES
+from sim.world import CATEGORIES
 
-DIMS = ("country", "platform")
+DIMS = DIMENSIONS
+GRACE = pd.Timedelta(hours=6)   # an incident may appear this long after a fault has ended
+FAULT_KINDS = ("payment_failure", "stockout_surge", "search_regression", "ad_budget_exhausted")
 
 
 @dataclass
@@ -73,21 +82,39 @@ def _seen(i: dict) -> pd.Timestamp:
 
 
 def _consistent(seg: dict, scope: dict) -> bool:
-    return all(scope.get(d) == seg[d] for d in DIMS if d in seg)
+    """The incident's segment does not contradict the fault: wherever both name a dimension, the values agree."""
+    return all(scope[d] == seg[d] for d in DIMS if d in seg and d in scope)
+
+
+def named_cause(f: Event, incident: dict) -> bool:
+    for h in incident.get("hypotheses", []):
+        if h.get("status") != "supported":
+            continue
+        raw, text = str(h.get("cause", "")), str(h.get("cause", "")).lower()
+        if f.kind == "payment_failure" and h.get("kind") == "release" and str(f.scope.get("country")) in raw and str(f.scope.get("platform")) in raw:
+            return True
+        if f.kind == "search_regression" and h.get("kind") == "release" and "search" in text and str(f.scope.get("country")) in raw:
+            return True
+        if f.kind == "ad_budget_exhausted" and ("pacing" in text or "ad_load" in text or "ad load" in text):
+            return True
+        if f.kind == "stockout_surge" and "stockout" in text:
+            return True
+    return False
 
 
 def score(events: list[Event], incidents: list[dict], data_end: pd.Timestamp, days: float) -> dict:
-    faults = [e for e in events if e.kind == "payment_failure"]
+    faults = [e for e in events if e.kind in FAULT_KINDS]
     innocents = [e for e in events if e.kind in ("promo", "data_delay")]
     used: set[str] = set()
     detected = localized = correct = 0
     delays: list[float] = []
     per_fault = []
-    for f in faults:
-        cands = sorted((i for i in incidents if f.start <= _seen(i) <= data_end and _consistent(i.get("segment") or {}, f.scope)),
-                       key=_seen)
+    for f in sorted(faults, key=lambda e: e.start):
+        hi = min(data_end, f.end + GRACE) if f.end is not None else data_end
+        cands = sorted((i for i in incidents if i["id"] not in used and f.start <= _seen(i) <= hi
+                        and _consistent(i.get("segment") or {}, f.scope)), key=_seen)
         if not cands:
-            per_fault.append({"fault": f.scope, "detected": False})
+            per_fault.append({"kind": f.kind, "fault": f.scope, "detected": False})
             continue
         i = cands[0]
         used.update(x["id"] for x in cands)
@@ -95,13 +122,11 @@ def score(events: list[Event], incidents: list[dict], data_end: pd.Timestamp, da
         delay = (_seen(i) - f.start) / pd.Timedelta(hours=1)
         delays.append(delay)
         seg = i.get("segment") or {}
-        loc = all(seg.get(d) == f.scope.get(d) for d in DIMS)
-        cause = any(h.get("status") == "supported" and h.get("kind") == "release"
-                    and str(f.scope.get("country")) in h.get("cause", "") and str(f.scope.get("platform")) in h.get("cause", "")
-                    for h in i.get("hypotheses", []))
+        loc = all(seg.get(d) == f.scope[d] for d in DIMS if d in f.scope)
+        cause = named_cause(f, i)
         localized += loc
         correct += cause
-        per_fault.append({"fault": f.scope, "detected": True, "delay_h": delay, "localized": loc, "correct_cause": cause})
+        per_fault.append({"kind": f.kind, "fault": f.scope, "detected": True, "delay_h": delay, "localized": loc, "correct_cause": cause})
     false_alarms = [i for i in incidents if i["id"] not in used]
     silent = 0
     for e in innocents:
@@ -142,7 +167,8 @@ def report(r: dict, db_path, n_incidents: int, days: float) -> str:
         "## Per fault", "", "| Fault | Detected | Delay (h) | Localized | Cause |", "|---|---|---|---|---|",
     ]
     for p in r["per_fault"]:
-        f = f"{p['fault'].get('country')} {p['fault'].get('platform')} from {p['fault'].get('start')}"
+        where = " ".join(str(p["fault"][d]) for d in DIMS if d in p["fault"])
+        f = f"{p['kind']} {where} from {p['fault'].get('start')}"
         if p["detected"]:
             lines.append(f"| {f} | yes | {p['delay_h']:.1f} | {'yes' if p['localized'] else 'no'} | {'yes' if p['correct_cause'] else 'no'} |")
         else:
@@ -163,7 +189,8 @@ def generate(path, faults: int = 12, innocents: int = 8, seed: int = 1, days: in
     slot = (days * 24 - first) // total
     if slot < 12:
         raise ValueError("too many events for this history; lower --faults/--innocents or raise --days")
-    kinds = ["fault"] * faults + ["promo"] * (innocents // 2) + ["delay"] * (innocents - innocents // 2)
+    fault_kinds = [FAULT_KINDS[i % len(FAULT_KINDS)] for i in range(faults)]
+    kinds = fault_kinds + ["promo"] * (innocents // 2) + ["delay"] * (innocents - innocents // 2)
     rng.shuffle(kinds)
     start0 = pd.Timestamp(DEFAULT_START)
     con = db.connect(p)
@@ -173,9 +200,16 @@ def generate(path, faults: int = 12, innocents: int = 8, seed: int = 1, days: in
             offset = first + n * slot + int(rng.integers(0, max(1, slot - 10)))
             start = start0 + pd.Timedelta(hours=offset)
             country = str(rng.choice(list(countries)))
-            if kind == "fault":
+            window = start + pd.Timedelta(hours=int(rng.integers(4, 9)))
+            if kind == "payment_failure":
                 inject.payment_failure(con, country, str(rng.choice(PLATFORMS)), start, severity=float(rng.uniform(0.3, 0.6)),
-                                       end=start + pd.Timedelta(hours=int(rng.integers(4, 9))), replay_now=False)
+                                       end=window, replay_now=False)
+            elif kind == "stockout_surge":
+                inject.stockout_surge(con, str(rng.choice(CATEGORIES)), start, window, multiplier=float(rng.uniform(10, 16)), replay_now=False)
+            elif kind == "search_regression":
+                inject.search_regression(con, country, start, severity=float(rng.uniform(0.35, 0.6)), end=window, replay_now=False)
+            elif kind == "ad_budget_exhausted":
+                inject.ad_budget_exhausted(con, country, start, start + pd.Timedelta(hours=8), boost_hours=3, replay_now=False)
             elif kind == "promo":
                 inject.promo(con, country, start, start + pd.Timedelta(hours=int(rng.integers(6, 11))), replay_now=False)
             else:

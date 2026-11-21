@@ -75,8 +75,8 @@ svg text { font-family: var(--ui); }
 <div class="controls" id="demo-controls">
   <div class="demo-tag" title="These buttons write simulated faults into the simulator. The monitor cannot see them; it has to find them in the data.">DEMO<small>simulated faults, not part of the monitor</small></div>
   <div class="grp"><label>Fault</label>
-    <select id="pf-country"></select><select id="pf-platform"></select>
-    <button id="pf-go">Payment failure</button></div>
+    <select id="f-kind"></select><select id="f-country"></select><select id="f-platform"></select><select id="f-category"></select>
+    <button id="f-go">Inject fault</button></div>
   <div class="grp"><label>Innocent change</label>
     <select id="pr-country"></select><button id="pr-go">Promo (12 h)</button></div>
   <div class="grp"><label>Data</label>
@@ -242,14 +242,30 @@ svg text { font-family: var(--ui); }
 
   // ------------------------------------------------------------- controls
   function fill(id, values) { var s = $(id); values.forEach(function (v) { var o = document.createElement('option'); o.value = v; o.textContent = v; s.appendChild(o); }); }
-  fill('pf-country', ['DE', 'FR', 'ES', 'PL']); fill('pf-platform', ['Android', 'iOS', 'Web']);
+  var KINDS = [
+    ['payment_failure', 'Payment failure', ['country', 'platform']],
+    ['stockout_surge', 'Stockouts', ['category']],
+    ['search_regression', 'Search regression', ['country']],
+    ['ad_budget_exhausted', 'Ad budget gone early', ['country']]];
+  KINDS.forEach(function (k) { var o = document.createElement('option'); o.value = k[0]; o.textContent = k[1]; $('f-kind').appendChild(o); });
+  fill('f-country', ['DE', 'FR', 'ES', 'PL']); fill('f-platform', ['Android', 'iOS', 'Web']);
+  fill('f-category', ['electronics', 'fashion', 'home', 'beauty', 'sports']);
+  function showParams() {
+    var need = KINDS.filter(function (k) { return k[0] === $('f-kind').value; })[0][2];
+    ['country', 'platform', 'category'].forEach(function (p) { $('f-' + p).hidden = need.indexOf(p) < 0; });
+  }
+  $('f-kind').onchange = showParams; showParams();
   fill('pr-country', ['FR', 'DE', 'ES', 'PL']); fill('dd-source', ['payments', 'orders', 'traffic', 'search', 'recommendations', 'ads', 'inventory']);
   function act(body, label) {
     toast(label + '...');
     post('/api/inject', body).then(function (r) { toast(label + ' from ' + r.start.replace('T', ' ').replace(':00:00Z', ':00 UTC')); refresh(); })
       .catch(function (e) { toast('Failed: ' + e.message); });
   }
-  $('pf-go').onclick = function () { act({ kind: 'payment_failure', country: $('pf-country').value, platform: $('pf-platform').value, severity: 0.4, when: 'now' }, 'Payment failure injected'); };
+  $('f-go').onclick = function () {
+    var kind = $('f-kind').value, label = KINDS.filter(function (k) { return k[0] === kind; })[0][1];
+    act({ kind: kind, country: $('f-country').value, platform: $('f-platform').value, category: $('f-category').value,
+          severity: 0.4, hours: 12, when: 'now' }, label + ' injected');
+  };
   $('pr-go').onclick = function () { act({ kind: 'promo', country: $('pr-country').value, hours: 12, when: 'now' }, 'Promo started'); };
   $('dd-go').onclick = function () { act({ kind: 'data_delay', source: $('dd-source').value, hours: 3, delay_hours: 2, when: 'now' }, 'Late data scheduled'); };
   $('nm-go').onclick = function () {

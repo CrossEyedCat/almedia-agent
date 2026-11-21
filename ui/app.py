@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from sim import db, inject
 from sim.inject import AlreadyInjected
-from sim.world import CHANNELS, COUNTRIES, PLATFORMS
+from sim.world import CATEGORIES, CHANNELS, COUNTRIES, PLATFORMS
 from sim.schema import SOURCES
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -88,6 +88,7 @@ class Inject(BaseModel):
     kind: str
     country: str | None = None
     platform: str | None = None
+    category: str | None = None
     source: str | None = None
     severity: float = 0.35
     hours: int = 12
@@ -118,6 +119,18 @@ def _inject(con, req: "Inject"):
         if not 0 < req.severity < 1:
             raise HTTPException(422, "severity must be between 0 and 1")
         n = inject.payment_failure(con, req.country, req.platform, start, req.severity)
+    elif req.kind == "stockout_surge":
+        if req.category not in CATEGORIES:
+            raise HTTPException(422, f"category must be one of {CATEGORIES}")
+        n = inject.stockout_surge(con, req.category, start, None, country=req.country if req.country in COUNTRIES else None)
+    elif req.kind == "search_regression":
+        if req.country not in COUNTRIES:
+            raise HTTPException(422, "country must be valid")
+        n = inject.search_regression(con, req.country, start, 0.5)
+    elif req.kind == "ad_budget_exhausted":
+        if req.country not in COUNTRIES:
+            raise HTTPException(422, "country must be valid")
+        n = inject.ad_budget_exhausted(con, req.country, start, end, boost_hours=max(1, req.hours // 3))
     elif req.kind == "promo":
         if req.country not in COUNTRIES:
             raise HTTPException(422, "country must be valid")

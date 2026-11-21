@@ -1,6 +1,9 @@
 """Inject a fault or an innocent event into an existing database, and replay the affected hours.
 
     python -m sim.inject payment_failure --country DE --platform Android
+    python -m sim.inject stockout_surge --category electronics
+    python -m sim.inject search_regression --country DE
+    python -m sim.inject ad_budget_exhausted --country FR --start 2026-11-20T23:00:00Z
     python -m sim.inject promo --country FR --start 2026-11-20T08:00:00Z --end 2026-11-20T20:00:00Z
     python -m sim.inject data_delay --source payments --start 2026-11-21T06:00:00Z --end 2026-11-21T09:00:00Z
 
@@ -76,9 +79,50 @@ def data_delay(con, source: str, start: pd.Timestamp, end: pd.Timestamp, delay_h
     return replay(con, start) if replay_now else 0
 
 
+def stockout_surge(con, category: str, start: pd.Timestamp, end: pd.Timestamp | None = None, multiplier: float = 12.0,
+                   country: str | None = None, replay_now: bool = True) -> int:
+    """Popular listings in one category run out (scenario S5): more views land on unavailable products, so the
+    add-to-cart rate falls while feed clicks stay up or rise. No release explains it."""
+    params = {"category": category, "multiplier": multiplier, "feed_ctr_lift": 0.25}
+    if country:
+        params["country"] = country
+    inj = Injection("stockout_surge", start, end, params)
+    where = f"{category} in {country}" if country else category
+    _record(con, inj, f"out-of-stock listings x{multiplier:g} for {where}: add-to-cart rate falls, feed clicks rise")
+    return replay(con, start) if replay_now else 0
+
+
+def search_regression(con, country: str, start: pd.Timestamp, severity: float = 0.4, end: pd.Timestamp | None = None,
+                      replay_now: bool = True) -> int:
+    """A search release makes results less relevant in one country: fewer clicks per search, fewer product views."""
+    inj = Injection("search_regression", start, end, {"country": country, "severity": severity})
+    _record(con, inj, f"search clicks per search drop {severity:.0%} in {country} after a search release")
+    con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
+                (_fmt(start), "search", country, None, f"search ranking v2 rollout ({country})"))
+    con.commit()
+    return replay(con, start) if replay_now else 0
+
+
+def ad_budget_exhausted(con, country: str, start: pd.Timestamp, end: pd.Timestamp, boost: float = 3.0,
+                        boost_hours: int = 10, after: float = 0.05, replay_now: bool = True) -> int:
+    """The pacing controller ignores its schedule (scenario S6): sponsored impressions per session jump for the first
+    `boost_hours` of the window, then the budget is spent and they almost stop. Traffic itself does not change.
+    Start the window at local midnight (23:00 UTC) and use 10 hours to get "the budget is gone by 10:00"."""
+    inj = Injection("ad_budget_exhausted", start, end, {"country": country, "boost": boost, "boost_hours": boost_hours, "after": after})
+    _record(con, inj, f"ad impressions per session x{boost:g} for {boost_hours} h, then budget spent, in {country}")
+    con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
+                (_fmt(start), "pacing", country, None, f"pacing controller 2.3 rollout ({country})"))
+    con.commit()
+    return replay(con, start) if replay_now else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("kind", choices=["payment_failure", "promo", "data_delay"])
+    ap.add_argument("kind", choices=["payment_failure", "stockout_surge", "search_regression", "ad_budget_exhausted", "promo", "data_delay"])
+    ap.add_argument("--category")
+    ap.add_argument("--multiplier", type=float, default=12.0)
+    ap.add_argument("--boost", type=float, default=3.0)
+    ap.add_argument("--boost-hours", type=int, default=10)
     ap.add_argument("--db", default=db.DEFAULT_DB)
     ap.add_argument("--country")
     ap.add_argument("--platform")
@@ -104,6 +148,18 @@ def main(argv=None) -> int:
             if not (a.country and a.platform):
                 ap.error("payment_failure needs --country and --platform")
             n = payment_failure(con, a.country, a.platform, start, a.severity, end)
+        elif a.kind == "stockout_surge":
+            if not a.category:
+                ap.error("stockout_surge needs --category")
+            n = stockout_surge(con, a.category, start, end, a.multiplier, a.country)
+        elif a.kind == "search_regression":
+            if not a.country:
+                ap.error("search_regression needs --country")
+            n = search_regression(con, a.country, start, a.severity, end)
+        elif a.kind == "ad_budget_exhausted":
+            if not a.country:
+                ap.error("ad_budget_exhausted needs --country")
+            n = ad_budget_exhausted(con, a.country, start, end or start + pd.Timedelta(hours=24), a.boost, a.boost_hours)
         elif a.kind == "promo":
             if not (a.country and end):
                 ap.error("promo needs --country and --end")

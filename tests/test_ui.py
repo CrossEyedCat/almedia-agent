@@ -132,3 +132,22 @@ def test_data_browser_shows_the_answer_table_but_cannot_change_anything(client):
     r = client.get("/api/db/rows", params={"table": "ground_truth"}).json()
     assert [row[1] for row in r["rows"]] == ["promo"]
     assert client.post("/api/db/rows", json={}).status_code == 405
+
+
+def test_the_three_other_fault_kinds_can_be_injected_and_checked(client):
+    ok = [{"kind": "stockout_surge", "category": "electronics"},
+          {"kind": "search_regression", "country": "DE"},
+          {"kind": "ad_budget_exhausted", "country": "FR", "hours": 12}]
+    for body in ok:
+        assert client.post("/api/inject", json=body).status_code == 200, body
+    assert [i["kind"] for i in client.get("/api/state").json()["injected"]] == [b["kind"] for b in ok]
+    for bad in ({"kind": "stockout_surge", "category": "cars"}, {"kind": "search_regression", "country": "XX"},
+                {"kind": "ad_budget_exhausted"}):
+        assert client.post("/api/inject", json=bad).status_code == 422, bad
+    assert client.post("/api/inject", json=ok[1]).status_code == 409           # the same click twice
+
+
+def test_the_page_offers_the_fault_kinds(client):
+    html = client.get("/").text
+    for word in ("stockout_surge", "search_regression", "ad_budget_exhausted", "Inject fault"):
+        assert word in html
