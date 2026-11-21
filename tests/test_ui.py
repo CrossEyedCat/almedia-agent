@@ -259,3 +259,63 @@ def test_pages_link_the_stylesheet_with_its_modification_time(client):
         r = client.get(page)
         assert re.search(r'/static/console\.css\?v=\d+"', r.text), page
         assert r.headers["cache-control"] == "no-cache"
+
+
+# ------------------------------------------------------- one odd file must not stop the feed (issue 4)
+def test_odd_incident_files_are_skipped_and_counted_not_fatal(client, tmp_path):
+    d = tmp_path / "incidents"
+    d.mkdir()
+    good = {"id": "inc-0001", "metric": "orders", "status": "open", "last_seen": "2026-10-26T12:00:00Z"}
+    (d / "good.json").write_text(json.dumps(good))
+    (d / "later.json").write_text(json.dumps(dict(good, id="inc-0002", last_seen="2026-10-26T15:00:00Z")))
+    (d / "null_seen.json").write_text(json.dumps(dict(good, id="inc-0003", last_seen=None)))         # kept, sorted last
+    (d / "number_seen.json").write_text(json.dumps(dict(good, id="inc-0004", last_seen=12345)))
+    (d / "a_list.json").write_text("[1, 2]")
+    (d / "null.json").write_text("null")
+    (d / "nan.json").write_text('{"id": "inc-0005", "metric": "orders", "change": {"z": NaN}}')      # json.dumps writes NaN
+    (d / "infinity.json").write_text('{"id": "inc-0006", "metric": "orders", "z": Infinity}')
+    (d / "state.json").write_text(json.dumps({"tick": 7}))                                              # not an incident
+    (d / "number_id.json").write_text(json.dumps({"id": 7, "metric": "orders"}))
+    (d / "no_metric.json").write_text(json.dumps({"id": "inc-0007"}))
+    (d / "half.json").write_text('{"id": "inc-0008", "metr')
+    r = client.get("/api/incidents")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["example"] is False
+    assert [i["id"] for i in body["incidents"]][:2] == ["inc-0002", "inc-0001"] and {i["id"] for i in body["incidents"]} == {"inc-0001", "inc-0002", "inc-0003", "inc-0004"}
+    assert body["skipped"] == 8
+
+
+def test_the_example_shows_only_while_the_incident_folder_does_not_exist(client, tmp_path):
+    assert client.get("/api/incidents").json()["example"] is True                 # no folder yet: the monitor has not started
+    (tmp_path / "incidents").mkdir()
+    r = client.get("/api/incidents").json()
+    assert r["example"] is False and r["incidents"] == []                          # an empty folder means nothing found
+
+
+def test_notes_and_other_subfolders_are_ignored(client, tmp_path):
+    d = tmp_path / "incidents"
+    (d / "notes").mkdir(parents=True)
+    (d / "notes" / "inc-0009.json").write_text(json.dumps({"id": "inc-0009", "metric": "orders", "status": "explained"}))
+    assert client.get("/api/incidents").json()["incidents"] == []
+
+
+# ------------------------------------------------------------- the answer to adding a metric (issue 3)
+def test_the_result_of_a_new_metric_is_read_from_its_result_file(client, tmp_path):
+    assert client.get("/api/metric/refund_rate").status_code == 404                # not answered yet
+    client.post("/api/metric", json={"yaml_text": "name: refund_rate\nformula: refunds / orders\n"})
+    assert client.get("/api/metric/refund_rate").status_code == 404
+    (tmp_path / "incoming" / "refund_rate.result.json").write_text(json.dumps({"status": "validated", "message": "placed under orders"}))
+    r = client.get("/api/metric/refund_rate")
+    assert r.status_code == 200 and r.json()["message"] == "placed under orders"
+    (tmp_path / "incoming" / "half.result.json").write_text('{"status": ')
+    assert client.get("/api/metric/half").status_code == 404                       # half written: try again later
+    assert client.get("/api/metric/..%2Fsecret").status_code in (404, 422)
+
+
+def test_the_page_reads_the_typed_links_and_survives_odd_fields(client):
+    html = client.get("/").text
+    for word in ("may_affect", "Breaks down by", "May be affected by", "Context", "Defined from", "Status", "Origin",
+                 "Where in the segments", "/api/metric/", "function str(", "function list("):
+        assert word in html, word
+    assert "explained" in client.get("/static/console.css").text                   # grey, not counted

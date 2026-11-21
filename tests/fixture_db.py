@@ -71,7 +71,7 @@ def make_fixture_db(path: str | Path, days: int = 7, seed: int = 0, mutate=None,
     con = sqlite3.connect(path)
     try:
         facts.to_sql("facts_hourly", con, index=False)
-        arrived = [(s, h, (pd.Timestamp(h) + pd.Timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        arrived = [(s, h, (pd.Timestamp(h) + pd.Timedelta(hours=1, minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"))
                    for h in hours for s in SOURCES]
         pd.DataFrame(arrived, columns=["source", "ts", "arrived_at"]).to_sql("ingestion_log", con, index=False)
         con.execute("CREATE TABLE releases (ts TEXT, system TEXT, country TEXT, platform TEXT, description TEXT)")

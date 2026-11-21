@@ -60,7 +60,7 @@ button:disabled { opacity: .45; cursor: default; }
 .pill { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
 .pill.open { color: var(--hot); } .pill.ongoing, .pill.plausible, .pill.example { color: var(--amber); }
 .pill.example { text-transform: none; letter-spacing: 0; font-weight: 500; white-space: normal; }
-.pill.resolved, .pill.supported { color: var(--ok); } .pill.rejected { color: var(--muted); }
+.pill.resolved, .pill.supported { color: var(--ok); } .pill.rejected, .pill.explained, .pill.pending { color: var(--muted); }
 
 /* a quiet surface: colour block, no border, no shadow */
 .card { background: var(--block); border-radius: 8px; }
