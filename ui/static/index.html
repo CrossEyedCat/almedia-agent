@@ -7,57 +7,79 @@
 <style>
 :root {
   --bg: #f6f7f9; --surface: #ffffff; --fg: #16202b; --muted: #5d6b7a; --line: #d5dbe3;
-  --formula: #2b4a6f; --hot: #c4402f; --hot-bg: #fbe9e6; --ok: #2d7a6b; --warn: #8a6a1f; --focus: #2b6fd6;
+  --formula: #2b4a6f; --hot: #c4402f; --hot-bg: #fbe9e6; --amber: #9a6b00; --amber-bg: #fbf1d9; --ok: #2d7a6b; --ok-bg: #e1f3ee;
+  --warn: #8a6a1f; --focus: #2b6fd6;
   --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #11161c; --surface: #1a212a; --fg: #e8edf3; --muted: #98a6b5; --line: #323d4a;
-          --formula: #8fb4e3; --hot: #ff7d6b; --hot-bg: #3a2020; --ok: #6fd0bd; --warn: #e0b868; --focus: #6fa6ff; color-scheme: dark; }
+          --formula: #8fb4e3; --hot: #ff7d6b; --hot-bg: #3a2020; --amber: #e0b868; --amber-bg: #38301a; --ok: #6fd0bd; --ok-bg: #16322d;
+          --warn: #e0b868; --focus: #6fa6ff; color-scheme: dark; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--ui); }
-header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
+header { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
 h1 { font-size: 18px; margin: 0; }
 .clock { font-variant-numeric: tabular-nums; color: var(--muted); }
 .pill { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; }
 .pill.open, .pill.ongoing { color: var(--hot); } .pill.resolved { color: var(--ok); } .pill.example { color: var(--warn); }
 .pill.supported { color: var(--ok); } .pill.plausible { color: var(--warn); } .pill.rejected { color: var(--muted); }
-.controls { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 10px 20px; border-bottom: 1px solid var(--line); align-items: center; }
-.demo-tag { font-weight: 700; font-size: 12px; letter-spacing: .08em; color: var(--warn); border: 1px dashed var(--warn); border-radius: 6px; padding: 3px 9px; display: flex; flex-direction: column; line-height: 1.25; }
-.demo-tag small { font-weight: 400; letter-spacing: 0; color: var(--muted); font-size: 11px; }
-#demo-controls { background: repeating-linear-gradient(135deg, transparent 0 10px, rgba(138,106,31,.06) 10px 20px); }
+header a { margin-left: auto; color: var(--formula); font-weight: 600; text-decoration: none; }
+
+/* domain selector: the main control at the top */
+#domains { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.chip { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+.chip:hover { border-color: var(--fg); }
+.chip.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.chip .n { min-width: 20px; padding: 0 6px; border-radius: 99px; background: var(--hot); color: #fff; font-size: 12px; text-align: center; }
+.chip.on .n { background: var(--hot); }
+.chip:focus-visible, .inc:focus-visible, button:focus-visible, select:focus-visible, summary:focus-visible, .node:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* demo controls: tucked away, clearly marked */
+#demo-controls { border-bottom: 1px solid var(--line); background: repeating-linear-gradient(135deg, transparent 0 10px, rgba(138,106,31,.06) 10px 20px); }
+#demo-controls summary { cursor: pointer; padding: 6px 20px; list-style: none; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12.5px; }
+#demo-controls summary::-webkit-details-marker { display: none; }
+.demo-tag { font-weight: 700; font-size: 12px; letter-spacing: .08em; color: var(--warn); border: 1px dashed var(--warn); border-radius: 6px; padding: 1px 8px; }
+.demo-tag small { font-weight: 400; letter-spacing: 0; color: var(--muted); font-size: 11px; margin-left: 6px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 6px 20px 10px; align-items: center; }
 .controls .grp { display: flex; gap: 6px; align-items: center; padding-right: 14px; border-right: 1px solid var(--line); }
-.controls .grp:last-child { border: 0; }
+.controls .grp:last-of-type { border: 0; }
 .controls label { color: var(--muted); font-size: 12px; }
 select, button { font: inherit; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
-button { cursor: pointer; font-weight: 600; } button:hover { border-color: var(--fg); }
-button:focus-visible, select:focus-visible, .inc:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.controls button { cursor: pointer; font-weight: 600; } .controls button:hover { border-color: var(--fg); }
 #toast { margin-left: auto; color: var(--muted); font-size: 13px; min-height: 20px; }
+
 main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(340px, 1fr); gap: 14px; padding: 14px 20px 30px; align-items: start; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 .card h2 { font-size: 14px; margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600; letter-spacing: .02em; }
-#graphwrap { overflow: auto; max-height: 82vh; padding: 8px; }
+#graphwrap { overflow: auto; max-height: 72vh; padding: 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; border: 1.5px solid; vertical-align: -1px; }
+#extra { padding: 8px 14px 12px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+#extra:empty { display: none; }
+#extra button { margin: 3px 6px 0 0; padding: 2px 9px; font-size: 12px; cursor: pointer; }
 svg text { font-family: var(--ui); }
-.node rect { fill: var(--surface); stroke: var(--formula); stroke-width: 1.3; }
-.node.repeated rect { stroke-dasharray: 4 3; opacity: .85; }
+.node rect { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }
 .node text { fill: var(--fg); font-size: 13px; text-anchor: middle; }
-.edge { fill: none; stroke: var(--line); stroke-width: 1.4; }
-.dim .node, .dim .edge { opacity: .3; }
-.dim .node.on, .dim .edge.on { opacity: 1; }
+.node.repeated rect { stroke-dasharray: 4 3; }
+.node.context text { fill: var(--muted); } .node.context rect { opacity: .7; }
+.node.h-open rect { stroke: var(--hot); fill: var(--hot-bg); stroke-width: 2.2; }
+.node.h-ongoing rect { stroke: var(--amber); fill: var(--amber-bg); stroke-width: 2; }
+.node.h-resolved rect { stroke: var(--ok); fill: var(--ok-bg); stroke-width: 1.8; }
+.node.picked rect { stroke: var(--focus); stroke-width: 3; }
+.node { cursor: pointer; }
+.edge { fill: none; stroke: var(--line); stroke-width: 1.4; transition: opacity .2s; }
+.dim .node, .dim .edge { opacity: .28; } .dim .node.on, .dim .edge.on { opacity: 1; }
 .dim .edge.on { stroke: var(--hot); stroke-width: 2.2; }
-.node.hot rect { stroke: var(--hot); fill: var(--hot-bg); stroke-width: 2.2; }
-.node.on:not(.hot) rect { stroke-width: 2.2; }
 #side { display: grid; gap: 14px; }
-#feed { max-height: 220px; overflow: auto; }
+#feed { max-height: 230px; overflow: auto; }
 .inc { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); cursor: pointer; align-items: baseline; }
 .inc:last-child { border: 0; } .inc.sel { background: var(--hot-bg); }
 .inc .t { font-weight: 600; } .inc .m { color: var(--muted); font-size: 12px; }
 .detail { padding: 12px 14px; display: grid; gap: 12px; }
 .detail h3 { margin: 0 0 4px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; }
-.kv span:nth-child(odd) { color: var(--muted); }
-.bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 3px; }
-.bar i { display: block; height: 100%; background: var(--hot); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; } .kv span:nth-child(odd) { color: var(--muted); }
+.bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 3px; } .bar i { display: block; height: 100%; background: var(--hot); }
 .hyp { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
 .hyp ul, ol { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
 .empty { padding: 18px 14px; color: var(--muted); }
@@ -70,152 +92,233 @@ svg text { font-family: var(--ui); }
   <h1>Eye of the System</h1>
   <span class="clock" id="clock">connecting...</span>
   <span id="exbadge"></span>
-  <a href="/data" style="margin-left:auto;color:var(--formula);font-weight:600;text-decoration:none">Data &rarr;</a>
+  <a href="/data">Data &rarr;</a>
 </header>
-<div class="controls" id="demo-controls">
-  <div class="demo-tag" title="These buttons write simulated faults into the simulator. The monitor cannot see them; it has to find them in the data.">DEMO<small>simulated faults, not part of the monitor</small></div>
-  <div class="grp"><label>Fault</label>
-    <select id="f-kind"></select><select id="f-country"></select><select id="f-platform"></select><select id="f-category"></select>
-    <button id="f-go">Inject fault</button></div>
-  <div class="grp"><label>Innocent change</label>
-    <select id="pr-country"></select><button id="pr-go">Promo (12 h)</button></div>
-  <div class="grp"><label>Data</label>
-    <select id="dd-source"></select><button id="dd-go">Arrives 2 h late</button></div>
-  <div class="grp"><label>New metric</label><button id="nm-go">Add refund_rate</button></div>
-  <div id="toast" role="status"></div>
-</div>
+
+<nav id="domains" aria-label="Business domain"></nav>
+
+<details id="demo-controls">
+  <summary><span class="demo-tag" title="These buttons write simulated faults into the simulator. The monitor cannot see them; it has to find them in the data.">DEMO<small>simulated faults, not part of the monitor</small></span> controls &#9662;</summary>
+  <div class="controls">
+    <div class="grp"><label>Fault</label>
+      <select id="f-kind"></select><select id="f-country"></select><select id="f-platform"></select><select id="f-category"></select>
+      <button id="f-go">Inject fault</button></div>
+    <div class="grp"><label>Innocent change</label>
+      <select id="pr-country"></select><button id="pr-go">Promo (12 h)</button></div>
+    <div class="grp"><label>Data</label>
+      <select id="dd-source"></select><button id="dd-go">Arrives 2 h late</button></div>
+    <div class="grp"><label>New metric</label><button id="nm-go">Add refund_rate</button></div>
+    <div id="toast" role="status"></div>
+  </div>
+</details>
+
 <main>
-  <section class="card"><h2>Metric graph (formula tree from the top outcome)</h2><div id="graphwrap"><svg id="g"></svg></div></section>
+  <section class="card">
+    <h2 id="graph-title">Metric graph</h2>
+    <div id="graphwrap"><svg id="g"></svg></div>
+    <div class="legend" aria-hidden="true">
+      <span><i style="border-color:var(--hot);background:var(--hot-bg)"></i>in an open incident</span>
+      <span><i style="border-color:var(--amber);background:var(--amber-bg)"></i>ongoing</span>
+      <span><i style="border-color:var(--ok);background:var(--ok-bg)"></i>resolved</span>
+      <span><i style="border-color:var(--line)"></i>no incident</span>
+      <span>dashed = shown again under another parent; click a box for details</span>
+    </div>
+    <div id="extra"></div>
+  </section>
   <aside id="side">
-    <section class="card"><h2>Incidents</h2><div id="feed"></div></section>
-    <section class="card"><h2>Report</h2><div id="detail" class="detail"><div class="empty">Select an incident.</div></div></section>
+    <section class="card"><h2 id="feed-title">Incidents</h2><div id="feed"></div></section>
+    <section class="card"><h2 id="detail-title">Details</h2><div id="detail" class="detail"><div class="empty">Select a box in the graph or an incident.</div></div></section>
   </aside>
 </main>
+
 <script>
 (function () {
   var NS = 'http://www.w3.org/2000/svg';
   var $ = function (id) { return document.getElementById(id); };
-  var graph = null, incidents = [], example = false, selected = null, lastState = null;
+  var graph = null, meta = {}, domains = [], domOf = {}, incidents = [], example = false;
+  var dom = 'all', selInc = null, selNode = null, mode = 'incident', drawn = null;
 
   function text(s) { return document.createTextNode(s == null ? '' : String(s)); }
-  function el(tag, cls, kids) {
-    var e = document.createElement(tag); if (cls) e.className = cls;
-    (kids || []).forEach(function (k) { e.appendChild(typeof k === 'string' ? text(k) : k); });
-    return e;
-  }
+  function el(tag, cls, kids) { var e = document.createElement(tag); if (cls) e.className = cls; (kids || []).forEach(function (k) { e.appendChild(typeof k === 'string' ? text(k) : k); }); return e; }
   function get(url) { return fetch(url).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); }
   function post(url, body) {
     return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.detail || r.status); return j; }); });
   }
   function toast(msg) { $('toast').textContent = msg; }
+  function fmt(n, d) { return n == null ? '-' : Number(n).toLocaleString('en', { maximumFractionDigits: d == null ? 1 : d }); }
+  function segText(s) { var k = Object.keys(s || {}); return k.length ? k.map(function (x) { return s[x]; }).join(' x ') : 'all'; }
+  function svg(tag, attrs, parent) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
 
-  // ---------------------------------------------------------------- graph
+  // ----------------------------------------------------------- domains
+  function domainOf(metric) { return domOf[metric] || 'other'; }
+  function domainLabel(id) { if (id === 'all') return 'All domains'; var d = domains.filter(function (x) { return x.id === id; })[0]; return d ? d.label : 'Other'; }
+  function incidentNodes(i) {
+    var s = {}; s[i.metric] = true;
+    (i.contributions || []).forEach(function (c) { s[c.node] = true; });
+    return Object.keys(s);
+  }
+  function touches(i, d) { return d === 'all' || incidentNodes(i).some(function (m) { return domainOf(m) === d; }); }
+  function inScope() { return incidents.filter(function (i) { return touches(i, dom); }); }
+  function liveCount(d) { return incidents.filter(function (i) { return i.status !== 'resolved' && touches(i, d); }).length; }
+
+  function renderChips() {
+    var nav = $('domains'); nav.textContent = '';
+    var list = [{ id: 'all', label: 'All' }].concat(domains);
+    if (graph && graph.nodes.some(function (n) { return n.kind === 'metric' && !domOf[n.id]; })) list.push({ id: 'other', label: 'Other' });
+    list.forEach(function (d) {
+      var n = liveCount(d.id);
+      var b = el('button', 'chip' + (d.id === dom ? ' on' : ''), [d.label].concat(n ? [el('span', 'n', [String(n)])] : []));
+      b.setAttribute('aria-pressed', d.id === dom ? 'true' : 'false');
+      b.onclick = function () { dom = d.id; selNode = null; mode = 'incident'; var s = inScope(); selInc = s.length ? s[0].id : null; renderAll(); };
+      nav.appendChild(b);
+    });
+  }
+
+  // ------------------------------------------------------------- graph
+  function filterTree(n) {
+    if (dom === 'all') return n;
+    var kids = (n.children || []).map(filterTree).filter(Boolean);
+    if (domainOf(n.metric) === dom || kids.length) return { metric: n.metric, role: n.role, repeated: n.repeated, children: kids };
+    return null;
+  }
   function layout(root) {
     var nodes = [], edges = [], leaf = 0, DX = 180, DY = 36;
     (function walk(n, depth, parent) {
-      var item = { n: n, x: depth * DX + 80, y: 0 };
-      var childYs = [];
-      (n.children || []).forEach(function (c) { childYs.push(walk(c, depth + 1, item).y); });
-      item.y = childYs.length ? (Math.min.apply(null, childYs) + Math.max.apply(null, childYs)) / 2 : (leaf++) * DY + 24;
-      nodes.push(item);
-      if (parent) edges.push([parent, item]);
+      var item = { n: n, x: depth * DX + 80, y: 0 }, ys = [];
+      (n.children || []).forEach(function (c) { ys.push(walk(c, depth + 1, item).y); });
+      item.y = ys.length ? (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2 : (leaf++) * DY + 24;
+      nodes.push(item); if (parent) edges.push([parent, item]);
       return item;
     })(root, 0, null);
     return { nodes: nodes, edges: edges, w: Math.max.apply(null, nodes.map(function (i) { return i.x; })) + 90, h: leaf * DY + 30 };
   }
-  function svg(tag, attrs, parent) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
-
-  var drawn = null;
+  function health() {
+    var h = {}, rank = { open: 3, ongoing: 2, resolved: 1 };
+    incidents.forEach(function (i) {
+      var st = i.status || 'open';
+      incidentNodes(i).forEach(function (m) { if (!h[m] || rank[st] > rank[h[m]]) h[m] = st; });
+    });
+    return h;
+  }
   function drawGraph() {
-    if (!graph || !graph.trees || !graph.trees.length) return;
-    var L = layout(graph.trees[0]), g = $('g');
-    g.setAttribute('viewBox', '0 0 ' + L.w + ' ' + L.h);
-    g.style.width = '100%'; g.style.height = 'auto';
-    g.textContent = '';
-    var ge = svg('g', {}, g), gn = svg('g', {}, g);
+    $('graph-title').textContent = 'Metric graph: ' + domainLabel(dom);
+    var g = $('g'); g.textContent = '';
     drawn = { edges: [], nodes: [] };
+    var root = graph && graph.trees && graph.trees.length ? filterTree(graph.trees[0]) : null;
+    if (!root) { $('graphwrap').appendChild(el('div', 'empty', ['No formula tree for this domain.'])); renderExtra(null); return; }
+    var L = layout(root);
+    g.setAttribute('viewBox', '0 0 ' + L.w + ' ' + L.h); g.style.width = '100%'; g.style.height = 'auto';
+    var ge = svg('g', {}, g), gn = svg('g', {}, g), shown = {};
     L.edges.forEach(function (pair) {
       var a = pair[0], b = pair[1], x1 = a.x + 75, x2 = b.x - 75, c = (x2 - x1) / 2;
       var p = svg('path', { d: 'M' + x1 + ',' + a.y + ' C' + (x1 + c) + ',' + a.y + ' ' + (x2 - c) + ',' + b.y + ' ' + x2 + ',' + b.y, 'class': 'edge' }, ge);
       drawn.edges.push({ el: p, from: a.n.metric, to: b.n.metric });
     });
     L.nodes.forEach(function (i) {
-      var gr = svg('g', { 'class': 'node' + (i.n.repeated ? ' repeated' : ''), transform: 'translate(' + (i.x - 75) + ',' + (i.y - 13) + ')' }, gn);
+      shown[i.n.metric] = true;
+      var gr = svg('g', { 'class': 'node' + (i.n.repeated ? ' repeated' : ''), tabindex: 0, role: 'button', 'aria-label': i.n.metric, transform: 'translate(' + (i.x - 75) + ',' + (i.y - 13) + ')' }, gn);
       svg('rect', { width: 150, height: 26, rx: 6 }, gr);
       var t = svg('text', { x: 75, y: 17 }, gr); t.textContent = i.n.metric;
-      var title = svg('title', {}, gr); title.textContent = i.n.metric + (i.n.role ? ' (' + i.n.role + ')' : '');
+      var pick = function () { selNode = i.n.metric; mode = 'node'; renderDetail(); applyStyles(); };
+      gr.addEventListener('click', pick);
+      gr.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
       drawn.nodes.push({ el: gr, metric: i.n.metric });
     });
-    highlight();
+    renderExtra(shown);
+    applyStyles();
   }
-  function highlight() {
+  function renderExtra(shown) {
+    var x = $('extra'); x.textContent = '';
+    if (dom === 'all' || !graph) return;
+    var rest = (domains.filter(function (d) { return d.id === dom; })[0] || { metrics: [] }).metrics;
+    if (dom === 'other') rest = graph.nodes.filter(function (n) { return n.kind === 'metric' && !domOf[n.id]; }).map(function (n) { return n.id; });
+    rest = rest.filter(function (m) { return !(shown && shown[m]) && meta[m]; });
+    if (!rest.length) return;
+    x.appendChild(text('Also in this domain, not on the formula tree: '));
+    rest.forEach(function (m) { var b = el('button', null, [m]); b.onclick = function () { selNode = m; mode = 'node'; renderDetail(); applyStyles(); }; x.appendChild(b); });
+  }
+  function applyStyles() {
     if (!drawn) return;
-    var inc = incidents.filter(function (i) { return i.id === selected; })[0];
-    var on = {}, hot = {};
-    if (inc) {
-      on[inc.metric] = true; hot[inc.metric] = true;
+    var h = health(), inc = incidents.filter(function (i) { return i.id === selInc; })[0], on = {};
+    if (inc && mode === 'incident') {
+      on[inc.metric] = true;
       var kids = {};
       drawn.edges.forEach(function (e) { (kids[e.from] = kids[e.from] || []).push(e.to); });
-      var path = function (from, target, seen) {          // nodes on a route from `from` down to `target`
+      var path = function (from, target, seen) {
         if (from === target) return [from];
         if (seen[from]) return null; seen[from] = true;
         var ks = kids[from] || [];
         for (var k = 0; k < ks.length; k++) { var r = path(ks[k], target, seen); if (r) return [from].concat(r); }
         return null;
       };
-      (inc.contributions || []).forEach(function (c) {
-        on[c.node] = true; if ((c.share_of_delta || 0) > 0.5) hot[c.node] = true;
-        (path(inc.metric, c.node, {}) || []).forEach(function (m) { on[m] = true; });
-      });
+      (inc.contributions || []).forEach(function (c) { on[c.node] = true; (path(inc.metric, c.node, {}) || []).forEach(function (m) { on[m] = true; }); });
     }
-    var any = Object.keys(on).length > 0;
-    $('g').classList.toggle('dim', any);
-    drawn.nodes.forEach(function (n) { n.el.classList.toggle('on', !!on[n.metric]); n.el.classList.toggle('hot', !!hot[n.metric]); });
+    $('g').classList.toggle('dim', Object.keys(on).length > 0);
+    drawn.nodes.forEach(function (n) {
+      var c = n.el.classList;
+      ['h-open', 'h-ongoing', 'h-resolved'].forEach(function (k) { c.remove(k); });
+      if (h[n.metric]) c.add('h-' + h[n.metric]);
+      c.toggle('on', !!on[n.metric]);
+      c.toggle('picked', mode === 'node' && selNode === n.metric);
+      c.toggle('context', dom !== 'all' && domainOf(n.metric) !== dom);
+    });
     drawn.edges.forEach(function (e) { e.el.classList.toggle('on', !!(on[e.from] && on[e.to])); });
   }
 
-  // ------------------------------------------------------------ incidents
-  function fmt(n, d) { return n == null ? '-' : Number(n).toLocaleString('en', { maximumFractionDigits: d == null ? 1 : d }); }
-  function segText(s) { var k = Object.keys(s || {}); return k.length ? k.map(function (x) { return s[x]; }).join(' x ') : 'all'; }
-
+  // --------------------------------------------------------- right side
   function renderFeed() {
+    $('feed-title').textContent = 'Incidents' + (dom === 'all' ? '' : ' in ' + domainLabel(dom));
     var f = $('feed'); f.textContent = '';
-    if (!incidents.length) { f.appendChild(el('div', 'empty', ['No incidents yet. The brain is watching.'])); return; }
-    incidents.forEach(function (i) {
-      var row = el('div', 'inc' + (i.id === selected ? ' sel' : ''), [
+    var list = inScope();
+    if (!list.length) { f.appendChild(el('div', 'empty', [dom === 'all' ? 'No incidents yet. The monitor is watching.' : 'No incident touches this domain.'])); return; }
+    list.forEach(function (i) {
+      var row = el('div', 'inc' + (i.id === selInc && mode === 'incident' ? ' sel' : ''), [
         el('span', 'pill ' + (i.status || 'open'), [i.status || 'open']),
-        el('span', null, [el('span', 't', [i.metric + ' ' + (i.change && i.change.delta_pct != null ? fmt(i.change.delta_pct) + '%' : '')]), el('div', 'm', [segText(i.segment) + ' | first seen ' + (i.first_seen || '')])]),
-        el('span', 'm', [i.id])
-      ]);
+        el('span', null, [el('span', 't', [i.metric + ' ' + (i.change && i.change.delta_pct != null ? fmt(i.change.delta_pct) + '%' : '')]),
+                          el('div', 'm', [segText(i.segment) + ' | first seen ' + (i.first_seen || '')])]),
+        el('span', 'm', [i.id])]);
       row.tabIndex = 0;
-      var pick = function () { selected = i.id; renderFeed(); renderDetail(); highlight(); };
-      row.addEventListener('click', pick);
-      row.addEventListener('keydown', function (e) { if (e.key === 'Enter') pick(); });
+      var pick = function () { selInc = i.id; mode = 'incident'; renderFeed(); renderDetail(); applyStyles(); };
+      row.addEventListener('click', pick); row.addEventListener('keydown', function (e) { if (e.key === 'Enter') pick(); });
       f.appendChild(row);
     });
   }
   function section(title, kids) { var d = el('div', null, [el('h3', null, [title])]); kids.forEach(function (k) { d.appendChild(k); }); return d; }
-  function renderDetail() {
-    var d = $('detail'); d.textContent = '';
-    var i = incidents.filter(function (x) { return x.id === selected; })[0];
-    if (!i) { d.appendChild(el('div', 'empty', ['Select an incident.'])); return; }
-    var kv = el('div', 'kv');
+  function kv(pairs) { var k = el('div', 'kv'); pairs.forEach(function (p) { k.appendChild(el('span', null, [p[0]])); k.appendChild(el('span', null, [p[1]])); }); return k; }
+
+  function renderNode(d) {
+    var m = meta[selNode] || {};
+    $('detail-title').textContent = 'Metric: ' + selNode;
+    var pairs = [['Domain', domainLabel(domainOf(selNode))], ['Unit', m.unit || '-'], ['Direction', m.direction || '-']];
+    if (m.formula) pairs.push(['Formula', m.formula]);
+    if (m.decomposition) pairs.push(['Made of', m.decomposition]);
+    if (m.column) pairs.push(['Column', m.column]);
+    if ((m.systems || []).length) pairs.push(['Systems', m.systems.join(', ')]);
+    if (m.source) pairs.push(['Data source', m.source]);
+    pairs.push(['Dimensions', (m.dimensions || []).join(', ') || '-']);
+    d.appendChild(section('About', [el('div', null, [m.description || 'No description.']), kv(pairs)]));
+    var inc = incidents.filter(function (i) { return incidentNodes(i).indexOf(selNode) >= 0; });
+    var box = inc.length ? inc.map(function (i) {
+      var b = el('button', null, [i.id + ' ' + i.metric + ' (' + (i.status || 'open') + ')']);
+      b.style.margin = '2px 6px 2px 0'; b.onclick = function () { selInc = i.id; mode = 'incident'; renderFeed(); renderDetail(); applyStyles(); }; return b;
+    }) : [el('div', 'empty', ['No incident involves this metric.'])];
+    d.appendChild(section('Incidents involving it', box));
+  }
+  function renderIncident(d, i) {
+    $('detail-title').textContent = 'Report: ' + i.id;
     var ch = i.change || {};
-    [['Metric', i.metric], ['Segment', segText(i.segment)], ['Observed', fmt(ch.observed)], ['Expected', fmt(ch.expected)],
-     ['Change', ch.delta_pct != null ? fmt(ch.delta_pct) + '% (z ' + fmt(ch.z) + ')' : '-']].forEach(function (p) { kv.appendChild(el('span', null, [p[0]])); kv.appendChild(el('span', null, [p[1]])); });
-    d.appendChild(section('What changed', [kv]));
-    var imp = i.impact || {}, ik = el('div', 'kv');
-    Object.keys(imp).forEach(function (k) { ik.appendChild(el('span', null, [k])); ik.appendChild(el('span', null, [fmt(imp[k], 0)])); });
-    if (Object.keys(imp).length) d.appendChild(section('Business impact', [ik]));
+    d.appendChild(section('What changed', [kv([['Metric', i.metric], ['Segment', segText(i.segment)], ['Observed', fmt(ch.observed)], ['Expected', fmt(ch.expected)],
+      ['Change', ch.delta_pct != null ? fmt(ch.delta_pct) + '% (z ' + fmt(ch.z) + ')' : '-']])]));
+    var imp = i.impact || {}, ik = Object.keys(imp).map(function (k) { return [k, fmt(imp[k], 0)]; });
+    if (ik.length) d.appendChild(section('Business impact', [kv(ik)]));
     var cs = (i.contributions || []).map(function (c) {
-      var bar = el('div', 'bar'); var b = el('i'); b.style.width = Math.max(0, Math.min(100, (c.share_of_delta || 0) * 100)) + '%'; bar.appendChild(b);
+      var bar = el('div', 'bar'), b = el('i'); b.style.width = Math.max(0, Math.min(100, (c.share_of_delta || 0) * 100)) + '%'; bar.appendChild(b);
       return el('div', null, [el('div', null, [c.node + ': ' + fmt((c.share_of_delta || 0) * 100, 0) + '% of the change (' + fmt(c.observed, 2) + ' vs ' + fmt(c.expected, 2) + ')']), bar]);
     });
     if (cs.length) d.appendChild(section('Where along the graph', cs));
     var hs = (i.hypotheses || []).map(function (h) {
-      return el('div', 'hyp', [el('div', null, [el('span', 'pill ' + h.status, [h.status]), ' ' + h.cause]),
-        el('ul', null, (h.evidence || []).map(function (e) { return el('li', null, [e]); }))]);
+      return el('div', 'hyp', [el('div', null, [el('span', 'pill ' + h.status, [h.status]), ' ' + h.cause]), el('ul', null, (h.evidence || []).map(function (e) { return el('li', null, [e]); }))]);
     });
     if (hs.length) d.appendChild(section('Hypotheses', hs));
     var tr = (i.trail || []).map(function (s) { return el('li', null, [s.action + ' ' + s.target + ': ' + s.result]); });
@@ -223,20 +326,28 @@ svg text { font-family: var(--ui); }
     if ((i.uncertain || []).length) d.appendChild(section('Still uncertain', [el('ul', null, i.uncertain.map(function (u) { return el('li', null, [u]); }))]));
     if (i.report) d.appendChild(section('Summary', [el('div', null, [i.report])]));
   }
+  function renderDetail() {
+    var d = $('detail'); d.textContent = '';
+    if (mode === 'node' && selNode) { renderNode(d); return; }
+    var i = incidents.filter(function (x) { return x.id === selInc; })[0];
+    if (!i) { $('detail-title').textContent = 'Details'; d.appendChild(el('div', 'empty', ['Select a box in the graph or an incident.'])); return; }
+    renderIncident(d, i);
+  }
+
+  function renderAll() { renderChips(); drawGraph(); renderFeed(); renderDetail(); }
 
   // ------------------------------------------------------------- polling
   function refresh() {
     get('/api/state').then(function (s) {
-      lastState = s;
-      if (!s.ready) { $('clock').textContent = s.error; return; }
-      $('clock').textContent = 'simulated clock ' + s.last_hour.replace('T', ' ').replace(':00:00Z', ':00 UTC');
+      $('clock').textContent = s.ready ? 'simulated clock ' + s.last_hour.replace('T', ' ').replace(':00:00Z', ':00 UTC') : s.error;
     }).catch(function () { $('clock').textContent = 'server not reachable'; });
     get('/api/incidents').then(function (r) {
+      var before = JSON.stringify(incidents.map(function (i) { return [i.id, i.status, i.last_seen]; }));
       incidents = r.incidents; example = r.example;
       $('exbadge').textContent = '';
       if (example) $('exbadge').appendChild(el('span', 'pill example', ['showing the contract example, no live incident yet']));
-      if (!selected && incidents.length) selected = incidents[0].id;
-      renderFeed(); renderDetail(); highlight();
+      if (!selInc && incidents.length) selInc = incidents[0].id;
+      if (before !== JSON.stringify(incidents.map(function (i) { return [i.id, i.status, i.last_seen]; }))) { renderChips(); renderFeed(); renderDetail(); applyStyles(); }
     }).catch(function () {});
   }
 
@@ -248,14 +359,13 @@ svg text { font-family: var(--ui); }
     ['search_regression', 'Search regression', ['country']],
     ['ad_budget_exhausted', 'Ad budget gone early', ['country']]];
   KINDS.forEach(function (k) { var o = document.createElement('option'); o.value = k[0]; o.textContent = k[1]; $('f-kind').appendChild(o); });
-  fill('f-country', ['DE', 'FR', 'ES', 'PL']); fill('f-platform', ['Android', 'iOS', 'Web']);
-  fill('f-category', ['electronics', 'fashion', 'home', 'beauty', 'sports']);
+  fill('f-country', ['DE', 'FR', 'ES', 'PL']); fill('f-platform', ['Android', 'iOS', 'Web']); fill('f-category', ['electronics', 'fashion', 'home', 'beauty', 'sports']);
+  fill('pr-country', ['FR', 'DE', 'ES', 'PL']); fill('dd-source', ['payments', 'orders', 'traffic', 'search', 'recommendations', 'ads', 'inventory']);
   function showParams() {
     var need = KINDS.filter(function (k) { return k[0] === $('f-kind').value; })[0][2];
     ['country', 'platform', 'category'].forEach(function (p) { $('f-' + p).hidden = need.indexOf(p) < 0; });
   }
   $('f-kind').onchange = showParams; showParams();
-  fill('pr-country', ['FR', 'DE', 'ES', 'PL']); fill('dd-source', ['payments', 'orders', 'traffic', 'search', 'recommendations', 'ads', 'inventory']);
   function act(body, label) {
     toast(label + '...');
     post('/api/inject', body).then(function (r) { toast(label + ' from ' + r.start.replace('T', ' ').replace(':00:00Z', ':00 UTC')); refresh(); })
@@ -263,18 +373,24 @@ svg text { font-family: var(--ui); }
   }
   $('f-go').onclick = function () {
     var kind = $('f-kind').value, label = KINDS.filter(function (k) { return k[0] === kind; })[0][1];
-    act({ kind: kind, country: $('f-country').value, platform: $('f-platform').value, category: $('f-category').value,
-          severity: 0.4, hours: 12, when: 'now' }, label + ' injected');
+    act({ kind: kind, country: $('f-country').value, platform: $('f-platform').value, category: $('f-category').value, severity: 0.4, hours: 12, when: 'now' }, label + ' injected');
   };
   $('pr-go').onclick = function () { act({ kind: 'promo', country: $('pr-country').value, hours: 12, when: 'now' }, 'Promo started'); };
   $('dd-go').onclick = function () { act({ kind: 'data_delay', source: $('dd-source').value, hours: 3, delay_hours: 2, when: 'now' }, 'Late data scheduled'); };
   $('nm-go').onclick = function () {
     var y = 'name: refund_rate\ndescription: Share of orders refunded\nformula: refunds / orders\nsql: >\n  SELECT ts, country, platform, category, channel,\n         SUM(refunds) * 1.0 / NULLIF(SUM(orders), 0) AS value\n  FROM facts_hourly GROUP BY ts, country, platform, category, channel\ndimensions: [country, platform, category, channel]\nunit: ratio\n';
-    post('/api/metric', { yaml_text: y }).then(function (r) { toast('Metric handed to the brain: ' + r.saved); }).catch(function (e) { toast('Failed: ' + e.message); });
+    post('/api/metric', { yaml_text: y }).then(function (r) { toast('Metric handed to the monitor: ' + r.saved); }).catch(function (e) { toast('Failed: ' + e.message); });
   };
 
-  get('/api/graph').then(function (g) { graph = g; drawGraph(); }).catch(function (e) { $('graphwrap').textContent = 'Graph export missing: ' + e.message; });
-  refresh(); setInterval(refresh, 2000);
+  Promise.all([get('/api/graph'), get('/api/domains'), get('/api/incidents')]).then(function (r) {
+    graph = r[0]; domains = r[1]; incidents = r[2].incidents; example = r[2].example;
+    graph.nodes.forEach(function (n) { if (n.kind === 'metric') meta[n.id] = n; });
+    domains.forEach(function (d) { d.metrics.forEach(function (m) { domOf[m] = d.id; }); });
+    if (example) $('exbadge').appendChild(el('span', 'pill example', ['showing the contract example, no live incident yet']));
+    if (incidents.length) selInc = incidents[0].id;
+    renderAll();
+    refresh(); setInterval(refresh, 2000);
+  }).catch(function (e) { $('graphwrap').textContent = 'Could not load the graph: ' + e.message; });
 })();
 </script>
 </body>

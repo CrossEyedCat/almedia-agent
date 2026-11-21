@@ -151,3 +151,21 @@ def test_the_page_offers_the_fault_kinds(client):
     html = client.get("/").text
     for word in ("stockout_surge", "search_regression", "ad_budget_exhausted", "Inject fault"):
         assert word in html
+
+
+# ------------------------------------------------------------------ domains
+def test_domains_list_real_metrics_once_each(client):
+    domains = client.get("/api/domains").json()
+    graph = client.get("/api/graph").json()
+    known = {n["id"] for n in graph["nodes"] if n["kind"] == "metric"}
+    listed = [m for d in domains for m in d["metrics"]]
+    assert len({d["id"] for d in domains}) == len(domains)
+    assert not [m for m in listed if m not in known], "a domain lists a metric the graph does not have"
+    assert len(listed) == len(set(listed)), "a metric is in two domains"
+    assert {"payments", "ads", "inventory", "search"} <= {d["id"] for d in domains}
+
+
+def test_the_page_has_the_domain_selector_and_keeps_the_demo_controls_folded(client):
+    html = client.get("/").text
+    assert 'id="domains"' in html and "Business domain" in html
+    assert '<details id="demo-controls">' in html and "open" not in html.split('<details id="demo-controls"')[1][:3]

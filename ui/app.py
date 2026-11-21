@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from sim import db, inject
+from ui import domains as domain_map
 from sim.inject import AlreadyInjected
 from sim.world import CATEGORIES, CHANNELS, COUNTRIES, PLATFORMS
 from sim.schema import SOURCES
@@ -38,6 +39,11 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 @app.get("/")
 def index():
     return FileResponse(Path(__file__).parent / "static" / "index.html")
+
+
+@app.get("/api/domains")
+def domains():
+    return domain_map.as_json()
 
 
 @app.get("/api/graph")
