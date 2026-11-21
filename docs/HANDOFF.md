@@ -1,7 +1,7 @@
 # Handoff: A is away from Saturday 21 Nov, about 17:10 CET
 
 Written for B (Artem) and his agent. A (Yuli) leaves the keyboard; the agents on A's side only run while A is in a session, so
-when A is away nobody on A's side answers. Updated at 18:45 CET; everything below was checked against GitHub and the running demo.
+when A is away nobody on A's side answers. Updated at 18:45 CET; everything below was checked against GitHub and the running demo. The lines about `docs/results.md` were rewritten by B on 21 Nov, about 22:30 CET, from the replays behind that page; the line about new metrics at 21:07 (`3069a60`).
 
 ## Where things are
 
@@ -9,8 +9,9 @@ when A is away nobody on A's side answers. Updated at 18:45 CET; everything belo
   real monitor results, wall clock, guardrails, console refresh, demo duration and notes, monitoring as built).
 - **End-to-end tests are on main** (`tests/test_end_to_end.py`, about a minute): real simulator with injected faults, the real monitor in
   replay, the incident files, the console's API. They found that the scorer swallowed a correct incident (fixed in #17).
-- `docs/results.md`: 24/24 faults detected, 24/24 localized, 22/24 right cause, 0 false alarms in 98 simulated days, 16/16 innocent
-  events silent, from a real replay. Not an independent holdout (seeds 4 to 8 were used while the brain was built); the file says so.
+- `docs/results.md` (brain at `e08afe3`, twenty 49-day replays): on ten holdout seeds 120/120 faults detected and localized, 118/120
+  right cause, 1 false alarm in 457 watched days, 80/80 innocent events silent. The ten seeds used while the brain was built give
+  120/120, 118/120 and no false alarm. The file keeps the two groups apart and lists every miss, the false alarm and one tie.
 - Ten issues are still open (#2, #3, #5, #6, #8, #9, #10, #11, #13, #14). Most are fixed on main by the pull requests above; see the
   status comment on #14. Close an issue when you have checked it.
 - **The repository is still private.** Only the owner can change that, and it must be public before the submission (below).
@@ -20,7 +21,8 @@ when A is away nobody on A's side answers. Updated at 18:45 CET; everything belo
 Three processes (monitor, wall clock, console on http://127.0.0.1:8000) from an older commit; they stop when that Mac sleeps.
 Do not rely on them. To run the demo yourself from a clean clone, the commands are in `docs/demo.md`
 (`python -m sim.run --backfill 28d --db data/market.db --force`, `python -m brain.run --db data/market.db --incidents incidents --graph-out data/graph.json`,
-`python -m sim.live --speed 2 --db data/market.db`, `uvicorn ui.app:app --port 8000`). Use the accelerated clock (`--speed 2`) for a talk:
+`python -m sim.live --speed 2 --db data/market.db`, `uvicorn ui.app:app --port 8000`; the console also needs `GRAPH_JSON=data/graph.json`
+(`docs/demo.md`, step 4), or it shows the tracked example graph). Use the accelerated clock (`--speed 2`) for a talk:
 the wall-clock mode moves one data hour per real hour. Stop every process that has the database open before you rebuild it.
 Faults that begin in the same hour are folded into one or two incidents by design; for separate incidents inject them in different
 countries or an hour apart. `docs/pitch-script.md` has a 3-minute script and a slide outline.
@@ -40,8 +42,8 @@ countries or an hour apart. `docs/pitch-script.md` has a 3-minute script and a s
 
 ## Known gaps (honest list)
 
-- Results are on synthetic data and are not an independent holdout (seeds 4 to 8 were used while the brain was built).
-- Cause confirmed in 22 of 24 faults; the misses are stockout_surge in sports.
+- Results are on synthetic data from our own simulator, with the four fault kinds it knows. Ten of the twenty runs are a holdout the brain had not seen; the other ten are not independent.
+- Cause confirmed in 236 of 240 faults; the four misses are stockout surges where the report names the stockouts as the candidate but does not confirm it (the add-to-cart rate had not moved visibly). One false alarm in 913 watched days: a one-hour rise of ad click-through in PL on the web, closed by itself. One report (holdout) supports a routine release beside the right one.
 - New metrics: built on B's side since `54ef95b` (`brain/extension.py`, README 3.3). The search covers one or two column metrics without constants; cause links for a new metric are not proposed.
 - Low-traffic hours are noisy by nature (`docs/data-granularity.md`); a fault that lasts one night hour can be missed.
 - The demo clock is wall-clock based in the running version; a multi-hour recovery cannot be compressed into seconds there.

@@ -7,8 +7,10 @@ of implying it. Numbers come from `docs/results.md`. Read the whole page once be
 
 1. Clean state, accelerated clock. In four terminals, from a clean clone, in this order:
    `python -m sim.run --backfill 28d --db data/market.db --force`, then
-   `python -m brain.run --db data/market.db --incidents incidents --graph-out data/graph.json`, then
+   `python -m brain.run --db data/market.db --incidents incidents --graph-out data/graph.json --fresh`, then
    `python -m sim.live --speed 2 --db data/market.db`, then `uvicorn ui.app:app --port 8000`. Open http://127.0.0.1:8000.
+   Start the console with the four environment variables of `docs/demo.md`, step 4, and with an empty `incoming_metrics/`
+   folder: without `GRAPH_JSON=data/graph.json` the console shows the tracked example graph and a metric added on stage never appears.
 2. Wait until the clock in the header moves and the incident list reads "No incidents. The monitor is watching."
 3. Open the folded DEMO controls once so you know where the buttons are, then fold them again. Dark or light theme: add `?theme=light` or `?theme=dark`.
 4. Inject the faults in different places or an hour apart. Faults that begin in the same hour are folded into one or two incidents by design.
@@ -36,22 +38,29 @@ and what the cause is: the payments release for Android in Germany, with the evi
 **1:50 Not everything unusual is a problem.** (Promo in FR, then a late source.)
 "A planned promo lifts orders in France. It sees the promo in the calendar and records it as explained, no alert. A data source that
 arrives late is held as pending instead of raising a false alarm."
-(Timing, measured on 22 Nov with `--speed 2`: the promo row appears in a few seconds, grey, and stays. The pending row lives only while the data
+(Timing, measured on 21 Nov with `--speed 2`: the promo row appears in a few seconds, grey, and stays. The pending row lives only while the data
 is late, about two data hours, so about 4 seconds: inject "Arrives 2 h late" and look straight away, or leave this half sentence out.)
 
 **2:15 Does it work?** (Open `docs/results.md`.)
-"We scored it against faults we injected ourselves, on two 49-day runs: 24 of 24 faults found, all 24 in the right place, 22 with the
-right cause confirmed, no false alarms in 98 simulated days, and all 16 innocent changes stayed quiet."
+"We scored it against faults we injected ourselves, in twenty 49-day runs. On the ten it had never seen it found 120 of 120 faults,
+all in the right place, 118 with the cause confirmed, with one false alarm in 457 watched days, and all 80 innocent changes stayed quiet."
 
 **2:40 The honest part and the close.**
-"Two causes were not confirmed, both stockouts in one category. The data is synthetic and the settings were tuned on part of it, so
-these are engineering checks, not independent proof. Adding a new metric to the graph automatically is the part we did not finish.
+"The two causes it did not confirm were stockouts: it named them as the candidate and said what was missing. The data is
+synthetic, from our own simulator, so this is an engineering check, not proof on real traffic.
 What it does today: it watches the business, not the servers."
+(If asked: the ten runs it was built on give the same numbers without the false alarm, four unconfirmed causes in all twenty; the
+false alarm was a one-hour jump in ad click-through in Poland on the web that closed by itself.)
 
 ## What not to say
 
-- Do not say the new-metric button works end to end: the console hands the file over; the monitor's side is not finished.
-- Do not say "100%" without the cause number (22 of 24) and the caveat on the data.
+- The new-metric button works end to end for the console's `refund_rate` (README 3.3; run live on 21 Nov). Do not claim more than
+  that section says: the formula search covers one or two existing metrics, without constants.
+- Do not say "100%" without the cause number (118 of 120 on the holdout runs), the false alarm and the caveat on the data.
+- One of those 118 is a tie: the right release is supported and named first, but a routine release of the same system in the same
+  place two hours earlier is left supported beside it. `docs/results.md` lists it; do not say every cause was singled out.
+- "Holdout" means new random runs of our own simulator, with the same four kinds of fault. Do not call it a test on real data.
+- Do not call all twenty runs independent: ten are a holdout, ten were used while the brain was built. `docs/results.md` keeps them apart.
 - Do not call the wall-clock mode a demo mode: it moves one data hour per real hour. Use the accelerated clock on stage.
 
 ## Timings measured from a clean start (accelerated clock, `--speed 2`)
@@ -73,4 +82,4 @@ What it does today: it watches the business, not the servers."
 3. **The loop that runs by itself** (60 s): read, expect, detect, locate, explain, keep tracking; one fault is one incident, updated in place.
 4. **Demo** (60 s): a screenshot of the console with an incident and the lit path.
 5. **Results** (60 s): the table from `docs/results.md`; say the caveat on the same slide.
-6. **What failed and what next** (45 s): two unconfirmed causes (stockouts); competing-cause comparison; automatic new-metric placement; low-traffic hours.
+6. **What failed and what next** (45 s): four unconfirmed causes in 240 faults (all stockouts); one false alarm; two faults at the same time are not tested; new metrics with constants in the formula; low-traffic hours.

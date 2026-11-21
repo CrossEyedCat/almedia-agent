@@ -42,7 +42,9 @@ At speed 2, a day passes in 48 seconds. Read the header clock before injecting; 
 
 For scoring use a separate folder: `python -m sim.score generate --db data/eval.db --days 49`;
 run B's monitor replay against that database, writing to **eval_incidents/**, then
-`python -m sim.score score --db data/eval.db --incidents eval_incidents --out docs/results.md`.
+`python -m sim.score score --db data/eval.db --incidents eval_incidents --out data/eval-results.md`.
+The page `docs/results.md` is built from many such runs by `python -m scripts.summarize_evaluation` (its docstring has the
+command); a single-run report must not overwrite it.
 Never point the live UI at eval_incidents. Missing or empty scoring output is an error, not a measured zero.
 
 ## Timeline
@@ -58,7 +60,7 @@ Never point the live UI at eval_incidents. Missing or empty scoring output is an
 | 1:45 | "Not everything unusual is a problem: a planned French promo lifts orders." | Click **Promo (12 h)** (FR) | No new incident; the calendar explains it [B] |
 | 2:00 | "If data arrives late, it waits instead of crying wolf." | Click **Arrives 2 h late** (payments) | No incident for those hours [B] |
 | 2:15 | "A new metric arrives as a definition and a query. The system checks the query against the formula, finds the metric's place in the graph and starts watching it." | Click **Add refund_rate** | Message "refund_rate added: validated on 28 days of data ... placed as a factor of refunds ... watched from the next tick" (about 2 s); a new tree `refunds` = `orders` x `refund_rate` in the graph [B] |
-| 2:40 | "We scored it on N random faults and innocent events: detection, delay, false alarms." | Show `docs/results.md` | Numbers from `python -m sim.score`, not hand-picked |
+| 2:40 | "We scored it on 240 injected faults and 160 innocent events in twenty runs, ten of them never seen before: detection, place, cause, false alarms." | Show `docs/results.md` | The table with the holdout line; numbers from `python -m scripts.summarize_evaluation`, not hand-picked |
 | 2:55 | One-line close: "It watches the business, not the servers." | | |
 
 ## If something hangs
