@@ -24,7 +24,10 @@ from brain.metric_spec import DIMENSIONS, MetricSpec, load_specs
 
 DEFAULT_METRICS_DIR = Path(__file__).parent / "metrics"
 EDGE_KINDS = ("formula", "definition", "breakdown", "may_affect", "context")
-DEMAND_SYSTEM = "demand"  # metrics tagged with this system are linked to the promo calendar
+# Metrics tagged with one of these systems are linked to the event calendar: a planned promo moves
+# traffic (demand), what is given away (pricing) and how readily people add to the cart (promotions).
+CALENDAR_SYSTEMS = ("demand", "pricing", "promotions")
+DEMAND_SYSTEM = "demand"
 
 
 class GraphError(ValueError):
@@ -190,7 +193,7 @@ class MetricGraph:
                 self.nodes.setdefault(cid, Node(id=cid, kind="context", label=f"releases of {system}",
                                                 attrs={"table": "releases", "system": system}))
                 self._add_edge(cid, s.name, "context", via="releases.system")
-                if system == DEMAND_SYSTEM:
+                if system in CALENDAR_SYSTEMS:
                     self.nodes.setdefault("calendar", Node(id="calendar", kind="context",
                                                            label="promo and holiday calendar",
                                                            attrs={"table": "calendar"}))
