@@ -373,7 +373,9 @@ def main(argv: list[str] | None = None) -> int:
         print(graph.render_tree(a.tree or None))
     if a.export:
         Path(a.export).parent.mkdir(parents=True, exist_ok=True)
-        Path(a.export).write_text(json.dumps(graph.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
+        # newline="\n": on Windows the default would write CRLF and turn every export into a full-file diff
+        Path(a.export).write_text(json.dumps(graph.to_dict(), indent=2, ensure_ascii=False) + "\n",
+                                  encoding="utf-8", newline="\n")
         print(f"wrote {a.export}")
     return 1 if failed else 0
 
