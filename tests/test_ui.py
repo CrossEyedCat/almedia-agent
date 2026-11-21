@@ -341,3 +341,18 @@ def test_metrics_the_monitor_also_watched_move_count_for_their_domain(client):
     html = client.get("/").text
     assert "t.action === 'watch'" in html and "meta[t.target]" in html
     assert html.count("t.action === 'watch'") == 2          # the domain counts and the highlight both use it
+
+
+def test_page_faults_outlast_the_demo_script_and_the_ad_fault_keeps_its_shape(client):
+    """The page's faults end by themselves (issue 11). At 2 s per simulated hour the script's rollback step comes
+    50 s after the click and the close 130 s after it: a 12 hour fault would be over after 24 s, before the rollback.
+    The ad budget fault keeps 12 hours, because its shape (boost for hours // 3, then nothing) depends on it."""
+    import re
+    html = client.get("/").text
+    hours = {kind: int(h) for kind, h in re.findall(r"\['(\w+)', '[^']+', \[[^\]]*\], (\d+)\]", html)}
+    assert set(hours) == {"payment_failure", "stockout_surge", "search_regression", "ad_budget_exhausted"}
+    seconds_per_hour, click_to_close = 2, 130
+    for kind in ("payment_failure", "stockout_surge", "search_regression"):
+        assert hours[kind] * seconds_per_hour > click_to_close, kind
+    assert hours["ad_budget_exhausted"] == 12
+    assert "hours: hours, when: 'now'" in html      # the button sends the value of its own fault

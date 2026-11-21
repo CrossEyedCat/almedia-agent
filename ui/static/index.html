@@ -439,11 +439,14 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
 
   // ------------------------------------------------------------- controls
   function fill(id, values) { var s = $(id); values.forEach(function (v) { var o = document.createElement('option'); o.value = v; o.textContent = v; s.appendChild(o); }); }
+  // kind, label, settings it uses, hours it lasts unless someone ends it. At 2 s per simulated hour the demo's
+  // rollback step comes 50 s after the click, so the first three run 72 h (144 s): still bounded, and still
+  // running when "End it" is clicked. The ad fault keeps 12 h: its shape (boost for a third, then nothing) needs it.
   var KINDS = [
-    ['payment_failure', 'Payment failure', ['country', 'platform']],
-    ['stockout_surge', 'Stockouts', ['category']],
-    ['search_regression', 'Search regression', ['country']],
-    ['ad_budget_exhausted', 'Ad budget gone early', ['country']]];
+    ['payment_failure', 'Payment failure', ['country', 'platform'], 72],
+    ['stockout_surge', 'Stockouts', ['category'], 72],
+    ['search_regression', 'Search regression', ['country'], 72],
+    ['ad_budget_exhausted', 'Ad budget gone early', ['country'], 12]];
   KINDS.forEach(function (k) { var o = document.createElement('option'); o.value = k[0]; o.textContent = k[1]; $('f-kind').appendChild(o); });
   fill('f-country', ['DE', 'FR', 'ES', 'PL']); fill('f-platform', ['Android', 'iOS', 'Web']); fill('f-category', ['electronics', 'fashion', 'home', 'beauty', 'sports']);
   fill('pr-country', ['FR', 'DE', 'ES', 'PL']); fill('dd-source', ['payments', 'orders', 'traffic', 'search', 'recommendations', 'ads', 'inventory']);
@@ -485,7 +488,8 @@ svg#g { min-width: 720px; }                       /* keep the boxes readable; th
   $('f-go').onclick = function () {
     var kind = $('f-kind').value, label = KINDS.filter(function (k) { return k[0] === kind; })[0][1];
     var need = KINDS.filter(function (k) { return k[0] === kind; })[0][2];
-    var body = { kind: kind, severity: 0.4, hours: 12, when: 'now' };
+    var hours = KINDS.filter(function (k) { return k[0] === kind; })[0][3];
+    var body = { kind: kind, severity: 0.4, hours: hours, when: 'now' };
     need.forEach(function (p) { body[p] = $('f-' + p).value; });          // only the settings this fault uses
     act(body, label + ' injected');
   };
