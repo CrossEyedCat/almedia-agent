@@ -227,6 +227,11 @@ class Investigator:
         return {"metric": metric, "observed": obs, "expected": exp, "hours": hours,
                 "score": float(score[0]), "z": float(z[0])}
 
+    def look(self, metric: str, segment: dict, start, end, skip=()) -> dict | None:
+        """One targeted look at a metric in a place: a count against earlier weeks, a rate against its baseline."""
+        return self.volume(metric, segment, start, end, skip) if self.is_count(metric) else \
+            self.monitor.window(metric, segment, start, end, skip)
+
     def chain(self, moved) -> tuple[str, list[str]] | None:
         """The count of the outcome tree that the moved factors feed, with every factor it is made of and
         its price: orders (sessions x the funnel rates) and the order value for a funnel rate, ad clicks
@@ -237,7 +242,7 @@ class Investigator:
         specs, tree = self.graph.specs, tree_metrics(self.graph, outcomes[0])
         counts = [(m, leaves(self.graph, m)) for m in tree
                   if specs[m].unit == "count" and specs[m].investigative_formula is not None]
-        fed = [c for c in counts if any(x in c[1] for x in moved)] or counts
+        fed = [c for c in counts if c[0] in moved] or [c for c in counts if any(x in c[1] for x in moved)] or counts
         if not fed:
             return None
         node, factors = max(fed, key=lambda c: len(c[1]))
@@ -257,8 +262,7 @@ class Investigator:
         node, factors = found
         rows = []
         for m in factors:
-            w = self.volume(m, segment, start, end, skip) if self.is_count(m) else \
-                self.monitor.window(m, segment, start, end, skip)
+            w = self.look(m, segment, start, end, skip)
             if w is None or not w["expected"]:
                 rows.append({"metric": m, "state": "no baseline"})
                 continue
@@ -341,6 +345,11 @@ class Investigator:
         expected = {}
         place = tuple(sorted(segment.items()))
         for m in atoms:
+            if m in moved and self.is_count(m):
+                # a volume (sessions): the same hours of earlier weeks, scaled to the hours summed here
+                v = self.volume(m, segment, start, end, skip)
+                expected[m] = observed[m] * v["expected"] / v["observed"] if v is not None and v["observed"] > 0 else observed[m]
+                continue
             rate = frozen.get((m, place)) if frozen is not None else None
             if rate is None:
                 rate = self.monitor.expected_rate(m, segment)
@@ -426,7 +435,8 @@ class Investigator:
             if any(d in place_scope and place_scope[d] != v for d, v in scope.items()):
                 relation, fit = "conflict", 0.0
                 text = f"scope {seg_text(scope)} does not include {where}"
-                w = mon.window(primary.metric, scope, inc.onset, end, skip) if mon.has_series(primary.metric, scope) else None
+                w = self.look(primary.metric, scope, inc.onset, end, skip) \
+                    if self.is_count(primary.metric) or mon.has_series(primary.metric, scope) else None
                 if w is not None:
                     state = "normal" if w["score"] < NORMAL_MAX_SURPRISE else "moved too"
                     text += f"; {primary.metric} inside its scope is {num(w['observed'])} against {num(w['expected'])} ({state})"
@@ -452,7 +462,7 @@ class Investigator:
                 evidence.append(f"released {when(ts)}, " + ("the hour the change began" if lag == 0 else
                                                            f"{abs(lag)} h {'before' if lag > 0 else 'after'} the estimated onset"))
             elif lag > RELEASE_BEFORE_HOURS:
-                lean = mon.window(primary.metric, segment, ts, inc.onset, skip)
+                lean = self.look(primary.metric, segment, ts, inc.onset, skip)
                 leans = lean is not None and lean["score"] >= FOLLOW_MIN_SURPRISE and (lean["observed"] < lean["expected"]) == falling
                 timing = 0.8 if leans else 0.5 if lean is None else 0.1
                 evidence.append(f"released {when(ts)}, {lag} h before the estimated onset; " + (
@@ -484,18 +494,24 @@ class Investigator:
         graph, mon = self.graph, self.monitor
         alerts = sorted(inc.metrics.values(), key=lambda a: -a.score)
         end = inc.last_seen + HOUR
+        volume_sources = {s for m in inc.metrics if self.is_count(m) for s in graph.sources(m)}
         held = sorted(h for h, ms in tick.held.items() if set(ms) & set(inc.metrics))
+        held = sorted(set(held) | {h for h, srcs in tick.late.items() if set(srcs) & volume_sources})
         trail, uncertain = [], []
 
         # 1. what moved: causes before symptoms
         symptom_of = self.symptoms(alerts)
         primary = next((a for a in alerts if a.metric not in symptom_of), alerts[0])
         direction = "fell" if primary.observed < primary.expected else "rose"
+        is_volume = primary.kind == "volume"
+        per = " per hour" if is_volume else ""
+        counts = (f"the same hours of earlier weeks" if is_volume else
+                  f"{num(primary.numerator)} of {num(primary.denominator)}" if primary.kind == "proportion" else
+                  f"{num(primary.numerator)} / {num(primary.denominator)}")
         trail.append({
             "action": "watch", "target": primary.metric,
-            "result": f"{num(primary.observed)} against an expected {num(primary.expected)} in {seg_text(primary.segment)} "
-                      f"({num(primary.numerator)} of {num(primary.denominator)} in the newest "
-                      f"{min(primary.hours, 3)} bad hour(s); surprise 10^-{primary.score:.0f}, z {primary.z:+.1f})"})
+            "result": f"{num(primary.observed)}{per} against an expected {num(primary.expected)}{per} in {seg_text(primary.segment)} "
+                      f"({counts}; newest {min(primary.hours, 3)} bad hour(s); surprise 10^-{primary.score:.0f}, z {primary.z:+.1f})"})
         diluted = sorted({seg_text(a.segment) for a in tick.alerts
                           if a.metric == primary.metric and a.segment != primary.segment
                           and compatible(a.segment, primary.segment)})
@@ -535,6 +551,9 @@ class Investigator:
                                  "another change may be running there, or the place is wider than reported.")
             elif not choice.clear:
                 uncertain.append(f"Place: {seg_text(choice.rival.segment)} explains the counts almost as well as {where}.")
+        elif is_volume:
+            trail.append({"action": "drill", "target": primary.metric, "result": "a volume is placed by the monitor's cut "
+                          f"({seg_text(inc.segment)}); the finest cells are scanned for rates only"})
         else:
             trail.append({"action": "drill", "target": primary.metric, "result": "no cell data for this window; the monitor's series is reported"})
 
@@ -557,6 +576,13 @@ class Investigator:
         # top-down, as the brief walks it: every factor of the chain the moved rates feed, traffic first
         checked = self.check(list(inc.metrics) + [f["metric"] for f in followed if f["shown"]], segment, since, end, held)
         check_line, check_sentence = self.check_text(checked) if checked is not None else ("", "")
+        chain_moved = [r for r in (checked["rows"] if checked is not None else []) if r["state"] == "moved"]
+        if is_volume:
+            # a count is a product of factors: what it cost is what its moved factors cost (traffic when sessions
+            # fell and the rates did not), so they enter the decomposition like followed rates
+            followed = followed + [{"metric": r["metric"], "expected": r["expected"], "observed": r["observed"],
+                                    "z": r["z"], "via": primary.metric, "sign": 0, "shown": True, "note": ""}
+                                   for r in chain_moved if r["metric"] not in inc.metrics]
 
         body = {
             "id": inc.id, "status": inc.status,
@@ -652,13 +678,29 @@ class Investigator:
                          for f in followed if f["via"] == primary.metric and f["sign"] and f["shown"]]
             if confirmed:
                 inc.confirmed = confirmed   # once confirmed it stays so while the incident is open: a later
-            hypotheses.append({               # tick with a thinner window must not take the label back
-                "cause": f"{primary.metric} {direction} in {where} without a matching release"
-                         + ("" if covering else " or planned event"),
-                "kind": "metric", "status": "supported" if inc.confirmed else "plausible",
-                "score": 0.7 if inc.confirmed else 0.4,
-                "evidence": [f"{num(primary.observed)} against {num(primary.expected)} expected{seen_in}, z {primary.z:+.1f}"]
-                + inc.confirmed})
+            if is_volume and chain_moved:   # tick with a thinner window must not take the label back
+                # a count: the moved factor of its chain is what changed (traffic when sessions moved and the rates did not)
+                first = chain_moved[0]
+                factor = "traffic" if self.label(first["metric"]) != first["metric"] else first["metric"]
+                rates_normal = [r["metric"] for r in checked["rows"] if r["state"] == "normal" and not self.is_count(r["metric"])]
+                hypotheses.append({
+                    "cause": f"{factor} {'fell' if first['effect'] < 0 else 'rose'} in {where}"
+                             + ("" if factor == first["metric"] else f" ({first['metric']} {100 * first['effect']:+.0f} %)")
+                             + ("; every rate of the chain stayed normal" if len(chain_moved) == 1 and rates_normal else ""),
+                    "kind": "metric", "status": "plausible", "score": 0.4,
+                    "evidence": [f"{primary.metric} {num(primary.observed)} per hour against {num(primary.expected)} "
+                                 f"(the same hours of earlier weeks), z {primary.z:+.1f}",
+                                 f"of the factors of {checked['node']}, only "
+                                 + ", ".join(f"{r['metric']} ({100 * r['effect']:+.0f} %)" for r in chain_moved) + " moved",
+                                 "no release, planned event or late source fits"]})
+            else:
+                hypotheses.append({
+                    "cause": f"{primary.metric} {direction} in {where} without a matching release"
+                             + ("" if covering else " or planned event"),
+                    "kind": "metric", "status": "supported" if inc.confirmed else "plausible",
+                    "score": 0.7 if inc.confirmed else 0.4,
+                    "evidence": [f"{num(primary.observed)} against {num(primary.expected)} expected{seen_in}, z {primary.z:+.1f}"]
+                    + inc.confirmed})
 
         for e in covering:
             hypotheses.append({
@@ -718,14 +760,28 @@ class Investigator:
                                  "hours of earlier weeks); the effect above counts only the moved rates.")
             elif r["state"] == "no baseline":
                 uncertain.append(f"{r['metric']} has too little history here to say whether it moved.")
+        traffic_moved = [r for r in chain_moved if self.is_count(r["metric"]) and self.label(r["metric"]) != r["metric"]]
+        if is_volume and lead["status"] != "supported" and traffic_moved:
+            uncertain.append(
+                "What removed the traffic is not in the data: a tracking loss, an app store problem or an outage "
+                "would all look like this." if traffic_moved[0]["effect"] < 0 else
+                "What brought the traffic is not in the data: a campaign missing from the calendar, bots or "
+                "double-counted tracking would all look like this.")
 
         body["hypotheses"] = hypotheses
         body["trail"] = trail
         body["uncertain"] = uncertain
+        if lead["status"] == "supported":
+            verdict_text = f"Most likely cause: {lead['cause']}."
+        elif is_volume and traffic_moved:
+            verdict_text = (f"No cause is confirmed: traffic {'fell' if traffic_moved[0]['effect'] < 0 else 'rose'} in {where}; "
+                            "no release, event or late source fits.")
+        else:
+            verdict_text = "No cause is confirmed yet."
         body["report"] = (
-            f"{primary.metric} {'fell' if obs < exp else 'rose'} to {num(obs)} from an expected {num(exp)} in "
+            f"{primary.metric} {'fell' if obs < exp else 'rose'} to {num(obs)}{per} from an expected {num(exp)}{per} in "
             f"{where}, starting {when(inc.onset)}.{loss}{check_sentence} "
-            + (f"Most likely cause: {lead['cause']}." if lead["status"] == "supported" else "No cause is confirmed yet.")
+            + verdict_text
             + (f" {sum(h['status'] == 'rejected' for h in hypotheses)} other explanation(s) were tested and rejected."
                if any(h["status"] == "rejected" for h in hypotheses) else ""))
         return body
