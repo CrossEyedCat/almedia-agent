@@ -62,7 +62,8 @@ button:disabled { opacity: .4; cursor: default; }
 button.primary { background: var(--iris); border-color: var(--iris); color: var(--on-iris); }
 button.primary:hover { background: var(--iris-ink); border-color: var(--iris-ink); }
 
-.app { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100vh; }
+/* one column that never grows past the window: a long header row (the example badge) scrolls the chips instead */
+.app { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; height: 100vh; }
 .hdr { grid-row: 1; } .stage { grid-row: 2; } .dock { grid-row: 3; }
 
 /* ------------------------------------------------------------------ header */
@@ -106,10 +107,10 @@ button.primary:hover { background: var(--iris-ink); border-color: var(--iris-ink
 .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid transparent; background: transparent; color: var(--muted); font-weight: 600; white-space: nowrap; }
 .chip:hover { color: var(--ink); background: var(--paper-2); border-color: var(--line); }
 .chip.on, .chip.on:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-.chip .n { font: 700 11px/16px var(--mono); min-width: 18px; text-align: center; padding: 0 5px; border-radius: 999px; background: var(--hot); color: var(--on-hot); }
-#exbadge { margin-left: auto; flex: none; }
+.chip .n { font: 700 11px/16px var(--mono); min-width: 18px; text-align: center; padding: 0 5px; border-radius: 999px; background: var(--st, var(--hot)); color: var(--on-st, var(--on-hot)); }
+#exbadge { margin-left: auto; flex: none; max-width: 45%; display: flex; }
 #exbadge:empty { display: none; }
-.example { font-size: 12px; font-weight: 600; color: var(--amber); background: var(--amber-bg); border-radius: 999px; padding: 3px 12px; white-space: nowrap; }
+.example { font-size: 12px; font-weight: 600; color: var(--amber); background: var(--amber-bg); border-radius: 999px; padding: 3px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
 /* ------------------------------------------------------------------ stage */
 .stage { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
@@ -118,6 +119,8 @@ button.primary:hover { background: var(--iris-ink); border-color: var(--iris-ink
 .canvas.panning { cursor: grabbing; }
 svg#g { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 svg text { font-family: var(--mono); }
+/* strokes keep their width on screen at any zoom, so the lit path stays as strong on a projector at 60% as at 100% */
+.edge, .node .nb, .tag rect, .pin circle, .sign circle, .ctx-flag rect { vector-effect: non-scaling-stroke; }
 .cv-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
 .cv-title { position: absolute; left: 16px; top: 14px; display: flex; align-items: baseline; gap: 12px; pointer-events: none; }
 .cv-name { font: 600 13px var(--ui); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; box-shadow: var(--shadow); }
@@ -128,11 +131,12 @@ svg text { font-family: var(--mono); }
 .edge { fill: none; stroke: var(--edge); stroke-width: 1.4; transition: opacity .2s; }
 .edge.may { stroke: var(--muted); stroke-dasharray: 5 4; stroke-width: 1.3; }
 .sign circle { fill: var(--paper); stroke: var(--muted); stroke-width: 1.3; }
-.sign text { fill: var(--ink); font: 700 14px var(--mono); text-anchor: middle; }
+.sign text { fill: var(--ink); font: 700 var(--fs-sign, 14px) var(--mono); text-anchor: middle; }
 .node { cursor: pointer; transition: opacity .2s; }
 .node:focus { outline: none; }
 .node .nb { fill: var(--paper); stroke: var(--line-2); stroke-width: 1.2; }
-.node text { fill: var(--ink); font-size: 13px; font-weight: 500; }
+/* metric names on the canvas use the UI face, not mono: about a fifth narrower, so the path frames larger (projector) */
+.node text { fill: var(--ink); font: 600 var(--fs, 13px) var(--ui); letter-spacing: 0; }
 .node .hdot { fill: var(--line-2); }
 .node.h-open .hdot { fill: var(--hot); } .node.h-ongoing .hdot { fill: var(--amber-fill); } .node.h-resolved .hdot { fill: var(--ok); }
 .node.h-open .nb { stroke: var(--hot); } .node.h-ongoing .nb { stroke: var(--amber-fill); } .node.h-resolved .nb { stroke: var(--ok); }
@@ -145,7 +149,7 @@ svg text { font-family: var(--mono); }
 .node:hover .nb { stroke: var(--iris); }
 #g .node.picked .nb, #g .node:focus-visible .nb { stroke: var(--iris); stroke-width: 2.6; }
 #g .node.picked { opacity: 1; }
-.cluster-label { fill: var(--muted); font: 600 11px var(--ui); letter-spacing: .08em; text-transform: uppercase; }
+.cluster-label { fill: var(--muted); font: 600 var(--fs-cl, 11px) var(--ui); letter-spacing: .08em; text-transform: uppercase; }
 /* an incident selected: its path takes the status colour, the rest steps back */
 .dim .node { opacity: .32; } .dim .edge { opacity: .3; }
 .dim .node.on, .dim .node.held, .dim .node.seen, .dim .node:focus-visible { opacity: 1; }
@@ -161,7 +165,7 @@ svg text { font-family: var(--mono); }
 .trace-line { fill: none; stroke: var(--st); stroke-width: 4; stroke-linecap: round; animation: draw .7s cubic-bezier(.3, .7, .3, 1) both; }
 @keyframes draw { to { stroke-dashoffset: 0; } }
 .tag rect { stroke-width: 1.2; }
-.tag text { font: 700 12px var(--mono); text-anchor: middle; }
+.tag text { font: 700 var(--fs-tag, 12px) var(--mono); text-anchor: middle; }
 .tag.bad rect { fill: var(--hot); stroke: var(--hot); } .tag.bad text { fill: var(--on-hot); }
 .tag.good rect { fill: var(--ok); stroke: var(--ok); } .tag.good text { fill: var(--on-ok); }
 .tag.flat rect { fill: var(--ink); stroke: var(--ink); } .tag.flat text { fill: var(--paper); }
@@ -175,10 +179,10 @@ svg text { font-family: var(--mono); }
 .replay-on .edge, .replay-on .edge.on { opacity: .22; }
 .replay-on .edge.rp-cur { opacity: 1; stroke: var(--iris); stroke-width: 3; }
 .pin circle { fill: var(--paper); stroke: var(--iris); stroke-width: 1.6; }
-.pin text { fill: var(--iris-ink); font: 700 11px var(--mono); text-anchor: middle; }
+.pin text { fill: var(--iris-ink); font: 700 var(--fs-pin, 11px) var(--mono); text-anchor: middle; }
 .pin.cur circle { fill: var(--iris); } .pin.cur text { fill: var(--on-iris); }
 .ctx-flag rect { fill: var(--iris-bg); stroke: var(--iris); stroke-width: 1; }
-.ctx-flag text { fill: var(--iris-ink); font: 600 11px var(--mono); }
+.ctx-flag text { fill: var(--iris-ink); font: 600 var(--fs-pin, 11px) var(--mono); }
 #g .node.rp-cur .nb { animation: ring 1.6s ease-in-out infinite; }
 @keyframes ring { 50% { stroke-width: 5; } }
 
@@ -229,7 +233,7 @@ svg text { font-family: var(--mono); }
 @keyframes drop { from { opacity: 0; transform: translate(-50%, -8px); } }
 
 /* the replay caption */
-.replay { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: min(760px, calc(100% - 32px)); z-index: 8; background: var(--paper); border: 1.5px solid var(--iris); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 12px 14px 10px 16px; display: grid; gap: 8px; animation: drop .25s ease-out; }
+.replay { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: min(760px, calc(100% - 32px)); z-index: 8; background: var(--paper); border: 1.5px solid var(--iris); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 10px 14px 8px 16px; display: grid; gap: 6px; animation: drop .25s ease-out; }
 .rp-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .rp-count { font: 600 12px var(--mono); color: var(--muted); white-space: nowrap; }
 .rp-verb { font: 700 12px var(--ui); letter-spacing: .04em; color: var(--on-iris); background: var(--iris); border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
@@ -247,8 +251,12 @@ svg text { font-family: var(--mono); }
 /* ------------------------------------------------------------------ bench */
 .bench { position: absolute; top: 0; left: 12px; right: 12px; z-index: 18; background: var(--paper); border: 1.5px dashed var(--iris); border-top: 0; border-radius: 0 0 14px 14px; box-shadow: var(--shadow-lg); padding: 10px 16px 12px; display: grid; gap: 10px; animation: drop2 .22s ease-out; }
 @keyframes drop2 { from { opacity: 0; transform: translateY(-10px); } }
+/* the bench drops over the canvas only: the report's head (metric, status, pin) stays in view while it is open */
+.stage.pinned.sheet-open .bench { right: calc(var(--sheet-w) + 12px); }
+.stage.sheet-open:not(.pinned) .bench { right: calc(var(--sheet-w) + 24px); }
 .bench-head { display: flex; align-items: center; gap: 10px; font-size: 13px; min-width: 0; }
 .bench-head .demo-tag { color: var(--iris-ink); }
+.bench-head b { flex: none; white-space: nowrap; }
 .bench-head .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .bench-close { margin-left: auto; height: 30px; }
 .controls { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: flex-end; }
@@ -385,8 +393,9 @@ li.cur .step-result { color: var(--ink); -webkit-line-clamp: unset; }
 .card-eur small { font-size: 11px; font-weight: 600; letter-spacing: 0; color: var(--muted); }
 .card-place { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-foot { display: flex; gap: 8px; align-items: center; font-size: 11px; min-width: 0; overflow: hidden; }
-.card-id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.again { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--iris-ink); border: 1px solid var(--iris-line); border-radius: 999px; padding: 0 7px; white-space: nowrap; }
+.card-id { flex: none; white-space: nowrap; }
+.card-foot .innocent { flex: 0 1 auto; }
+.again { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--iris-ink); border: 1px solid var(--iris-line); border-radius: 999px; padding: 0 7px; white-space: nowrap; }
 .card-inc.arrive { animation: arrive .7s cubic-bezier(.2, .8, .2, 1); }
 @keyframes arrive { 0% { transform: translateX(-24px); opacity: 0; box-shadow: 0 0 0 0 var(--st); } 60% { box-shadow: 0 0 0 6px transparent; } }
 
@@ -410,6 +419,7 @@ li.cur .step-result { color: var(--ink); -webkit-line-clamp: unset; }
   .card-inc { flex-basis: 232px; }
   .mini { width: 150px; height: 90px; }
   .legend-body { flex-wrap: wrap; max-width: calc(100vw - 260px); }
+  .head-id { font-size: 16px; }      /* the 360 px floating report: a 20-letter metric name still fits beside Pin and close */
 }
 @media (max-width: 1060px) {
   .brand h1 { font-size: 15px; }

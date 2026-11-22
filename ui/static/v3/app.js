@@ -65,7 +65,9 @@
   function stOf(i) { var s = status(i); return 'st-' + (KNOWN.indexOf(s) >= 0 ? s : 'other'); }
   function touches(i, d) { return d === 'all' || incidentNodes(i).some(function (m) { return domainOf(m) === d; }); }
   function inScope() { return incidents.filter(function (i) { return touches(i, dom); }); }
-  function liveCount(d) { return incidents.filter(function (i) { return LIVE.indexOf(status(i)) >= 0 && touches(i, d); }).length; }
+  function liveOf(d) { return incidents.filter(function (i) { return LIVE.indexOf(status(i)) >= 0 && touches(i, d); }); }
+  // the chip's count takes the colour of the most urgent live status it counts: red only when one of them is open
+  function liveTone(l) { return l.some(function (i) { return status(i) === 'open'; }) ? 'open' : 'ongoing'; }
   function selected() { return incidents.filter(function (i) { return i.id === selInc; })[0] || null; }
 
   function renderChips() {
@@ -73,10 +75,10 @@
     var l = [{ id: 'all', label: 'All' }].concat(domains);
     if (graph && list(graph.nodes).some(function (n) { return n.kind === 'metric' && !domOf[n.id]; })) l.push({ id: 'other', label: 'Other' });
     l.forEach(function (d) {
-      var n = liveCount(d.id);
-      var b = el('button', 'chip' + (d.id === dom ? ' on' : ''), [d.label].concat(n ? [el('span', 'n', [String(n)])] : []));
+      var live = liveOf(d.id), n = live.length, tone = liveTone(live);
+      var b = el('button', 'chip' + (d.id === dom ? ' on' : ''), [d.label].concat(n ? [el('span', 'n st-' + tone, [String(n)])] : []));
       b.setAttribute('aria-pressed', d.id === dom ? 'true' : 'false');
-      if (n) b.title = n + ' live incident' + (n > 1 ? 's' : '') + ' touch' + (n > 1 ? '' : 'es') + ' ' + d.label;
+      if (n) b.title = n + ' live incident' + (n > 1 ? 's' : '') + (tone === 'open' ? ', at least one open,' : ', ongoing,') + ' touch' + (n > 1 ? '' : 'es') + ' ' + d.label;
       b.onclick = function () {
         if (dom === d.id) return;
         dom = d.id; selNode = null; mode = 'incident'; stopReplay();
@@ -97,8 +99,38 @@
   }
 
   // ------------------------------------------------------------- graph layout
-  // Boxes hold metric names in a 13px mono face (0.6 em per character); each column is as wide as its longest name.
-  var CHAR = 7.8, NODE_H = 32, DY = 46, GAP = 46, PAD = 28;
+  // Boxes hold metric names in the UI face at F px (world units); each column is as wide as its longest measured name.
+  // F grows when the canvas is narrow (1280 px with the report pinned, the projector): the label scale S is the
+  // smallest at which the widest formula tree, framed in the room on the canvas, shows its names at >= 12.5 px on screen.
+  var S = 1, F = 13, NODE_H = 32, DY = 46, TX = 22, PADX = 34, GAP = 40, PAD = 28, FPAD = 16, TEXT_MAX = 18;
+  function setScale(s) {
+    S = s; F = Math.round(13 * s * 10) / 10;
+    NODE_H = Math.round(F * 2.1); DY = NODE_H + Math.round(12 * s); TX = Math.round(14 + 8 * s); PADX = TX + 12;
+  }
+  function treeRoots() { var r = list(graph && graph.trees).map(filterTree).filter(Boolean); return r.length ? r : [{ metric: 'x' }]; }
+  // the room on the canvas changed (window, report opened, closed, pinned): lay the graph out again if the scale must change
+  function rescale() {
+    if (!drawn || !graph || scaleFor(treeRoots(), room().w) === drawn.S) return false;
+    drawGraph(); applyStyles(); return true;
+  }
+  var meas = null, fonts = {};
+  function fontOf(v) { if (!fonts[v]) fonts[v] = getComputedStyle(document.documentElement).getPropertyValue(v).trim() || 'sans-serif'; return fonts[v]; }
+  function textW(s, px, weight, mono) {
+    if (!meas) { try { meas = document.createElement('canvas').getContext('2d'); } catch (e) { meas = null; } }
+    if (!meas) return str(s).length * px * 0.6;
+    meas.font = (weight || 650) + ' ' + px + 'px ' + fontOf(mono ? '--mono' : '--ui');
+    return meas.measureText(str(s)).width;
+  }
+  function scaleFor(roots, roomW) {
+    var keep = S, pick = 1.8;
+    for (var s = 1; s <= 1.8001; s += 0.1) {
+      setScale(Math.round(s * 10) / 10);
+      var w = columns(roots).w - 2 * PAD + 2 * FPAD;
+      if (F * Math.min(roomW / w, TEXT_MAX / F) >= 12.5) { pick = S; break; }
+    }
+    setScale(keep);
+    return pick;
+  }
   function filterTree(n) {
     if (dom === 'all') return n;
     var kids = list(n.children).map(filterTree).filter(Boolean);
@@ -106,10 +138,10 @@
     return null;
   }
   function columns(roots) {
-    var chars = [], x = [], hw = [], at = PAD;
-    var walk = function (n, d) { chars[d] = Math.max(chars[d] || 0, str(n.metric).length); list(n.children).forEach(function (c) { walk(c, d + 1); }); };
+    var tw = [], x = [], hw = [], at = PAD;
+    var walk = function (n, d) { tw[d] = Math.max(tw[d] || 0, textW(n.metric, F)); list(n.children).forEach(function (c) { walk(c, d + 1); }); };
     roots.forEach(function (r) { walk(r, 0); });
-    chars.forEach(function (c, d) { var w = Math.max(100, Math.ceil(c * CHAR) + 40); hw[d] = w / 2; x[d] = at + w / 2; at += w + GAP; });
+    tw.forEach(function (c, d) { var w = Math.max(90, Math.ceil(c) + PADX); hw[d] = w / 2; x[d] = at + w / 2; at += w + GAP; });
     return { x: x, hw: hw, w: at - GAP + PAD };
   }
   function layout(root, y0, cols) {
@@ -142,9 +174,9 @@
   function drawNode(parent, metric, x, y, hw, extra) {
     var outcome = !!obj(meta[metric]).outcome;
     var gr = svg('g', { 'class': 'node' + (outcome ? ' root' : '') + (extra || ''), tabindex: 0, role: 'button', 'aria-label': 'Metric ' + str(metric), transform: 'translate(' + (x - hw) + ',' + (y - NODE_H / 2) + ')' }, parent);
-    svg('rect', { 'class': 'nb', width: 2 * hw, height: NODE_H, rx: 9 }, gr);
-    svg('circle', { 'class': 'hdot', cx: 15, cy: NODE_H / 2, r: 4 }, gr);
-    var t = svg('text', { x: 27, y: NODE_H / 2, dy: '0.35em' }, gr); t.textContent = str(metric);
+    svg('rect', { 'class': 'nb', width: 2 * hw, height: NODE_H, rx: Math.round(9 * S) }, gr);
+    svg('circle', { 'class': 'hdot', cx: TX / 2 + 1, cy: NODE_H / 2, r: 3.5 * S }, gr);
+    var t = svg('text', { x: TX, y: NODE_H / 2, dy: '0.35em' }, gr); t.textContent = str(metric);
     var pick = function () { pickNode(metric); };
     gr.addEventListener('click', function (e) { if (!dragMoved) pick(); e.stopPropagation(); });
     gr.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
@@ -156,10 +188,13 @@
     E.textContent = ''; N.textContent = ''; $('l-trace').textContent = ''; $('l-tags').textContent = ''; $('l-pins').textContent = '';
     drawn = { edges: [], nodes: [], at: {} }; traceKey = '';
     var roots = list(graph && graph.trees).map(filterTree).filter(Boolean);
+    setScale(scaleFor(treeRoots(), room().w));
+    var gs = $('g').style;
+    [['--fs', F], ['--fs-tag', 0.9 * F],['--fs-pin', 11 * S], ['--fs-sign', 14 * S], ['--fs-cl', 11 * S]].forEach(function (p) { gs.setProperty(p[0], p[1].toFixed(1) + 'px'); });
     var cols = columns(roots.length ? roots : [{ metric: 'x' }]), all = { nodes: [], edges: [] }, y = PAD, shown = {}, pos = {};
     roots.forEach(function (r) {
       var L = layout(r, y, cols);
-      all.nodes = all.nodes.concat(L.nodes); all.edges = all.edges.concat(L.edges); y += L.h + 24;
+      all.nodes = all.nodes.concat(L.nodes); all.edges = all.edges.concat(L.edges); y += L.h + Math.round(24 * S);
     });
     all.edges.forEach(function (pair) {
       var a = pair[0], b = pair[1], x1 = a.x + a.hw, x2 = b.x - b.hw, c = (x2 - x1) / 2;
@@ -176,19 +211,19 @@
     // metrics with no place on a formula tree: a cluster under the trees, part of the same canvas
     var rest = offTree(shown);
     if (rest.length) {
-      if (roots.length) y += 24;
+      if (roots.length) y += Math.round(24 * S);
       var lab = svg('text', { 'class': 'cluster-label', x: PAD, y: y }, N);
       lab.textContent = roots.length ? (dom === 'all' ? 'Not on a formula tree' : 'Also in this domain, not on a formula tree') : 'Metrics in this domain (no formula tree)';
-      y += 18;
-      var cw = Math.max(150, Math.ceil(Math.max.apply(null, rest.map(function (m) { return m.length; })) * CHAR) + 40);
+      y += Math.round(18 * S);
+      var cw = Math.max(150, Math.ceil(Math.max.apply(null, rest.map(function (m) { return textW(m, F); }))) + PADX);
       var per = Math.max(1, Math.floor((Math.max(w, 900) - 2 * PAD + 16) / (cw + 16)));
       rest.forEach(function (m, k) {
-        var cx = PAD + (k % per) * (cw + 16) + cw / 2, cy = y + Math.floor(k / per) * (NODE_H + 14) + NODE_H / 2;
+        var cx = PAD + (k % per) * (cw + 16) + cw / 2, cy = y + Math.floor(k / per) * DY + NODE_H / 2;
         var gr = drawNode(N, m, cx, cy, cw / 2, ' off');
         if (!pos[m]) pos[m] = { x: cx, y: cy, hw: cw / 2 };
         drawn.nodes.push({ el: gr, metric: m, x: cx, y: cy, hw: cw / 2, off: true });
       });
-      y += Math.ceil(rest.length / per) * (NODE_H + 14);
+      y += Math.ceil(rest.length / per) * DY;
       w = Math.max(w, PAD * 2 + per * (cw + 16) - 16);
     }
     drawn.nodes.forEach(function (n) { if (!drawn.at[n.metric] || (drawn.at[n.metric].repeated && !n.repeated)) drawn.at[n.metric] = n; });
@@ -198,11 +233,12 @@
       var my = (a.y + b.y) / 2;
       var p = svg('path', { d: 'M' + sx + ',' + a.y + ' C' + bend + ',' + a.y + ' ' + bend + ',' + b.y + ' ' + ex + ',' + b.y, 'class': 'edge may' }, E);
       var sg = svg('g', { 'class': 'sign', transform: 'translate(' + (0.125 * sx + 0.75 * bend + 0.125 * ex) + ',' + my + ')' }, E);
-      svg('circle', { r: 10 }, sg); var s = svg('text', { dy: '0.35em' }, sg); s.textContent = e.sign > 0 ? '+' : e.sign < 0 ? '\u2212' : '?';
+      svg('circle', { r: 10 * S }, sg); var s = svg('text', { dy: '0.35em' }, sg); s.textContent = e.sign > 0 ? '+' : e.sign < 0 ? '\u2212' : '?';
       svg('title', {}, sg).textContent = e.source + ' may affect ' + e.target + (e.note ? ': ' + e.note : '');
       drawn.edges.push({ el: p, from: e.source, to: e.target, may: true });
     });
-    drawn.world = { w: Math.max(w, 200), h: Math.max(y + PAD - 24, 160) };
+    drawn.world = { w: Math.max(w, 200), h: Math.max(y + PAD - Math.round(24 * S), 160) };
+    drawn.S = S;
     $('cv-empty').hidden = !!drawn.nodes.length;
     if (!drawn.nodes.length) $('cv-empty').textContent = 'No metric in this domain.';
     drawMini();
@@ -243,17 +279,18 @@
   // the room on the canvas that nothing covers: the replay caption at the top, the tools at the bottom
   function room() {
     var s = size(), top = 56, bottom = 24 + 40 + ($('mini').hasAttribute('hidden') || replay ? 0 : 108);
-    if (!$('replay').hidden) top = $('replay').offsetHeight + 28;
+    if (!$('replay').hidden) top = $('replay').offsetHeight + 18;
     // an unpinned report floats over the right of the canvas: frame the graph in what it leaves
     var right = !pinned && !$('sheet').hidden ? $('sheet').offsetWidth + 12 : 0;
-    return { x: 24, y: top, w: Math.max(120, s.w - 48 - right), h: Math.max(120, s.h - top - bottom) };
+    return { x: 16, y: top, w: Math.max(120, s.w - 32 - right), h: Math.max(120, s.h - top - bottom) };
   }
   // auto: how the view was last framed by the page itself (the incident's path, the trees, everything). While the viewer
   // has not moved the view since, a change of the canvas size (window, report pinned or closed) frames it again
   var auto = null;
   function frame(b, maxK, instant) {
     auto = null;
-    var r = room(), k = Math.min(r.w / Math.max(1, b.w), r.h / Math.max(1, b.h), maxK);
+    // never frame names larger than TEXT_MAX px on screen: a single metric would otherwise fill the canvas
+    var r = room(), k = Math.min(r.w / Math.max(1, b.w), r.h / Math.max(1, b.h), maxK, TEXT_MAX / F);
     animateTo({ k: k, x: r.x + (r.w - b.w * k) / 2 - b.x * k, y: r.y + (r.h - b.h * k) / 2 - b.y * k }, instant);
   }
   function boxOf(metrics, pad) {
@@ -280,7 +317,7 @@
   function visible(metrics) {
     var b = boxOf(metrics, 8), r = room(); if (!b) return true;
     var x0 = b.x * view.k + view.x, y0 = b.y * view.k + view.y, x1 = (b.x + b.w) * view.k + view.x, y1 = (b.y + b.h) * view.k + view.y;
-    return x0 >= r.x && y0 >= r.y && x1 <= r.x + r.w && y1 <= r.y + r.h && view.k >= 0.6;
+    return x0 >= r.x && y0 >= r.y && x1 <= r.x + r.w && y1 <= r.y + r.h && view.k * F >= 11.5;
   }
   (function wire() {
     var c = $('canvas'), start = null;
@@ -317,7 +354,8 @@
     // the minimap: shown by default when the canvas is tall enough to spare it the room
     var mapPref = store('v3-map');
     var showMap = function (on) { if (on) $('mini').removeAttribute('hidden'); else $('mini').setAttribute('hidden', ''); $('z-map').setAttribute('aria-pressed', on ? 'true' : 'false'); miniView(); };
-    showMap(mapPref == null ? size().h >= 620 : mapPref === '1');
+    // decided from the window, not the canvas: at load the dock is still empty and the canvas looks taller than it will be
+    showMap(mapPref == null ? window.innerHeight >= 880 : mapPref === '1');
     $('z-map').onclick = function () { var on = $('mini').hasAttribute('hidden'); store('v3-map', on ? '1' : '0'); showMap(on); };
     var mini = $('mini'), miniDrag = false;
     var miniGo = function (e) {
@@ -438,10 +476,10 @@
     if (!inc) return;
     Object.keys(states).forEach(function (m) {
       var n = drawn.at[m], st = states[m]; if (!n) return;
-      var label = badgeText(st), w = Math.ceil(label.length * 7.3) + 14, H = 20;
+      var label = badgeText(st), w = Math.ceil(textW(label, 0.9 * F, 700, true) + 0.9 * F), H = Math.round(F * 1.45);
       var cls = st.held ? 'held' : (toneIn(inc, m, st.pct) || 'flat') + (st.pct > 0 ? ' up' : ' down');
-      var tg = svg('g', { 'class': 'tag ' + cls, transform: 'translate(' + (n.x + n.hw - w - 10) + ',' + (n.y + NODE_H / 2 - H / 2 + 1) + ')' }, L);
-      svg('rect', { width: w, height: H, rx: 9 }, tg);
+      var tg = svg('g', { 'class': 'tag ' + cls, transform: 'translate(' + (n.x + n.hw - w - 8) + ',' + (n.y + NODE_H / 2 - H / 2 + 1) + ')' }, L);
+      svg('rect', { width: w, height: H, rx: H / 2 - 1 }, tg);
       var t = svg('text', { x: w / 2, y: H / 2, dy: '0.35em' }, tg); t.textContent = label;
       svg('title', {}, tg).textContent = m + (st.obs != null ? ': ' + short(st.obs) + ' against ' + short(st.exp) + ' expected' : '') + (st.held ? ' (checked, normal)' : '');
     });
@@ -466,8 +504,9 @@
   }
   function flyToIncident(force, instant) {
     var inc = selected(); if (!inc || !drawn) return;
+    if (rescale()) force = true;      // a floating report opened over the canvas since the graph was drawn
     var on = Object.keys(litSet(inc)).concat(Object.keys(nodeStates(inc)));
-    var b = boxOf(on.filter(function (m) { return drawn.at[m]; }), 36);
+    var b = boxOf(on.filter(function (m) { return drawn.at[m]; }), FPAD);
     if (!b) return;
     if (!force && visible(on)) return;
     frame(b, 1.3, instant);
@@ -499,7 +538,9 @@
         if (eur != null) figs.push(el('span', 'card-eur chg ' + euroTone(i, eur), [(eur > 0 ? '+' : '') + short(eur), el('small', null, [' EUR'])]));
         var place = [el('span', null, [segText(i.segment)])];
         if (moved !== str(i.metric)) place.push(el('span', 'muted', [' \u00B7 ' + str(i.metric) + (num(ch.delta_pct) != null ? ' ' + pct(ch.delta_pct) : '')]));
-        var foot = [el('span', 'mono muted card-id', [str(i.id)]), el('span', 'card-time mono', [el('span', 'muted', [dayOf(i.first_seen) + ' ']), hourOf(i.first_seen)])];
+        // the id is never cut: when a tag (back again, innocent) shares the footer, the time drops its day (it is in the tooltip)
+        var tagged = !!i.recurrence_of || (quiet && !!obj(i.innocent).kind);
+        var foot = [el('span', 'mono muted card-id', [str(i.id)]), el('span', 'card-time mono', (tagged ? [] : [el('span', 'muted', [dayOf(i.first_seen) + ' '])]).concat([hourOf(i.first_seen)]))];
         if (i.recurrence_of) foot.unshift(el('span', 'again', ['back again']));
         if (quiet && obj(i.innocent).kind) foot.unshift(el('span', 'innocent', ['innocent: ' + str(obj(i.innocent).kind).replace(/_/g, ' ')]));
         var card = el('button', 'card-inc ' + stOf(i) + (quiet ? ' quiet' : '') + (i.id === selInc && mode === 'incident' ? ' sel' : ''), [
@@ -818,7 +859,15 @@
     renderDetail();
     var cur = $('detail').querySelector('.trail li.cur');
     if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest', behavior: still.matches ? 'auto' : 'smooth' });
-    if (s.nodes.length && !visible(s.nodes)) frame(boxOf(s.nodes, s.nodes.length > 2 ? 50 : 90), 1.25);
+    frameStep(s);
+    // the canvas may change size during the replay (window, headless capture): frame the step again if it no longer fits
+    auto = function () { if (replay) frameStep(replay.steps[replay.i], true); };
+  }
+  function frameStep(s, instant) {
+    if (!s.nodes.length || visible(s.nodes)) return;
+    var b = boxOf(s.nodes, s.nodes.length > 2 ? FPAD : 48);
+    if (s.ctx) b.w += Math.ceil(textW(s.target, 11 * S, 600, true) + 30 * S);      // the release / context flag hangs right of the box
+    var keep = auto; frame(b, 1.25, instant); auto = keep;
   }
   function paintReplay() {
     if (!replay || !drawn) return;
@@ -847,16 +896,16 @@
       var ns = at[m], show = ns.length > 4 ? ns.slice(0, 3).concat(['+' + (ns.length - 3)]) : ns;
       show.forEach(function (v, j) {
         var isCur = v === replay.i + 1;
-        var g = svg('g', { 'class': 'pin' + (isCur ? ' cur' : ''), transform: 'translate(' + (n.x - n.hw + 12 + j * 22) + ',' + (n.y - NODE_H / 2 - 2) + ')' }, P);
-        svg('circle', { r: 10 }, g); var t = svg('text', { dy: '0.35em' }, g); t.textContent = String(v);
+        var g = svg('g', { 'class': 'pin' + (isCur ? ' cur' : ''), transform: 'translate(' + (n.x - n.hw + 12 * S + j * 22 * S) + ',' + (n.y - NODE_H / 2 - 2) + ')' }, P);
+        svg('circle', { r: 10 * S }, g); var t = svg('text', { dy: '0.35em' }, g); t.textContent = String(v);
       });
     });
     if (s.ctx) {
       s.nodes.forEach(function (m) {
         var n = drawn.at[m]; if (!n) return;
-        var label = s.ctx === 'release' ? s.target.replace(/^release:/, 'release ') : s.ctx, w = Math.ceil(label.length * 6.6) + 18;
-        var g = svg('g', { 'class': 'ctx-flag', transform: 'translate(' + (n.x + n.hw + 12) + ',' + (n.y - 10) + ')' }, P);
-        svg('rect', { width: w, height: 20, rx: 4 }, g); var t = svg('text', { x: 9, y: 10, dy: '0.35em' }, g); t.textContent = label;
+        var label = s.ctx === 'release' ? s.target.replace(/^release:/, 'release ') : s.ctx, w = Math.ceil(textW(label, 11 * S, 600, true) + 18 * S), H = Math.round(20 * S);
+        var g = svg('g', { 'class': 'ctx-flag', transform: 'translate(' + (n.x + n.hw + 12) + ',' + (n.y - H / 2) + ')' }, P);
+        svg('rect', { width: w, height: H, rx: 4 }, g); var t = svg('text', { x: 9 * S, y: H / 2, dy: '0.35em' }, g); t.textContent = label;
       });
     }
   }
@@ -1095,6 +1144,15 @@
   window.addEventListener('resize', function () { miniView(); });
   if (window.ResizeObserver) new ResizeObserver(function () {
     var s = size();
+    // a narrower or wider canvas may need another label scale: lay the graph out again, then frame it as before
+    if (lastSize && Math.abs(s.w - lastSize.w) > 1) {
+      var a = auto;
+      if (rescale()) {
+        lastSize = s;
+        if (a) a(); else if (replay) goStep(replay.i); else if (mode === 'incident' && selected()) flyToIncident(true, true); else fitTrees();
+        return;
+      }
+    }
     if (lastSize && drawn && auto && (Math.abs(s.w - lastSize.w) > 1 || Math.abs(s.h - lastSize.h) > 1)) { lastSize = s; auto(); return; }
     if (lastSize && drawn) {
       // keep the middle of the view where it was when the canvas changes size (the report pinned or closed)
