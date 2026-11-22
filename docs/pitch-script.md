@@ -61,8 +61,8 @@ duplicate of an existing rate is refused, with the reason."
 
 **2:35 Does it work, and the close.** (Open `docs/results.md`.)
 "On ten new runs it had never seen it found all 120 faults, all in the right place, 116 with the cause confirmed, with no
-false alarm, and all 80 innocent changes stayed quiet. Eleven stress cases test what those runs do not; nine pass, and the
-two misses are listed. The data
+false alarm, and all 80 innocent changes stayed quiet. Eleven stress cases test what those runs do not; ten pass, and the
+miss is listed. The data
 is our own simulator, so this is an engineering check, not proof on real traffic. It watches the business, not the servers."
 
 ## What not to say
@@ -72,7 +72,8 @@ is our own simulator, so this is an engineering check, not proof on real traffic
   the 36), without constants, and only a ratio of two columns is watched.
 - "Every slice it can afford" means the seven cuts of README 3.4, not every combination: a fault in a combination no cut holds is
   found when it is large enough to show in a cut, then narrowed by the localization.
-- Changes under 10 % of a rate are not reported: a payment failure rate rising from 6 % to 14 % is missed (`docs/stress.md`).
+- Changes under 10 % of a rate are not reported, except for a share near 1, where it is enough that the failing share moves by
+  half of itself: failures rising from 6 % to 14 % are caught (`docs/stress.md`), smaller ones are not.
 - Do not say "100%" without the cause number (116 of 120 on the holdout runs; the four unconfirmed are stock-outs) and the
   caveat on the data.
 - No report on these runs supports two causes, but one can: a harmless release of the same system and place within two hours
@@ -93,7 +94,7 @@ is our own simulator, so this is an engineering check, not proof on real traffic
   `explained` within 6 s, late data `pending` at once; **Add refund_rate** answered within about 10 s while the clock ran
   (validation over 30 days of data), and the new `refunds` tree appeared in the graph.
 
-- Rehearsed again on 22 Nov, 08:10 CET, on the final code (`e220dfc`), fresh 28-day backfill, `--speed 2`, in the browser:
+- Rehearsed again on 22 Nov, 08:10 CET, on `e220dfc` (the final `b7b856c` adds two monitor and incident fixes that do not change these steps), fresh 28-day backfill, `--speed 2`, in the browser:
   payment failure DE x Android injected at 14:00 on the header clock: incident about 2 s after the click, the payments
   release supported; **End it (rollback)**: resolved 6 s later; **Promo (12 h)** FR: `explained` within 1.5 s, no alert;
   **Mix shift (innocent)** toward fashion: two `explained` records whose reason is the mix, no alert; **Add refund_rate**:
@@ -113,7 +114,7 @@ is our own simulator, so this is an engineering check, not proof on real traffic
 3. **The loop that runs by itself** (60 s): read, expect, detect, locate, explain, keep tracking; one fault is one incident, updated in place.
 4. **Demo** (60 s): a screenshot of the console with an incident and the lit path.
 5. **Results** (60 s): the table from `docs/results.md`; say the caveat on the same slide.
-6. **What failed and what next** (45 s): the misses listed on `docs/results.md` and `docs/stress.md` (changes under 10 %; a fault in two sibling places is named at the place that holds both); stock-outs stop at the stock-out rate because suppliers are not simulated; new metrics with constants; all data is simulated.
+6. **What failed and what next** (45 s): the misses listed on `docs/results.md` and `docs/stress.md` (a fault in two sibling places is named at the place that holds both; small changes in rates that are not near 1); stock-outs stop at the stock-out rate because suppliers are not simulated; new metrics with constants; all data is simulated.
 
 ## Recording the video (3:00 at most)
 

@@ -10,10 +10,10 @@ are as of 21 Nov and are not updated.
   real monitor results, wall clock, guardrails, console refresh, demo duration and notes, monitoring as built).
 - **End-to-end tests are on main** (`tests/test_end_to_end.py`, about a minute): real simulator with injected faults, the real monitor in
   replay, the incident files, the console's API. They found that the scorer swallowed a correct incident (fixed in #17).
-- `docs/results.md` (brain at `e220dfc`, twenty 49-day replays): on ten holdout seeds made after the last change (111 to 120)
+- `docs/results.md` (brain at `b7b856c`, twenty 49-day replays): on ten holdout seeds made after `e220dfc` (111 to 120)
   120/120 faults detected and localized, 116/120 right cause, no false alarm in 457 watched days, 80/80 innocent events silent.
   The ten seeds used while the brain was built give 120/120, 118/120 and no false alarm. The file keeps the two groups apart and
-  lists every miss. `docs/stress.md`: eleven targeted cases, nine pass, the two misses named.
+  lists every miss. `docs/stress.md`: eleven targeted cases, ten pass, the miss named.
 - Ten issues are still open (#2, #3, #5, #6, #8, #9, #10, #11, #13, #14). Most are fixed on main by the pull requests above; see the
   status comment on #14. Close an issue when you have checked it.
 - **The repository is still private.** Only the owner can change that, and it must be public before the submission (below).
