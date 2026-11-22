@@ -1244,7 +1244,7 @@
     var on = ns === 'on', off = /^off/.test(ns);
     pill.className = 'pill' + (on ? ' on' : '');
     pill.textContent = !st ? 'not reported' : on ? 'on' : off ? 'off' : ns || 'unknown';
-    $('set-narr-why').textContent = off ? ns.replace(/^off:?\s*/, '') : ns === 'not asked' ? 'not asked to' : '';
+    $('set-narr-why').textContent = off ? ns.replace(/^off:?\s*/, '') : ns === 'not asked' ? 'switched off below' : '';
     $('set-narr-model').textContent = str(n.model);
     var ks = $('set-key-state');
     ks.className = 'pill' + (e.key_set ? ' set' : ''); ks.textContent = e.key_set ? 'Set' : 'Not set';

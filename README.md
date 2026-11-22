@@ -524,6 +524,16 @@ For narration (3.7) put an API key with credit in `.env` (never commit it) and a
 ANTHROPIC_API_KEY=...
 ```
 
+**Settings in the console.** The gear button (or the key `,`, or `?settings=1`) opens a settings panel. It shows whether the
+monitor is running and what it runs with (newest data hour, series watched, thresholds in effect), switches the language
+model's "In brief" on or off, sets or removes the API key, sets the seconds per simulated hour, moves the four detection
+thresholds within safe ranges (with their defaults and a reset), and lists every path the stack uses. Changes go to
+`settings.json` beside the market database (`brain/settings.py`); the live monitor and the accelerated clock read it on
+their next tick, with no restart, and the monitor writes what it applied to `brain_status.json` in the same folder. The key
+is written to `.env` of the checkout the console runs from, only from this computer (127.0.0.1), and is never sent back to
+the page or written to the status file; the monitor reads `.env` again when it changes. The replay and the scoring never
+read `settings.json`.
+
 ## 10. Third-party libraries
 
 Python packages, used as published under their own licenses (versions in `requirements.txt`): anthropic (narration only), fastapi and uvicorn (the console's server), httpx2 (the console's tests and the narration tests; installed with anthropic), pandas and numpy (data), scipy (exact binomial tails), pydantic (request bodies), pyyaml (metric definitions), python-dotenv (the API key), pytest (tests).
