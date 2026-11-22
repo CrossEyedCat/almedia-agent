@@ -11,13 +11,18 @@ database. It never writes to brain/. The buttons call the same functions as `pyt
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import sqlite3
+import tempfile
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -35,6 +40,7 @@ INCIDENTS_DIR = Path(os.environ.get("INCIDENTS_DIR", ROOT / "incidents"))
 INCOMING_DIR = Path(os.environ.get("INCOMING_METRICS_DIR", ROOT / "incoming_metrics"))
 EXAMPLE_INCIDENT = ROOT / "docs/contracts/incident_example.json"
 MARKET_DB = Path(os.environ.get("MARKET_DB", ROOT / "data/market.db"))
+ENV_FILE = ROOT / ".env"      # the repository's .env: brain/narrate.py reads the key from the same file
 
 CLOCK_MODE = os.environ.get("MARKET_CLOCK", "replay")
 if CLOCK_MODE not in ("wall", "replay"):
@@ -357,6 +363,313 @@ def new_metric(req: NewMetric):
     except ValueError:                      # the folder was configured outside the repository
         saved = path.as_posix()
     return {"ok": True, "saved": saved, "name": name}
+
+
+# ---------------------------------------------------------------- runtime settings (docs: the settings contract)
+# <data folder>/settings.json is read by the live monitor and the accelerated clock; a value there wins over the
+# command line (--narrate, --speed), a missing one falls back to it. The defaults are brain.monitor.Config's and
+# sim.live's --speed, written out here because ui/ does not import brain/.
+SETTING_DEFAULTS = {
+    "narration": {"enabled": False},
+    "clock": {"seconds_per_hour": 2.0},
+    "detection": {"min_surprise": 7.0, "min_effect": 0.10, "volume_min_effect": 0.20, "release_min_surprise": 4.0},
+}
+SETTING_RANGES = {
+    "clock": {"seconds_per_hour": (0.25, 60)},
+    "detection": {"min_surprise": (5, 10), "min_effect": (0.03, 0.50), "volume_min_effect": (0.05, 0.60),
+                  "release_min_surprise": (3, 7)},
+}
+STATUS_FRESH_S = 10           # the monitor writes its status on every poll: older than this, it is not running
+LOCAL_CLIENTS = {"127.0.0.1", "::1", "testclient"}     # testclient: FastAPI's TestClient
+KEY_LINE = re.compile(r"^\s*(?:export\s+)?ANTHROPIC_API_KEY\s*=")
+
+
+def _data_dir() -> Path:
+    return Path(MARKET_DB).parent
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """Write through a temp file in the same folder and os.replace, so a reader never sees half a file. Windows
+    refuses the replace while another process has the file open for a moment: try again briefly."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        for attempt in range(20):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.05)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def _read_json(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"), parse_constant=_no_constant)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"{path.name} is not readable: {exc}") from exc
+
+
+def _is_number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _merged_settings() -> tuple[dict, dict | None, list[str]]:
+    """(settings.json merged with the defaults, the file as read or None, warnings). A value of the wrong type
+    falls back to the default and one out of range is clamped, each with a warning: the readers do the same."""
+    merged = json.loads(json.dumps(SETTING_DEFAULTS))
+    warnings: list[str] = []
+    try:
+        raw = _read_json(_data_dir() / "settings.json")
+    except ValueError as exc:
+        return merged, None, [f"{exc}; the defaults are shown"]
+    if raw is None:
+        return merged, None, []
+    if not isinstance(raw, dict):
+        return merged, None, ["settings.json is not an object; the defaults are shown"]
+    for section, fields in SETTING_DEFAULTS.items():
+        got = raw.get(section)
+        if not isinstance(got, dict):
+            continue
+        for name, default in fields.items():
+            if name not in got:
+                continue
+            v = got[name]
+            if isinstance(default, bool):
+                if isinstance(v, bool):
+                    merged[section][name] = v
+                else:
+                    warnings.append(f"{section}.{name} is not true or false; the default is used")
+                continue
+            if not _is_number(v):
+                warnings.append(f"{section}.{name} is not a number; the default is used")
+                continue
+            lo, hi = SETTING_RANGES[section][name]
+            if not lo <= v <= hi:
+                warnings.append(f"{section}.{name} = {v} is outside {lo} to {hi}; clamped")
+                v = min(max(v, lo), hi)
+            merged[section][name] = float(v)
+    if isinstance(raw.get("updated_at"), str):
+        merged["updated_at"] = raw["updated_at"]
+    return merged, raw, warnings
+
+
+def _validate(body) -> dict:
+    """The fields of a PUT, checked against the types and ranges; a 422 names the first one that is wrong."""
+    if not isinstance(body, dict):
+        raise HTTPException(422, "the settings must be a JSON object")
+    out: dict = {}
+    for section, fields in body.items():
+        if section == "updated_at":
+            continue
+        if section not in SETTING_DEFAULTS:
+            raise HTTPException(422, f"unknown section {section!r}: one of {', '.join(SETTING_DEFAULTS)}")
+        if not isinstance(fields, dict):
+            raise HTTPException(422, f"{section} must be an object")
+        for name, v in fields.items():
+            if name not in SETTING_DEFAULTS[section]:
+                raise HTTPException(422, f"unknown setting {section}.{name}")
+            if isinstance(SETTING_DEFAULTS[section][name], bool):
+                if not isinstance(v, bool):
+                    raise HTTPException(422, f"{section}.{name} must be true or false")
+            else:
+                lo, hi = SETTING_RANGES[section][name]
+                if not _is_number(v):
+                    raise HTTPException(422, f"{section}.{name} must be a number from {lo} to {hi}")
+                if not lo <= v <= hi:
+                    raise HTTPException(422, f"{section}.{name} = {v} is outside {lo} to {hi}")
+                v = float(v)
+            out.setdefault(section, {})[name] = v
+    return out
+
+
+def _save_settings(values: dict) -> dict:
+    """Merge the values into settings.json (what is not given stays as it was in the file) and stamp it."""
+    try:
+        raw = _read_json(_data_dir() / "settings.json")
+    except ValueError:
+        raw = None                      # a broken file is replaced by what is saved now
+    raw = raw if isinstance(raw, dict) else {}
+    for section, fields in values.items():
+        if not isinstance(raw.get(section), dict):
+            raw[section] = {}
+        raw[section].update(fields)
+    raw["updated_at"] = _utc_now()
+    _write_atomic(_data_dir() / "settings.json", json.dumps(raw, indent=2) + "\n")
+    return raw
+
+
+def _env_lines() -> list[str]:
+    """The .env's lines with their own line endings, so the lines this does not touch are written back as they were."""
+    try:
+        with open(ENV_FILE, encoding="utf-8", newline="") as f:
+            return f.read().splitlines(keepends=True)
+    except FileNotFoundError:
+        return []
+
+
+def _key_in_file() -> bool:
+    for line in _env_lines():
+        if KEY_LINE.match(line):
+            value = line.split("=", 1)[1].strip().strip("'\"")
+            if value:
+                return True
+    return False
+
+
+def _key_source() -> str | None:
+    if os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        return "environment"
+    return ".env" if _key_in_file() else None
+
+
+def _monitor_alive(status) -> bool:
+    if not isinstance(status, dict) or not isinstance(status.get("updated_at"), str):
+        return False
+    try:
+        at = pd.Timestamp(status["updated_at"])
+    except (TypeError, ValueError):
+        return False
+    at = at.tz_localize("UTC") if at.tzinfo is None else at.tz_convert("UTC")
+    return abs((pd.Timestamp.now(tz="UTC") - at).total_seconds()) <= STATUS_FRESH_S
+
+
+def _newest_hour(status) -> str | None:
+    if isinstance(status, dict) and isinstance(status.get("newest_hour"), str):
+        return status["newest_hour"]
+    if not Path(MARKET_DB).exists():
+        return None
+    try:
+        con = _ro()
+        try:
+            (ts,) = con.execute("SELECT MAX(ts) FROM facts_hourly").fetchone()
+        finally:
+            con.close()
+    except (sqlite3.Error, HTTPException):
+        return None
+    return None if ts is None else pd.Timestamp(ts).strftime("%Y-%m-%dT%H:00:00Z")
+
+
+def _require_local(request: Request) -> None:
+    host = request.client.host if request.client else None
+    if host not in LOCAL_CLIENTS:
+        raise HTTPException(403, "the API key can be changed only from this computer")
+
+
+def _settings_reply() -> dict:
+    settings, raw, warnings = _merged_settings()
+    try:
+        status = _read_json(_data_dir() / "brain_status.json")
+    except ValueError as exc:
+        status, warnings = None, warnings + [str(exc)]
+    if status is not None and not isinstance(status, dict):
+        status = None
+    source = _key_source()
+    return {
+        "settings": settings,
+        "file": raw,
+        "defaults": SETTING_DEFAULTS,
+        "ranges": {s: {n: {"min": lo, "max": hi} for n, (lo, hi) in f.items()} for s, f in SETTING_RANGES.items()},
+        "warnings": warnings,
+        "status": status,
+        "monitor_alive": _monitor_alive(status),
+        "environment": {
+            "market_db": str(MARKET_DB), "incidents_dir": str(INCIDENTS_DIR), "incoming_metrics_dir": str(INCOMING_DIR),
+            "graph_json": str(GRAPH_JSON), "repository": str(ROOT), "settings_file": str(_data_dir() / "settings.json"),
+            "status_file": str(_data_dir() / "brain_status.json"), "env_file": str(ENV_FILE),
+            "clock_mode": CLOCK_MODE, "display_timezone": "Europe/Berlin", "newest_hour": _newest_hour(status),
+            "key_set": source is not None, "key_source": source,
+        },
+        "server_now": _utc_now(),
+    }
+
+
+@app.get("/api/settings")
+def get_settings():
+    """The runtime settings merged with the defaults, their ranges, the monitor's status (brain_status.json, null
+    until a monitor writes it) and the paths this console works with. Never the API key, only whether one is set."""
+    return _settings_reply()
+
+
+@app.put("/api/settings")
+async def put_settings(request: Request):
+    try:
+        body = json.loads(await request.body(), parse_constant=_no_constant)
+    except ValueError:
+        raise HTTPException(422, "the settings must be JSON, without NaN or Infinity")
+    values = _validate(body)
+    saved = _save_settings(values)
+    return {"ok": True, "updated_at": saved["updated_at"], "settings": _merged_settings()[0]}
+
+
+@app.post("/api/settings/reset")
+def reset_settings():
+    saved = _save_settings(json.loads(json.dumps(SETTING_DEFAULTS)))
+    return {"ok": True, "updated_at": saved["updated_at"], "settings": _merged_settings()[0]}
+
+
+def _write_env(lines: list[str]) -> None:
+    _write_atomic(Path(ENV_FILE), "".join(lines))
+
+
+@app.post("/api/settings/key")
+async def save_key(request: Request):
+    """Write or replace ANTHROPIC_API_KEY=<key> in the repository's .env. The key is never sent back or logged; the
+    body is parsed here, not by a model, so a refused value is not echoed in a validation error either."""
+    _require_local(request)
+    try:
+        body = json.loads(await request.body())
+    except ValueError:
+        raise HTTPException(422, "send {\"key\": \"...\"}")
+    key = body.get("key") if isinstance(body, dict) else None
+    if not isinstance(key, str):
+        raise HTTPException(422, "the key must be text")
+    key = key.strip()
+    if not key:
+        raise HTTPException(422, "the key is empty")
+    if len(key) > 300:
+        raise HTTPException(422, "the key is longer than 300 characters")
+    if any(ch.isspace() or ord(ch) < 32 or ch in "\"'#" for ch in key):
+        raise HTTPException(422, "the key must not contain spaces, line breaks, quotes or #")
+    lines, done = [], False
+    for line in _env_lines():
+        if KEY_LINE.match(line):
+            if not done:
+                ending = line[len(line.rstrip("\r\n")):] or "\n"
+                lines.append(f"ANTHROPIC_API_KEY={key}{ending}")
+                done = True
+            continue
+        lines.append(line)
+    if not done:
+        if lines and not lines[-1].endswith(("\n", "\r")):
+            lines[-1] += "\n"
+        lines.append(f"ANTHROPIC_API_KEY={key}\n")
+    _write_env(lines)
+    return {"ok": True, "key_set": True, "key_source": _key_source()}
+
+
+@app.delete("/api/settings/key")
+def remove_key(request: Request):
+    """Remove the ANTHROPIC_API_KEY line from the repository's .env; the other lines stay as they are."""
+    _require_local(request)
+    lines = _env_lines()
+    kept = [line for line in lines if not KEY_LINE.match(line)]
+    if len(kept) != len(lines):
+        _write_env(kept)
+    source = _key_source()
+    return {"ok": True, "key_set": source is not None, "key_source": source}
 
 # ---------------------------------------------------------------- data browser (read only)
 BROWSABLE = ("facts_hourly", "ingestion_log", "releases", "calendar", "ground_truth", "sim_meta")
