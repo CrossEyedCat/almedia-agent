@@ -144,10 +144,22 @@
     tw.forEach(function (c, d) { var w = Math.max(90, Math.ceil(c) + PADX); hw[d] = w / 2; x[d] = at + w / 2; at += w + GAP; });
     return { x: x, hw: hw, w: at - GAP + PAD };
   }
-  function layout(root, y0, cols) {
+  // boxes the viewer moved with the right mouse button: an offset per box, keyed by its path in the tree (so a metric
+  // shown twice moves each copy on its own), in units of the label scale so a move survives a change of scale; kept in
+  // this browser only
+  var moved = (function () { try { return JSON.parse(store('v3-moved') || '{}') || {}; } catch (e) { return {}; } })();
+  function saveMoved() { store('v3-moved', JSON.stringify(moved)); $('z-layout').hidden = !Object.keys(moved).length; }
+  function place(item, key) {
+    item.key = key;
+    var o = moved[key]; if (!o) return item;
+    // never above or left of the canvas's origin: Fit frames from there
+    item.x = Math.max(item.hw + 8, item.x + o[0] * S); item.y = Math.max(NODE_H / 2 + 8, item.y + o[1] * S);
+    return item;
+  }
+  function layout(root, y0, cols, ti) {
     var nodes = [], edges = [], leaf = 0;
     (function walk(n, depth, parent) {
-      var item = { n: n, d: depth, x: cols.x[depth], hw: cols.hw[depth], y: 0 }, ys = [];
+      var item = { n: n, d: depth, x: cols.x[depth], hw: cols.hw[depth], y: 0, key: (parent ? parent.key : 't' + ti) + '>' + n.metric }, ys = [];
       list(n.children).forEach(function (c) { ys.push(walk(c, depth + 1, item).y); });
       item.y = ys.length ? (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2 : y0 + (leaf++) * DY + NODE_H / 2;
       nodes.push(item); if (parent) edges.push([parent, item]);
@@ -171,9 +183,10 @@
     if (dom === 'other') rest = list(graph.nodes).filter(function (n) { return n.kind === 'metric' && !domOf[n.id]; }).map(function (n) { return n.id; });
     return rest.filter(function (m) { return !shown[m] && meta[m]; });
   }
-  function drawNode(parent, metric, x, y, hw, extra) {
+  function drawNode(parent, metric, x, y, hw, extra, key) {
     var outcome = !!obj(meta[metric]).outcome;
     var gr = svg('g', { 'class': 'node' + (outcome ? ' root' : '') + (extra || ''), tabindex: 0, role: 'button', 'aria-label': 'Metric ' + str(metric), transform: 'translate(' + (x - hw) + ',' + (y - NODE_H / 2) + ')' }, parent);
+    if (key) gr.setAttribute('data-key', key);
     svg('rect', { 'class': 'nb', width: 2 * hw, height: NODE_H, rx: Math.round(9 * S) }, gr);
     svg('circle', { 'class': 'hdot', cx: TX / 2 + 1, cy: NODE_H / 2, r: 3.5 * S }, gr);
     var t = svg('text', { x: TX, y: NODE_H / 2, dy: '0.35em' }, gr); t.textContent = str(metric);
@@ -192,10 +205,12 @@
     var gs = $('g').style;
     [['--fs', F], ['--fs-tag', 0.9 * F],['--fs-pin', 11 * S], ['--fs-sign', 14 * S], ['--fs-cl', 11 * S]].forEach(function (p) { gs.setProperty(p[0], p[1].toFixed(1) + 'px'); });
     var cols = columns(roots.length ? roots : [{ metric: 'x' }]), all = { nodes: [], edges: [] }, y = PAD, shown = {}, pos = {};
-    roots.forEach(function (r) {
-      var L = layout(r, y, cols);
+    roots.forEach(function (r, ti) {
+      var L = layout(r, y, cols, ti);
       all.nodes = all.nodes.concat(L.nodes); all.edges = all.edges.concat(L.edges); y += L.h + Math.round(24 * S);
     });
+    // the boxes the viewer moved: the links are drawn from these same items, so they follow
+    all.nodes.forEach(function (i) { place(i, i.key); });
     all.edges.forEach(function (pair) {
       var a = pair[0], b = pair[1], x1 = a.x + a.hw, x2 = b.x - b.hw, c = (x2 - x1) / 2;
       var p = svg('path', { d: 'M' + x1 + ',' + a.y + ' C' + (x1 + c) + ',' + a.y + ' ' + (x2 - c) + ',' + b.y + ' ' + x2 + ',' + b.y, 'class': 'edge' }, E);
@@ -203,9 +218,9 @@
     });
     all.nodes.forEach(function (i) {
       shown[i.n.metric] = true; if (!pos[i.n.metric] || (pos[i.n.metric].n.repeated && !i.n.repeated)) pos[i.n.metric] = i;
-      var gr = drawNode(N, i.n.metric, i.x, i.y, i.hw, i.n.repeated ? ' repeated' : '');
+      var gr = drawNode(N, i.n.metric, i.x, i.y, i.hw, i.n.repeated ? ' repeated' : '', i.key);
       if (i.n.repeated) gr.setAttribute('aria-label', 'Metric ' + str(i.n.metric) + ', shown again');
-      drawn.nodes.push({ el: gr, metric: i.n.metric, x: i.x, y: i.y, hw: i.hw, repeated: !!i.n.repeated });
+      drawn.nodes.push({ el: gr, metric: i.n.metric, x: i.x, y: i.y, hw: i.hw, repeated: !!i.n.repeated, key: i.key });
     });
     var w = roots.length ? cols.w : PAD * 2;
     // metrics with no place on a formula tree: a cluster under the trees, part of the same canvas
@@ -218,10 +233,10 @@
       var cw = Math.max(150, Math.ceil(Math.max.apply(null, rest.map(function (m) { return textW(m, F); }))) + PADX);
       var per = Math.max(1, Math.floor((Math.max(w, 900) - 2 * PAD + 16) / (cw + 16)));
       rest.forEach(function (m, k) {
-        var cx = PAD + (k % per) * (cw + 16) + cw / 2, cy = y + Math.floor(k / per) * DY + NODE_H / 2;
-        var gr = drawNode(N, m, cx, cy, cw / 2, ' off');
-        if (!pos[m]) pos[m] = { x: cx, y: cy, hw: cw / 2 };
-        drawn.nodes.push({ el: gr, metric: m, x: cx, y: cy, hw: cw / 2, off: true });
+        var it = place({ x: PAD + (k % per) * (cw + 16) + cw / 2, y: y + Math.floor(k / per) * DY + NODE_H / 2, hw: cw / 2 }, 'off>' + m);
+        var gr = drawNode(N, m, it.x, it.y, it.hw, ' off', it.key);
+        if (!pos[m]) pos[m] = it;
+        drawn.nodes.push({ el: gr, metric: m, x: it.x, y: it.y, hw: it.hw, off: true, key: it.key });
       });
       y += Math.ceil(rest.length / per) * DY;
       w = Math.max(w, PAD * 2 + per * (cw + 16) - 16);
@@ -237,7 +252,9 @@
       svg('title', {}, sg).textContent = e.source + ' may affect ' + e.target + (e.note ? ': ' + e.note : '');
       drawn.edges.push({ el: p, from: e.source, to: e.target, may: true });
     });
-    drawn.world = { w: Math.max(w, 200), h: Math.max(y + PAD - Math.round(24 * S), 160) };
+    // the world also holds any box moved past the layout's edges, so Fit and the minimap include it
+    var far = drawn.nodes.reduce(function (m, n) { return { x: Math.max(m.x, n.x + n.hw + PAD), y: Math.max(m.y, n.y + NODE_H / 2 + PAD) }; }, { x: 0, y: 0 });
+    drawn.world = { w: Math.max(w, far.x, 200), h: Math.max(y + PAD - Math.round(24 * S), far.y, 160) };
     drawn.S = S;
     $('cv-empty').hidden = !!drawn.nodes.length;
     if (!drawn.nodes.length) $('cv-empty').textContent = 'No metric in this domain.';
@@ -347,6 +364,36 @@
       // a click on the empty canvas closes an unpinned report
       if (!moved && !onNode && !pinned && !$('sheet').hidden && replay == null) closeSheet();
     });
+    // right mouse button held on a box: move that box; its links, tags and the lit path follow. Kept in this browser
+    var nodeDrag = null, dragRaf = 0;
+    c.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    c.addEventListener('pointerdown', function (e) {
+      if (e.button !== 2) return;
+      var g = e.target.closest && e.target.closest('.node[data-key]');
+      if (!g) return;
+      e.preventDefault();
+      var key = g.getAttribute('data-key'), o = moved[key] || [0, 0];
+      nodeDrag = { key: key, id: e.pointerId, x: e.clientX, y: e.clientY, o: [o[0], o[1]], moved: false };
+      try { c.setPointerCapture(e.pointerId); } catch (err) { /* an old browser: the window handlers below still follow */ }
+    });
+    window.addEventListener('pointermove', function (e) {
+      if (!nodeDrag || e.pointerId !== nodeDrag.id) return;
+      var dx = (e.clientX - nodeDrag.x) / view.k, dy = (e.clientY - nodeDrag.y) / view.k;
+      if (!nodeDrag.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+      if (!nodeDrag.moved) { nodeDrag.moved = true; auto = null; c.classList.add('moving'); if (tween) { cancelAnimationFrame(tween.raf); tween = null; } }
+      moved[nodeDrag.key] = [nodeDrag.o[0] + dx / S, nodeDrag.o[1] + dy / S];
+      if (!dragRaf) dragRaf = requestAnimationFrame(function () { dragRaf = 0; drawGraph(); });
+    });
+    var endNodeDrag = function (e) {
+      if (!nodeDrag || e.pointerId !== nodeDrag.id) return;
+      var was = nodeDrag.moved; nodeDrag = null; c.classList.remove('moving');
+      if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
+      if (was) { saveMoved(); drawGraph(); }
+    };
+    window.addEventListener('pointerup', endNodeDrag);
+    window.addEventListener('pointercancel', endNodeDrag);
+    $('z-layout').hidden = !Object.keys(moved).length;
+    $('z-layout').onclick = function () { moved = {}; saveMoved(); drawGraph(); };
     $('z-in').onclick = function () { zoomBy(1.25); };
     $('z-out').onclick = function () { zoomBy(0.8); };
     $('z-fit').onclick = function () { fit(true); };

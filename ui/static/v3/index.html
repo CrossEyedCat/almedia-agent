@@ -53,7 +53,7 @@
 
       <div class="cv-title" id="cv-title">
         <span class="cv-name" id="graph-title">Metric graph</span>
-        <span class="cv-hint">Drag to move, scroll to zoom, click a metric for its definition</span>
+        <span class="cv-hint">Drag to move, right-drag a box to place it, scroll to zoom, click a metric for its definition</span>
       </div>
       <button class="replay-fab" id="replay-fab" hidden>
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>
@@ -111,6 +111,7 @@
           <button id="z-fit" title="Fit the whole graph in view">Fit</button>
           <button id="z-reset" title="Back to 100%, the graph's start in the top left">Reset</button>
           <button id="z-map" aria-pressed="true" title="Show or hide the minimap">Map</button>
+          <button id="z-layout" title="Put every box you moved back in its place" hidden>Layout</button>
         </div>
         <svg id="mini" class="mini" aria-label="Minimap: click to move the view"><g id="mini-nodes"></g><rect id="mini-view" class="mini-view"></rect></svg>
       </div>

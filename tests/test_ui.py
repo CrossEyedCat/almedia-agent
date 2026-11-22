@@ -445,6 +445,20 @@ def test_the_designs_page_names_the_main_and_the_classic_console(client):
     assert "main console" in main.lower()                          # design 3 is the one served at /
 
 
+def test_the_main_console_moves_a_box_with_the_right_button_and_puts_them_back(client):
+    """A box on the canvas is moved by dragging it with the right button (no context menu on the canvas); the moves
+    are kept in this browser, and the Layout button, shown only after a move, puts every box back."""
+    import re
+    html, js = _main_page(client)
+    assert "right-drag a box to place it" in html
+    assert re.search(r'<button id="z-layout"[^>]*\bhidden>Layout</button>', html)
+    assert "c.addEventListener('contextmenu', function (e) { e.preventDefault(); });" in js
+    assert "if (e.button !== 2) return;" in js and "closest('.node[data-key]')" in js
+    assert "store('v3-moved', JSON.stringify(moved))" in js         # kept in this browser across reloads
+    assert "$('z-layout').hidden = !Object.keys(moved).length;" in js
+    assert "$('z-layout').onclick = function () { moved = {}; saveMoved(); drawGraph(); };" in js
+
+
 def _object(js: str, kind: str) -> str:
     """The object literal the page posts for one kind, as written in the script: { kind: '<kind>', ... }."""
     import re

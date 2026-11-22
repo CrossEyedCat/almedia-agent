@@ -78,8 +78,8 @@ and [`docs/system-overview.html`](docs/system-overview.html) the pictures):
 4. **Incidents** ([`brain/incidents.py`](brain/incidents.py)): one file per problem, also when the fault shows in sibling
    or crossing series, updated in place, resolved only when the data would show the fault and does not; a fault that comes
    back is linked to the resolved one, and each incident has a severity from its euro effect. The console ([`ui/`](ui))
-   is a canvas with the metric graph (drag to move, scroll to zoom, click a metric for its definition). The incidents sit
-   in a dock along the bottom, live ones first; a click on one lights its path on the graph and opens its report in a
+   is a canvas with the metric graph (drag to move, right-drag a box to place it, Layout puts the boxes back, scroll to
+   zoom, click a metric for its definition). The incidents sit in a dock along the bottom, live ones first; a click on one lights its path on the graph and opens its report in a
    panel on the right. **Replay the investigation** walks the incident's trail on the graph one step at a time, with a
    numbered pin on each metric a step touched. The **Test bench** (marked DEMO) opens from the header and holds the
    simulated faults, the rollback and the new-metric buttons. The earlier console, graph and incidents side by side with a
