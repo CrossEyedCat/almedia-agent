@@ -110,6 +110,20 @@ def test_unknown_case_names_are_a_usage_error(tmp_path):
     assert exc.value.code == 2
 
 
+def test_a_case_that_cannot_run_is_reported_as_failed_and_the_others_still_run(tmp_path, monkeypatch):
+    def fake(case, work, *a, **k):
+        if case.name == "traffic_drop":
+            raise RuntimeError("brain.run failed (1): boom")
+        row = st.judge(case, [event("mix_shift", category="home", share=0.5)], [], END, 30.0)
+        row.update(replay={"from": "a", "to": "b", "brain": "", "seconds": 0}, seed=case.seed)
+        return row
+    monkeypatch.setattr(st, "run_case", fake)
+    assert st.main(["--cases", "traffic_drop,mix_shift", "--work", str(tmp_path / "w"), "--out-dir", str(tmp_path / "o")]) == 0
+    saved = json.loads((tmp_path / "o" / "stress.json").read_text(encoding="utf-8"))
+    assert [(r["case"], r["pass"]) for r in saved["cases"]] == [("traffic_drop", False), ("mix_shift", True)]
+    assert "the case did not run: brain.run failed (1): boom" in (tmp_path / "o" / "stress.md").read_text(encoding="utf-8")
+
+
 def test_one_tiny_case_runs_end_to_end_with_the_real_brain(tmp_path):
     tiny = st.Case("tiny_payment", "payment_failure DE x Android, severity 0.5 for 6 h", "detected in DE x Android",
                    lambda con, t0: inject.payment_failure(con, "DE", "Android", t0, severity=0.5,

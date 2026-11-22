@@ -365,7 +365,13 @@ def main(argv=None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     rows = []
     for case in [c for c in CASES if c.name in names]:
-        row = run_case(case, work)
+        try:
+            row = run_case(case, work)
+        except Exception as exc:          # one broken case must not cost the others: it is reported as failed
+            row = {"case": case.name, "injected": case.injected, "expectation": case.expect, "events": [],
+                   "incidents": [], "records": [], "score": {}, "per_fault": [], "pass": False, "seed": case.seed,
+                   "checks": [{"check": "run", "ok": False, "detail": f"the case did not run: {exc}"[:500]}],
+                   "replay": {"from": "", "to": "", "brain": "", "seconds": 0}}
         print(f"{case.name}: {'pass' if row['pass'] else 'FAIL'} ({row['replay']['seconds']} s) "
               + "; ".join(c["detail"] for c in row["checks"]), flush=True)
         rows.append(row)
