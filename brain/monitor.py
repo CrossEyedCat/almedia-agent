@@ -13,7 +13,8 @@ For a rate in a series (one cut of the dimensions, one value combination):
   leaving out the hours being judged, hours already flagged as bad, hours covered by a calendar
   event and hours whose data has not arrived;
 - an hour is bad when its counts, alone or summed with the two hours before, are too surprising
-  against that rate (brain/stats.py) and the rate moved by at least `min_effect`; an hour of a bad
+  against that rate (brain/stats.py) and the rate moved by at least `min_effect` (a proportion above
+  0.5: or its complement by `complement_min_effect`, see COMPLEMENT_MIN_EFFECT); an hour of a bad
   summed window is marked bad only when it alone moved that way at p below 0.01, so an episode ends
   at its last faulty hour and its newest-hours rate is the fault's rate;
 - hours whose sources have not arrived are held: not judged, not healthy;
@@ -79,6 +80,21 @@ EVENT_EFFECTS: dict[str, dict[str, int]] = {
 }
 EVENT_SIZE_FACTOR = 2.0
 
+# The effect floor of a proportion is judged on its smaller side. Near 1 the rate itself hardly moves
+# when its complement does: payment failures doubling from 6 % to 14 % is an 8.5 % fall of the success
+# rate, under the 10 % floor. So for a proportion (or the surplus of an excess) whose expected rate is
+# above 0.5, the floor is also passed when the complement moved by this share of itself, (1 - observed)
+# / (1 - expected) - 1; the binomial tests (p below 1e-7, 1e-4 after a release) are unchanged. The
+# floor is passed when either side moved enough, so no series is judged more strictly than before
+# (checkout_rate sits at 0.49-0.51).
+# Why 50 % and not 10 %: payment failures differ between series, 3.8-7.7 % against 5.7 % in the whole
+# market (built-on seeds 4 and 80), so a shift in the mix alone can move an aggregate's failure rate by
+# up to about 35 % with no fault anywhere; at 10 % only the binomial test would stand against that.
+# 50 % stays above it and well below a real fault: the small payment stress case moves failures by
+# +133 % (+103 % in its weakest alerting window). On the ten built-on seeds 10 %, 25 % and 50 % all
+# kept 0 false alarms and 120/120 found, and all three passed the same ten of the eleven stress cases.
+COMPLEMENT_MIN_EFFECT = 0.50
+
 
 @dataclass(frozen=True)
 class Config:
@@ -91,7 +107,8 @@ class Config:
     min_z: float = 6.0                # other ratios: residual beyond 6 historical spreads,
     beyond_history: float = 1.25      # and this many times the largest residual clean history showed,
     min_ratio_volume: float = 30      # on at least this much denominator (small counts are too lumpy)
-    min_effect: float = 0.10          # and the rate itself moved by at least 10 %
+    min_effect: float = 0.10          # and the rate itself moved by at least 10 %,
+    complement_min_effect: float = COMPLEMENT_MIN_EFFECT   # or, above 0.5, its complement by this much
     onset_min_surprise: float = 2.0   # an earlier hour of a summed window joins the episode at p below 0.01
     active_hours: int = 3             # an alert is live while its last bad hour is this recent
     episode_gap_hours: int = 2        # bad hours this close belong to one episode
@@ -155,6 +172,23 @@ class Tick:
     held: dict = field(default_factory=dict)        # hour -> metrics not judged because of that
     judged_series: int = 0
     events: list = field(default_factory=list)      # calendar rows visible at this tick
+
+
+def floor_moved(observed, rate, shift: float, kind: str, cfg: Config):
+    """How far a rate moved, in units of its effect floor (an absolute value of 1 or more passes), signed
+    the way the rate moved. `observed` and `rate` are on the tested scale (the surplus for an excess).
+
+    The rate itself counts against cfg.min_effect. A proportion (or excess surplus) expected above 0.5
+    also counts its complement against cfg.complement_min_effect, and the larger of the two is kept:
+    both have the sign of observed - rate, so the direction is the rate's either way."""
+    moved = ((observed + shift) / (rate + shift) - 1.0) / cfg.min_effect
+    if kind not in ("proportion", "excess"):
+        return moved
+    high = np.asarray(rate) > 0.5
+    if not high.any():
+        return moved
+    comp = np.where(high, (observed - rate) / np.where(high, 1.0 - rate, 1.0), 0.0) / cfg.complement_min_effect
+    return np.where(np.abs(comp) > np.abs(moved), comp, moved)
 
 
 def compatible(a: dict, b: dict) -> bool:
@@ -540,14 +574,14 @@ class Monitor:
                     enough = (np.abs(z) >= cfg.min_z) & (Dw >= cfg.min_ratio_volume) \
                         & (np.abs(scaled_residual(Nw, Dw, rate)) >= cfg.beyond_history * extreme)
             with np.errstate(divide="ignore", invalid="ignore"):
-                effect = (Nw / Dw + shift) / (rate + shift) - 1.0
+                moved = floor_moved(Nw / Dw, rate, shift, kind, cfg)   # in units of the floor: 1 passes
             if width == 1:
-                single, single_score = effect, score
-            hit = ok & enough & (np.abs(effect) >= cfg.min_effect)
+                single, single_score = moved, score
+            hit = ok & enough & (np.abs(moved) >= 1.0)
             better = hit & ~(best >= score)
             best = np.where(better, score, best)
             best_z = np.where(better, z, best_z)
-            self._mark(bad, hit, effect, single, single_score, width, cfg.min_effect)
+            self._mark(bad, hit, moved, single, single_score, width, 1.0)
         flags[j0:rows] = bad
 
         # one alert per series whose newest bad hour is recent
@@ -622,7 +656,8 @@ class Monitor:
         1e-7 always holds such an hour: three hours each above p 0.01 sum to about p 5e-5 at most.
         Without this the normal hours right after a fault ended were marked bad while the window still
         reached back into the fault, which made the episode two hours too long and halved the change
-        reported for its newest hours."""
+        reported for its newest hours. For a rate, `effect` and `single` are in units of its floor
+        (floor_moved) and min_effect is 1."""
         if width == 1:
             bad |= hit
             return
@@ -957,8 +992,10 @@ class Monitor:
                     prev = through["score"]
                     if best is None or through["score"] > best["score"]:
                         best = through
+                shift = 1.0 if found[2][3] == "excess" else 0.0   # the floor of the scan, on the same side
                 live = (best is not None and last is not None and best["score"] >= cfg.release_min_surprise
-                        and abs(best["observed"] / best["expected"] - 1.0) >= cfg.min_effect
+                        and abs(float(floor_moved(best["observed"] - shift, best["expected"] - shift, shift,
+                                                  found[2][3], cfg))) >= 1.0
                         and last >= cube.rows - cfg.active_hours)   # else nothing new for a while
                 if not live:
                     if key in self._watch_seen:
