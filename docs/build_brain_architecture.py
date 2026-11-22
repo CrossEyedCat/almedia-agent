@@ -504,6 +504,9 @@ def fig_new_metric():
         "placement": ("Identities that hold for any data and link the metric to two existing ones, found by signature. One "
                       "fitting whole outside the outcome tree: applied. Inside the outcome tree: proposed, left to a "
                       "person.", "two places fit: tentative"),
+        "context": ("The metric takes the context of the metrics its formula is built from (and of the watched rates it "
+                    "equals the product of): their release systems, so it gets release candidates and, through them, the "
+                    "promo calendar, and their sources, so late data holds it too.", "nothing to inherit: said so"),
         "monitoring": ("A ratio of two column metrics is an atomic rate, the shape the monitor watches. Monitor.rewatch adds "
                        "it to the watch list, and it is judged from the next tick.", "another shape: in the graph, not watched"),
     }
@@ -513,10 +516,12 @@ def fig_new_metric():
                   "validated: in the graph, every check passed. tentative: in the graph, with a caveat the message names. "
                   "rejected: not in the graph, and the message says why.", "foot": "every check is in the file, with its numbers"})
     per_row = 4
-    assert len(cards) % per_row == 0
+    rows = [cards[i:i + per_row] for i in range(0, len(cards), per_row)]
+    if len(rows) > 1 and len(rows[-1]) < per_row:   # a short last row joins the row above it (rows of 4 and one of 4 + n)
+        rows[-2:] = [rows[-2] + rows[-1]]
     aria = ("The checks a new metric definition goes through, in order: " + ", ".join(CHECKS) + ". The answer file gives "
             "the status validated, tentative or rejected, and every check with its numbers.")
-    return card_rows("x-", [cards[i:i + per_row] for i in range(0, len(cards), per_row)], aria)
+    return card_rows("x-", rows, aria)
 
 
 # ------------------------------------------------------------------ tests of the brain

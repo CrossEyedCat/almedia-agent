@@ -307,3 +307,17 @@ def test_the_book_keeps_its_feed_sorted(stub_book):
                             key(es): {"impact": {"contribution_eur": -MEDIUM_EUR}}})
     feed(book, alert("take_rate", DE, 30), alert("take_rate", fr, 20), alert("take_rate", es, 10))
     assert [b["severity"] for b in book.feed()] == ["high", "medium", "low"]
+
+
+# ------------------------------------------------------------------ a crossing series that fires first
+FASHION = {"category": "fashion"}
+DE_AND = {"country": "DE", "platform": "Android"}
+
+
+def test_a_crossing_series_that_fires_first_is_refined_into_the_fault_s_place_not_a_second_incident(stub_book):
+    # a payment fault in DE x Android shows, diluted, in the fashion series too; that one fired an hour earlier
+    book = stub_book(causes={key(FASHION): "payment_success_rate fell in fashion without a matching release"})
+    feed(book, alert("payment_success_rate", FASHION, 9))
+    feed(book, alert("payment_success_rate", DE_AND, 30, observed=0.6, expected=0.94), hour=FAULT + H)
+    (inc,) = alerts_in(book.folder)
+    assert inc["id"] == "inc-0001" and inc["segment"] == DE_AND

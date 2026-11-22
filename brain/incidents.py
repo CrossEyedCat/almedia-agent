@@ -427,8 +427,16 @@ class Book:
         metrics = {a.metric for a in group}
         seg, lead = group[0].segment, group[0].metric
         live = [i for i in pool if i.status != "resolved" and i.metrics]
+        gap = self.monitor.config.episode_gap_hours * HOUR
         for inc in live:
             if nested(inc.segment, seg) and metrics & set(inc.metrics):
+                return inc, False
+        # a crossing series of the same metric that began within the same episode: one fault seen diluted in a series
+        # that cuts across its place (a payment fault in DE x Android shows in the fashion series too, and that one can
+        # fire first). It joins, and the stronger alert's place becomes the incident's (Book.update refines it).
+        onset = min(a.onset for a in group)
+        for inc in live:
+            if compatible(inc.segment, seg) and metrics & set(inc.metrics) and abs(inc.onset - onset) <= gap:
                 return inc, False
         for inc in live:
             if any(m in metrics and s and nested(s, seg) for m, s in inc.siblings):
