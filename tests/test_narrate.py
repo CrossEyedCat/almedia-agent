@@ -375,3 +375,63 @@ def test_in_the_book_a_growing_cost_asks_again_a_few_times_not_every_tick(faulty
     book.update(book.monitor.tick(as_of=FAULT + 13 * H))
     assert 2 <= len(client.calls) <= 6
 
+
+
+def test_the_live_loop_says_when_narration_turns_off_after_the_start_line(faulty_db, tmp_path, capsys):
+    """The start line is printed before any request, so a refused key or no credit must be said on a later line."""
+    from brain.run import live
+    err = anthropic.BadRequestError("Your credit balance is too low to access the Anthropic API.",
+                                    response=httpx2.Response(400, request=REQ), body=None)
+    n = Narrator(client=FakeClient(err))
+    shutil.copy(faulty_db, tmp_path / "s.db")
+    monitor = Monitor(MetricGraph.load(), Store(tmp_path / "s.db"))
+    book = Book(monitor, tmp_path / "incidents", fresh=True, narrator=n)
+    n.submit("inc-0001", BODY)
+    settle(n)
+    live(monitor, book, poll=0.0, max_ticks=1, quiet=True)
+    said = [line for line in capsys.readouterr().out.splitlines() if line.startswith("narration:")]
+    assert len(said) == 1 and said[0].startswith("narration: off") and "credit balance is too low" in said[0]
+
+
+class _OneHourClock:
+    """A clock whose newest hour never changes: every poll after the first finds nothing new."""
+
+    def __init__(self, store):
+        pass
+
+    def newest_hour(self):
+        return FAULT
+
+
+def test_the_live_loop_rereads_after_four_empty_polls_with_or_without_a_narrator(monkeypatch):
+    import brain.run as run
+    monkeypatch.setattr(run, "Clock", _OneHourClock)
+    for narrator in (None, SimpleNamespace(status="on", model="m")):
+        sleeps = []
+        monkeypatch.setattr(run.time, "sleep", sleeps.append)
+        monitor = SimpleNamespace(store=None, tick=lambda: SimpleNamespace())
+        book = SimpleNamespace(narrator=narrator, update=lambda tick: [])
+        run.live(monitor, book, poll=0.0, max_ticks=3, quiet=True)
+        assert len(sleeps) == 11, narrator      # ticks on polls 1, 6 and 11: a re-read after four empty polls
+
+
+def test_the_live_loop_says_narration_is_off_even_while_the_ticks_fail(monkeypatch, capsys):
+    import brain.run as run
+    monkeypatch.setattr(run, "Clock", _OneHourClock)
+    narrator = SimpleNamespace(status="on", model="m")
+
+    def update(tick):                           # the refusal is taken first, then the database is busy
+        narrator.status = "off: the API refused the request: no credit"
+        raise RuntimeError("database is locked")
+
+    def sleep(seconds, polls=[]):
+        polls.append(seconds)
+        if len(polls) >= 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(run.time, "sleep", sleep)
+    monitor = SimpleNamespace(store=None, tick=lambda: SimpleNamespace())
+    with pytest.raises(KeyboardInterrupt):
+        run.live(monitor, SimpleNamespace(narrator=narrator, update=update), poll=0.0, quiet=True)
+    said = [line for line in capsys.readouterr().out.splitlines() if line.startswith("narration:")]
+    assert said == ["narration: off: the API refused the request: no credit (m)"]

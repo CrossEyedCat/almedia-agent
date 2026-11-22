@@ -41,7 +41,7 @@ python -m sim.score generate && python -m sim.score score   # one run: needs the
 ```
 
 See `docs/system-overview.html` for the whole picture (world, brain, console, scoring); the brain has its own page, `docs/brain-architecture.html`.
-It is generated from the code: `python docs/build_system_overview.py`.
+Both are generated from the code: `python docs/build_system_overview.py` and `python docs/build_brain_architecture.py`.
 
 ## Open questions for B (answer by editing this file)
 

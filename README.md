@@ -89,8 +89,11 @@ processes for a simulated day and a half with every kind of event and nobody wat
 fails); and, to rebuild `docs/results.md`: for each seed N in 4 8 9 10 11 12 13 22 71 80 101 102 103 104 105 106 107
 108 109 110, `python -m sim.score generate --seed N --db runs/seedN.db` then
 `python -m brain.run --replay --db runs/seedN.db --incidents runs/seedN-incidents --fresh`; then
-`python -m scripts.summarize_evaluation --runs runs --seeds 4,8,9,10,11,12,13,22,71,80,101,102,103,104,105,106,107,108,109,110 --holdout 101,102,103,104,105,106,107,108,109,110 --commit <the brain commit you ran> --warmup-hours 80`
-(its docstring explains every option).
+`python -m scripts.summarize_evaluation --runs runs --seeds 4,8,9,10,11,12,13,22,71,80,101,102,103,104,105,106,107,108,109,110 --holdout 101,102,103,104,105,106,107,108,109,110 --commit <the brain commit you ran> --warmup-hours 80 --baseline --baseline-z 50`.
+The section "Against a plain ranking" also needs `python -m scripts.baseline_ranking --db runs/seedN.db --out <folder> --z <Z>` run
+into `seedN-baseline` (z 50, every seed), `seedN-baseline-z12-all` (z 12, every seed) and the sweep folders `seedN-baseline-z<Z>`
+(built-on seeds only); without `--baseline` the page is written without that section. The docstring of
+`scripts/summarize_evaluation.py` explains every option.
 
 **Not built**: a euro threshold for alerts; watching volumes such as sessions; formulas with constants in the new-metric
 search; cause links proposed for a new metric; a range around the euro figure.
@@ -121,7 +124,7 @@ in `docs/results.md`):
 
 | # | Kind | Scenario | What the system should do |
 |---|---|---|---|
-| S1 | Fault | Payment success drops for **Android in Germany** after a payment SDK release | orders ↓ → traffic fine → checkout → payment success ↓ → narrows to DE × Android → matches the release → reports impact and remaining uncertainty |
+| S1 | Fault | Payment success drops for **Android in Germany** after a payment SDK release | payment success rate ↓ (watched directly) → narrows to DE × Android → matches the release → reports the cost in orders and EUR and the remaining uncertainty |
 | S2 | Innocent change | Planned promo in France: traffic and orders up | finds the event in the promo calendar, explains it, does **not** alert |
 | S3 | Data completeness | The payments source arrives 2 h late | holds judgement on the incomplete hours instead of raising a false alarm |
 | S4 | New metric | `refund_rate` is added live as definition + SQL | agent places it in the graph, validates the formula and dimensions, starts monitoring it |
@@ -178,13 +181,13 @@ unit: ratio
 {
   "id": "inc-0007", "status": "open | ongoing | resolved | explained | pending",
   "first_seen": "...", "last_seen": "...",
-  "metric": "orders", "segment": {"country": "DE", "platform": "Android"},
-  "change": {"observed": 812, "expected": 1190, "delta_pct": -31.8, "z": -7.4},
-  "impact": {"gmv_per_hour": -15300},
+  "metric": "contribution", "segment": {"country": "DE", "platform": "Android"},
+  "change": {"observed": "...", "expected": "...", "delta": -910, "delta_pct": "...", "window": {"...": "..."}},
+  "impact": {"contribution_eur": -910, "orders": -178},
   "contributions": [{"node": "payment_success_rate", "share_of_delta": 0.86}],
   "hypotheses": [{"cause": "release payments-sdk: payments-sdk 4.2 rollout (DE, Android)", "kind": "release", "status": "supported", "evidence": ["..."]},
                  {"cause": "traffic drop", "kind": "metric", "status": "rejected", "evidence": ["..."]}],
-  "trail": [{"step": 1, "action": "decompose orders", "result": "..."}],
+  "trail": [{"action": "watch", "target": "payment_success_rate", "result": "..."}],
   "uncertain": ["..."],
   "report": "plain-language summary"
 }
@@ -205,12 +208,12 @@ A picture of the brain - the data path, the graph as loaded from the code, the l
 
 - **Nodes:** metrics, breakdown views (`orders@country`) and context sources (`release:<system>`, `freshness:<source>`, `calendar`).
 - **Edges, each with its own reasoning:**
-  - `formula` — an exact identity used for decomposition (`gmv = orders × aov`). The formula graph is a DAG, not a tree: `gmv` feeds `marketplace_fees` with a plus and `discounts` with a minus, `sessions` feeds `orders` and `ad_impressions`.
+  - `formula` — an exact identity used for decomposition (`gmv = orders × aov`). The formula graph is a DAG, not a tree: `gmv` is a factor of both `marketplace_fees` and `discounts`, which enter `contribution` with a plus and a minus; `sessions` feeds `orders` and `ad_impressions`.
   - `definition` — how a derived metric is computed when that differs from its decomposition (`take_rate = marketplace_fees / gmv`).
   - `breakdown` — split by a dimension; additive metrics sum, ratios are always ratios of sums.
   - `may_affect` — a possible cause with a prior and a sign (which way the effect moves when the cause rises). It stays `assumed` in the graph: an incident tests the link and records the result in its own report, and it is never "validated" by correlation on history (see 3.8).
   - `context` — releases, the promo calendar and data freshness. Freshness is inherited through formulas: a metric is as fresh as its least fresh source.
-- **Declared outcome:** `contribution` carries `outcome: true`. A contributed metric never becomes a second root by accident; until it is placed it is listed under `unplaced_roots`.
+- **Declared outcome:** `contribution` carries `outcome: true`. A contributed metric never becomes a second outcome (`top_outcomes` stays `contribution`); a formula tree outside the outcome, such as `refunds = orders × refund_rate` once the demo's metric is placed, is listed under `unplaced_roots`.
 - **Tree view:** a spanning tree over `formula` edges from the declared outcome, for people to browse. The algorithms work on the DAG.
 - **What "validated" means:** every check has a basis. `definition` — it follows from the metric definitions alone and no data can make it fail (`orders = sessions × (orders / sessions)`); it shows the definitions are consistent. `data` — it can fail on the data (coverage, bounds, a contributed SQL against its formula). The validation report keeps the two apart.
 
@@ -270,10 +273,10 @@ Built in `brain/incidents.py`.
 
 The core loop runs without it, so the demo cannot fail on an API call. Built in `brain/narrate.py`, switched on with `python -m brain.run --narrate` (live loop only; the replay and the scoring never call it).
 
-- **A narration of each incident**, three or four plain sentences, written by `claude-opus-5-5` from the incident's own evidence and nothing else. One request per milestone (a new incident, a change of the leading explanation, a cost that has doubled since the last text, the incident resolved), never per tick; background threads, 20 s per request.
+- **A narration of each incident**, three or four plain sentences, written by `claude-opus-5-5` from the incident's own evidence and nothing else. One request per milestone (a new incident, a change of the leading explanation, a cost in euros that crosses a power of two, the incident resolved), never per tick; background threads, 20 s per request.
 - **Checked before it is shown.** The text must be plain and finished, and every number in it must appear in the evidence (as given, rounded to the precision written, or as a percentage of a share). A text with any other number is dropped, not repaired. The template report always stays; the console shows the narration as "In brief" above it.
-- **Fails quietly.** No credit or a refused key turns narration off for the run, with the reason in the incident file and in the monitor's start line; a timeout or a server error waits a minute before the same milestone is tried again. The key comes from the environment or `.env` and never appears in a reason.
-- **Seen live** on Sunday morning, four requests in all: "In brief" showed about 10 s after the fault began, and a new text when the incident resolved. That run also showed the text falling behind the figures (−345 EUR in the text, −1,943 EUR above it), so a cost that has doubled is now a milestone too.
+- **Fails quietly.** No credit or a refused key turns narration off for the run, with the reason in the incident file and on a monitor line (`narration: off: ...`) printed on the monitor's next pass after the first request is refused; a timeout or a server error waits a minute before the same milestone is tried again. The key comes from the environment or `.env` and never appears in a reason.
+- **Seen live** on Sunday morning, four requests in all: "In brief" showed about 10 s after the fault began, and a new text when the incident resolved. That run also showed the text falling behind the figures (−345 EUR in the text, −1,943 EUR above it), so a cost that crosses a power of two is now a milestone too.
 - **Not needed** to find a formula or a place for a new metric: that is a deterministic search (3.3). **Not built:** suggesting descriptions or cause links for new metrics.
 
 ### 3.8 What the algorithm choices are based on
@@ -294,7 +297,7 @@ After M1 the plan was checked against open implementations and published researc
 
 ## 4. Team split
 
-Sections 4 to 6 are our working plan, kept as the record of the 24 hours; scores quoted in them are from earlier commits.
+Sections 4 to 6 are our working plan, kept as the record of the 24 hours; the checkpoint scores in them are from earlier commits (the plain-ranking item quotes `docs/results.md`).
 The system as built is section 3; the current numbers are those of `docs/results.md`, quoted in "At a glance".
 
 | Person | Owns | First deliverable for the other |
@@ -352,7 +355,7 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [x] `brain/graph.py`: node and edge types (`formula`, `breakdown`, `may_affect`, `context`) with metadata (formula text, dimension, prior strength, status).
 - [x] Core metric definitions in `brain/metrics/*.yaml` following the contract, from `contribution` down to the funnel rates (36 today).
 - [x] Evaluator: compute any metric for any segment and time window from the database.
-- [x] Validation on load: every formula recomputed against its components; breakdowns of additive metrics sum to the parent.
+- [x] Validation on the data when the live monitor starts with `--graph-out`, when a new metric joins, or with `python -m brain.graph --validate`: every formula recomputed against its components; breakdowns of additive metrics sum to the parent. Loading the graph checks the definitions, their references and cycles, not the data.
 - [x] Tree view in the terminal: `python -m brain.graph --tree`.
 - [x] **Handoff to A by ~13:30:** `incident_example.json` and a `graph.json` export (nodes and edges) for the UI.
 
@@ -383,7 +386,7 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 
 **A — UI v1**
 - [x] `ui/` FastAPI app: `/api/graph`, `/api/incidents`, `/api/incidents/{id}` and one static page. (No `/api/incidents/{id}`: the list returns the full incidents. Also `/api/state`, `/api/inject`, `/api/metric`.)
-- [x] Graph view (e.g. Cytoscape.js from a CDN): edge types in different colours, the incident path highlighted. (Own inline SVG, no Cytoscape: the formula tree, the incident route lit in red; checked in Chrome with the contract example.)
+- [x] Graph view (e.g. Cytoscape.js from a CDN): edge types in different colours, the incident path highlighted. (Own inline SVG, no Cytoscape: the formula tree, the incident route lit in its status colour (red open, amber ongoing, green resolved); checked in Chrome with the contract example.)
 - [x] Alert feed: status, metric, segment, impact, first and last seen.
 
 **B — investigator v1**
@@ -487,6 +490,6 @@ ANTHROPIC_API_KEY=...
 
 ## 10. Third-party libraries
 
-Python packages, used as published under their own licenses (versions in `requirements.txt`): anthropic (narration only), fastapi and uvicorn (the console's server), httpx (the console's tests), pandas and numpy (data), scipy (exact binomial tails), pydantic (request bodies), pyyaml (metric definitions), python-dotenv (the API key), pytest (tests).
+Python packages, used as published under their own licenses (versions in `requirements.txt`): anthropic (narration only), fastapi and uvicorn (the console's server), httpx2 (the console's tests and the narration tests; installed with anthropic), pandas and numpy (data), scipy (exact binomial tails), pydantic (request bodies), pyyaml (metric definitions), python-dotenv (the API key), pytest (tests).
 
 The console uses no third-party JavaScript, CSS or fonts. The algorithm sources are cited in 3.8.

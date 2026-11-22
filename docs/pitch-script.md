@@ -11,12 +11,15 @@ of implying it. Numbers come from `docs/results.md`. Read the whole page once be
    `python -m sim.live --speed 2 --db data/market.db`, then `uvicorn ui.app:app --port 8000`. Open http://127.0.0.1:8000.
    Start the console with the four environment variables of `docs/demo.md`, step 4, and with an empty `incoming_metrics/`
    folder: without `GRAPH_JSON=data/graph.json` the console shows the tracked example graph and a metric added on stage never appears.
+   To show "In brief" (the model's narration above the report), add `--narrate` to the brain command: it needs
+   ANTHROPIC_API_KEY in `.env` and spends a few requests per incident. Without it the report is the template only, and
+   "In brief" (docs/demo.md at 1:20, and the demo slide) does not appear.
 2. Wait until the clock in the header moves and the incident list reads "No incidents. The monitor is watching."
 3. Open the folded DEMO controls once so you know where the buttons are, then fold them again. Dark or light theme: add `?theme=light` or `?theme=dark`.
 4. Two faults of one metric that begin in the same hour in places sharing a country or a platform can be reported as one
    incident (a known limit, README 3.5); inject them an hour apart or in places that share neither a country nor a platform.
 
-## The 3-minute script (about 420 words)
+## The 3-minute script (about 340 spoken words)
 
 **0:00 The problem.** (Header and graph on screen.)
 "A marketplace has thousands of numbers and nobody can watch them all. Most problems are not outages: the servers are fine, but
@@ -40,7 +43,7 @@ and what the cause is: the payments release for Android in Germany, with the evi
 "A planned promo lifts orders in France. It sees the promo in the calendar and records it as explained, no alert. A data source that
 arrives late is held as pending instead of raising a false alarm."
 (Timing, measured on 21 Nov with `--speed 2`: the promo row appears in a few seconds, grey, and stays. The pending row lives only while the data
-is late, about two data hours, so about 4 seconds: inject "Arrives 2 h late" and look straight away, or leave this half sentence out.)
+is late: the button delays three data hours, each by two, so about 6 to 8 seconds: inject "Arrives 2 h late" and look straight away, or leave this half sentence out.)
 
 **2:15 Does it work?** (Open `docs/results.md`.)
 "We scored it against faults we injected ourselves, in twenty 49-day runs. On the ten it had never seen it found 120 of 120 faults,
@@ -56,7 +59,7 @@ false alarm was a one-hour jump in ad click-through in Poland on the web that cl
 ## What not to say
 
 - The new-metric button works end to end for the console's `refund_rate` (README 3.3; run live on 21 Nov). Do not claim more than
-  that section says: the formula search covers one or two existing metrics, without constants.
+  that section says: the formula search covers one or two column metrics (19 of the 36), without constants.
 - Do not say "100%" without the cause number (118 of 120 on the holdout runs), the false alarm and the caveat on the data.
 - One of those 118 is a tie: the right release is supported and named first, but a routine release of the same system in the same
   place two hours earlier is left supported beside it. `docs/results.md` lists it; do not say every cause was singled out.
@@ -68,7 +71,7 @@ false alarm was a one-hour jump in ad click-through in Poland on the web that cl
 
 - Payment failure in Germany on Android: the incident appears about 5 seconds after the click, with the payments release as the cause.
 - "End it (rollback)": the incident turns resolved about 8 seconds later (three normal data hours).
-- Promo in France: an `explained` record, grey, no alert. Late data: `pending` for about 4 seconds, then it disappears by itself.
+- Promo in France: an `explained` record, grey, no alert. Late data: `pending` for about 6 to 8 seconds, then it disappears by itself.
 - Rehearsed again on 22 Nov, 01:00 CET, with the redesigned console and all open pull requests merged locally, fresh 28-day
   backfill, `--speed 2`: incident 6 s after the click (seen at the next data hour), resolved 8 s after the rollback, promo
   `explained` within 6 s, late data `pending` at once; **Add refund_rate** answered within about 10 s while the clock ran
@@ -78,7 +81,7 @@ false alarm was a one-hour jump in ad click-through in Poland on the web that cl
 
 - No incident after 20 seconds: say "it is still collecting evidence" and move on to the promo; or play the recording.
 - A fault in a small segment at night needs more hours of evidence; use Germany, Android or iOS payments, or a category such as electronics.
-- To start over: stop the three processes, run the first command again, empty `incidents/`, start them in the same order.
+- To start over: stop the three processes, empty `incidents/` and `incoming_metrics/`, run the first command again, start them in the same order.
 
 ## The 5-minute slides
 

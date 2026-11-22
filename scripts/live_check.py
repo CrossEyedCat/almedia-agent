@@ -135,7 +135,7 @@ def main(argv=None) -> int:
     answer = run / "incoming" / "refund_rate.result.json"
     summary = {
         "tracebacks": text.count("Traceback"),
-        "narration": next((l for l in text.splitlines() if l.startswith("narration:")), "narration: not asked"),
+        "narration": ([l for l in text.splitlines() if l.startswith("narration:")] or ["narration: not asked"])[-1],   # the last word: a refusal comes after the start line
         "incidents": [{"id": r["id"], "status": r["status"], "moved": (r.get("drivers") or [{}])[0].get("metric"),
                        "segment": r["segment"], "first_seen": r["first_seen"],
                        "cause": next((h["cause"] for h in r.get("hypotheses", []) if h.get("status") == "supported"), None)}

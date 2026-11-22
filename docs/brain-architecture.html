@@ -98,13 +98,13 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
 <body style="margin:0">
 <main class="wrap">
 <header>
-  <div class="eyebrow">Eye of the System · brain · HackLab #2 Berlin · state of 22 Nov 2026, 03:39</div>
+  <div class="eyebrow">Eye of the System · brain · HackLab #2 Berlin · state of 22 Nov 2026, 04:12</div>
   <h1>Monitoring Brain Architecture</h1>
   <p class="lede">The brain is the part of the system that understands the marketplace. It keeps a graph of metrics and how they depend on each other, and computes any metric for any segment from the simulator's data. For every new hour of data it uses both to notice a change, find where it happened and what caused it, and write a report without being asked. It also takes in new metric definitions while it runs.</p>
   <ul class="facts">
     <li><b>36</b> metrics, <b>298</b> typed edges</li>
-    <li><b>19</b> modules, <b>5,068</b> lines</li>
-    <li><b>307</b> test functions in the <b>19</b> test files that import <code>brain/</code></li>
+    <li><b>19</b> modules, <b>5,074</b> lines</li>
+    <li><b>310</b> test functions in the <b>19</b> test files that import <code>brain/</code></li>
     <li>holdout: <b>120/120</b> faults detected, <b>120/120</b> localized, <b>118/120</b> with the cause, <b>1</b> false alarm in <b>457</b> watched days, <b>80/80</b> innocent events silent (<a href="results.md">results.md</a>)</li>
   </ul>
 </header>
@@ -670,8 +670,8 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
 <tr><td><code>impact.py</code></td><td class="num">87</td><td>The outcome recomputed through the formulas of the graph with some rates replaced by other values</td><td><code>tree_metrics, recompute, estimate</code></td><td><code>test_attribution, test_incidents, test_overlap</code></td></tr>
 <tr><th colspan="5">Incidents and the loop</th></tr>
 <tr><td><code>incidents.py</code></td><td class="num">323</td><td>Groups alerts into incidents and keeps each incident in one file from open to resolved; writes the explained and pending records</td><td><code>Book.update, Incident, write_json</code></td><td><code>test_incidents, test_extension, test_investigate, test_narrate and 1 more</code></td></tr>
-<tr><td><code>run.py</code></td><td class="num">152</td><td>The loop: live next to the simulator&#x27;s clock, or a replay of a finished database hour by hour</td><td><code>python -m brain.run, live, replay</code></td><td><code>test_extension, test_incidents, test_narrate, test_overlap</code></td></tr>
-<tr><td><code>narrate.py</code></td><td class="num">261</td><td>With --narrate (live only): a language model writes a short narration of each incident from its own evidence; every number is checked against it, and the template report stays</td><td><code>Narrator.submit, Narrator.ready, evidence, numbers_backed</code></td><td><code>test_narrate</code></td></tr>
+<tr><td><code>run.py</code></td><td class="num">157</td><td>The loop: live next to the simulator&#x27;s clock, or a replay of a finished database hour by hour</td><td><code>python -m brain.run, live, replay</code></td><td><code>test_extension, test_incidents, test_narrate, test_overlap</code></td></tr>
+<tr><td><code>narrate.py</code></td><td class="num">262</td><td>With --narrate (live only): a language model writes a short narration of each incident from its own evidence; every number is checked against it, and the template report stays</td><td><code>Narrator.submit, Narrator.ready, evidence, numbers_backed</code></td><td><code>test_narrate</code></td></tr>
 <tr><th colspan="5">New metrics</th></tr>
 <tr><td><code>extension.py</code></td><td class="num">1060</td><td>The extension agent: takes a definition from the incoming folder, checks it against the data, adds the metric to the graph or rejects it, and writes the answer file</td><td><code>Extension.poll, find_formulas, compare, identities, export</code></td><td><code>test_extension</code></td></tr>
       </tbody>
