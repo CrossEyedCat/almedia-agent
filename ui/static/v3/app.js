@@ -4,6 +4,7 @@
 (function () {
   'use strict';
   var NS = 'http://www.w3.org/2000/svg';
+  var R = window.V3Route;      // the link geometry (route.js, loaded before this script)
   var $ = function (id) { return document.getElementById(id); };
   var graph = null, meta = {}, domains = [], domOf = {}, incidents = [], example = false, skipped = 0, graphKey = '';
   var dom = 'all', selInc = null, selNode = null, mode = 'incident', drawn = null;
@@ -195,6 +196,15 @@
     gr.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
     return gr;
   }
+  // a drawn item as route.js takes a box: its centre and half sizes; the key tells the boxes apart
+  function boxOfItem(i) { return { id: i.key, x: i.x, y: i.y, hw: i.hw, hh: NODE_H / 2 }; }
+  // the mark on a possible cause: the sign of the effect, half way along the link (g: its geometry from route.js)
+  function drawSign(layer, e, g) {
+    var sg = svg('g', { 'class': 'sign', transform: 'translate(' + g.mid.x.toFixed(1) + ',' + g.mid.y.toFixed(1) + ')' }, layer);
+    svg('circle', { r: 10 * S }, sg); var s = svg('text', { dy: '0.35em' }, sg); s.textContent = e.sign > 0 ? '+' : e.sign < 0 ? '−' : '?';
+    svg('title', {}, sg).textContent = e.source + ' may affect ' + e.target + (e.note ? ': ' + e.note : '');
+    return sg;
+  }
   function drawGraph() {
     $('graph-title').textContent = dom === 'all' ? 'Metric graph' : 'Metric graph: ' + domainLabel(dom);
     var E = $('l-edges'), N = $('l-nodes');
@@ -211,11 +221,6 @@
     });
     // the boxes the viewer moved: the links are drawn from these same items, so they follow
     all.nodes.forEach(function (i) { place(i, i.key); });
-    all.edges.forEach(function (pair) {
-      var a = pair[0], b = pair[1], x1 = a.x + a.hw, x2 = b.x - b.hw, c = (x2 - x1) / 2;
-      var p = svg('path', { d: 'M' + x1 + ',' + a.y + ' C' + (x1 + c) + ',' + a.y + ' ' + (x2 - c) + ',' + b.y + ' ' + x2 + ',' + b.y, 'class': 'edge' }, E);
-      drawn.edges.push({ el: p, from: a.n.metric, to: b.n.metric, depth: b.d });
-    });
     all.nodes.forEach(function (i) {
       shown[i.n.metric] = true; if (!pos[i.n.metric] || (pos[i.n.metric].n.repeated && !i.n.repeated)) pos[i.n.metric] = i;
       var gr = drawNode(N, i.n.metric, i.x, i.y, i.hw, i.n.repeated ? ' repeated' : '', i.key);
@@ -242,14 +247,21 @@
       w = Math.max(w, PAD * 2 + per * (cw + 16) - 16);
     }
     drawn.nodes.forEach(function (n) { if (!drawn.at[n.metric] || (drawn.at[n.metric].repeated && !n.repeated)) drawn.at[n.metric] = n; });
-    // possible causes: dashed curves with the sign of the effect, when both ends are on the canvas
-    list(graph && graph.edges).filter(function (e) { return e.kind === 'may_affect' && pos[e.source] && pos[e.target]; }).forEach(function (e) {
-      var a = pos[e.source], b = pos[e.target], sx = a.x + a.hw, ex = b.x + b.hw, bend = Math.max(sx, ex) + 34 + Math.abs(a.y - b.y) * 0.06;
-      var my = (a.y + b.y) / 2;
-      var p = svg('path', { d: 'M' + sx + ',' + a.y + ' C' + bend + ',' + a.y + ' ' + bend + ',' + b.y + ' ' + ex + ',' + b.y, 'class': 'edge may' }, E);
-      var sg = svg('g', { 'class': 'sign', transform: 'translate(' + (0.125 * sx + 0.75 * bend + 0.125 * ex) + ',' + my + ')' }, E);
-      svg('circle', { r: 10 * S }, sg); var s = svg('text', { dy: '0.35em' }, sg); s.textContent = e.sign > 0 ? '+' : e.sign < 0 ? '\u2212' : '?';
-      svg('title', {}, sg).textContent = e.source + ' may affect ' + e.target + (e.note ? ': ' + e.note : '');
+    // the links, drawn from where the boxes are now: route.js picks the side each one leaves and enters, so a box moved
+    // anywhere still gets links without hooks. Formula links first, then the possible causes (dashed, with their mark)
+    var boxes = drawn.nodes.map(function (n) { return boxOfItem(n); });
+    var causes = list(graph && graph.edges).filter(function (e) { return e.kind === 'may_affect' && pos[e.source] && pos[e.target]; });
+    var links = all.edges.map(function (pair) { return { from: boxOfItem(pair[0]), to: boxOfItem(pair[1]), kind: 'tree' }; })
+      .concat(causes.map(function (e) { return { from: boxOfItem(pos[e.source]), to: boxOfItem(pos[e.target]), kind: 'may' }; }));
+    var geo = R.layout(links, boxes);
+    all.edges.forEach(function (pair, k) {
+      var p = svg('path', { d: geo[k].d, 'class': 'edge' }, E);
+      drawn.edges.push({ el: p, from: pair[0].n.metric, to: pair[1].n.metric, depth: pair[1].d });
+    });
+    causes.forEach(function (e, k) {
+      var g = geo[all.edges.length + k];
+      var p = svg('path', { d: g.d, 'class': 'edge may' }, E);
+      drawSign(E, e, g);
       drawn.edges.push({ el: p, from: e.source, to: e.target, may: true });
     });
     // the world also holds any box moved past the layout's edges, so Fit and the minimap include it

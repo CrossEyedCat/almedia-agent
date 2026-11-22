@@ -421,14 +421,15 @@ def test_the_main_console_is_design_3_with_its_own_files_fetched_again_when_chan
     r = client.get("/")
     assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
     html = r.text
-    for path in ("/static/v3/style.css", "/static/v3/app.js"):
+    for path in ("/static/v3/style.css", "/static/v3/route.js", "/static/v3/app.js"):
         version = int((ui.STATIC / path.removeprefix("/static/")).stat().st_mtime)
         assert f'{path}?v={version}"' in html, path               # a changed file is fetched again on the next reload
         assert client.get(f"{path}?v={version}").status_code == 200
     assert "/static/console.css" not in html                       # the classic style is not loaded on the canvas
     for word in ('id="canvas"', 'id="feed"', 'id="sheet"', 'id="bench"', "Replay the investigation", 'href="/data"'):
         assert word in html, word
-    assert not re.search(r'/static/v3/(style\.css|app\.js)"', html), "a file without its version"
+    assert not re.search(r'/static/v3/(style\.css|route\.js|app\.js)"', html), "a file without its version"
+    assert html.index("/static/v3/route.js?v=") < html.index("/static/v3/app.js?v=")   # app.js uses V3Route
 
 
 def test_the_classic_console_is_kept_at_classic(client):

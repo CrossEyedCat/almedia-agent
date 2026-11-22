@@ -87,7 +87,8 @@ MAIN_DESIGN = 3      # the console served at /: design 3, "Investigation canvas"
 
 @app.get("/")
 def index():
-    return _page(f"v{MAIN_DESIGN}/index.html", (f"v{MAIN_DESIGN}/style.css", f"v{MAIN_DESIGN}/app.js"))
+    return _page(f"v{MAIN_DESIGN}/index.html",
+                 (f"v{MAIN_DESIGN}/style.css", f"v{MAIN_DESIGN}/route.js", f"v{MAIN_DESIGN}/app.js"))
 
 
 @app.get("/classic")
