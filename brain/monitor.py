@@ -303,6 +303,8 @@ class Monitor:
         self.open_episodes: list[tuple] = []      # (metric, segment, onset) of incidents that are still open
         self._watch_seen: set[tuple] = set()      # (release, metric) that has alerted, by scan or watch
         self._watch_closed: set[tuple] = set()    # ... and whose episode is over: never raised again
+        self._recent: dict[tuple, Alert] = {}     # (metric, place) -> its alert on a recent tick (_drop_tails)
+        self._tails_now: pd.Timestamp | None = None
 
     def rewatch(self) -> list[str]:
         """Bring the watch list in line with the graph after the extension agent changed it: a rate that
@@ -438,7 +440,35 @@ class Monitor:
                     tick.judged_series += len(cube.keys)
         tick.alerts += self._release_watch(now, tick, events)
         tick.alerts += self._symptoms_dropped(volumes, tick.alerts)
+        tick.alerts = self._drop_tails(tick.alerts, now)
         return tick
+
+    def _drop_tails(self, alerts: list[Alert], now: pd.Timestamp) -> list[Alert]:
+        """A series that contains or crosses a fault's place can stay bad an hour or two longer than
+        the fault's own series (one noisy hour is enough). While both are live, `leading` keeps the
+        stronger; once the stronger has ended, the weaker would lead on its own and open a second
+        incident for the same problem. So an alert is dropped when a stronger alert of the same metric
+        in a compatible place, seen on an earlier tick, overlapped its episode, has ended, and ended at
+        most `episode_gap_hours` before this one's newest bad hour. Bad for longer, it is news again."""
+        cfg = self.config
+        if self._tails_now is not None and now < self._tails_now:
+            self._recent = {}            # the clock went back (a fresh replay): forget
+        self._tails_now = now
+        gap = cfg.episode_gap_hours * HOUR
+        live = {(a.metric, tuple(sorted(a.segment.items()))) for a in alerts}
+        kept = []
+        for a in alerts:
+            tail = any(key not in live and r.metric == a.metric and r.segment != a.segment
+                       and compatible(r.segment, a.segment) and r.score > a.score
+                       and a.onset <= r.last_bad and r.onset <= a.last_bad and a.last_bad <= r.last_bad + gap
+                       for key, r in self._recent.items())
+            if not tail:
+                kept.append(a)
+        for a in alerts:
+            self._recent[(a.metric, tuple(sorted(a.segment.items())))] = a
+        horizon = now - (cfg.active_hours + cfg.episode_gap_hours) * HOUR
+        self._recent = {k: r for k, r in self._recent.items() if r.last_bad >= horizon}
+        return kept
 
     def _judge(self, cube: Cube, w: Watched, j0: int, late_rows: list[int], cal: np.ndarray,
                events: list[dict]) -> list[Alert]:

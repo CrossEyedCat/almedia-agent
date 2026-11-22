@@ -91,6 +91,29 @@ def test_the_normal_hours_after_a_fault_are_history_again(clean10, tmp_path):
     assert flagged == [FAULT + k * H for k in range(6)]
 
 
+def _a(segment, onset, last, score, metric="stockout_rate"):
+    from brain.monitor import Alert
+    return Alert(metric=metric, kind="proportion", segment=segment, onset=onset, last_bad=last, hours=1,
+                 observed=0.03, expected=0.015, numerator=30, denominator=1000, episode_observed=0.03,
+                 score=score, z=8.0)
+
+
+def test_a_crossing_series_that_outlives_the_fault_by_an_hour_is_not_news(clean10, tmp_path):
+    # seed 8: a beauty stock-out ended at 11:00; Spain, which crosses it, had one more unusual hour at
+    # 12:00 and became a second incident once the beauty alert was over
+    monitor, _ = _monitor(clean10, tmp_path)
+    t = FAULT
+    beauty = _a({"category": "beauty"}, t, t + 5 * H, 60.0)
+    spain = _a({"country": "ES"}, t, t + 5 * H, 12.0)
+    assert monitor._drop_tails([beauty, spain], t + 6 * H) == [beauty, spain]   # the same tick: leading() decides
+    later = _a({"country": "ES"}, t, t + 6 * H, 12.0)
+    assert monitor._drop_tails([later], t + 9 * H) == []                       # a tail of the beauty episode
+    still = _a({"country": "ES"}, t, t + 9 * H, 12.0)
+    assert monitor._drop_tails([still], t + 10 * H) == [still]                 # bad well past it: its own problem
+    other = _a({"country": "FR"}, t + 3 * H, t + 7 * H, 12.0, metric="search_ctr")
+    assert monitor._drop_tails([other], t + 8 * H) == [other]                  # another metric is never a tail
+
+
 def test_a_volume_episode_ends_at_its_last_low_hour(clean24, tmp_path):
     def halve(con):
         sets = ", ".join(f"{m} = {m} * 0.5" for m in MEASURES)
