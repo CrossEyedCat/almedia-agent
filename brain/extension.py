@@ -54,7 +54,9 @@ What is done with a definition, in this order; every step leaves a check with it
   context     the metric takes the context of the metrics its validated formula is built from: the union
               of their release systems joins its own (so a release of one of them is a candidate cause of
               a change in it, and a calendar system brings the calendar link that explains a planned event);
-              their data sources reach it through the formula (freshness). The check names each and its origin
+              their data sources reach it through the formula (freshness). A metric that equals a product
+              of two or three watched rates for any data (by signature) takes their systems too. The check
+              names each and its origin
   monitoring  a ratio of two column metrics is registered as an atomic rate, the shape the monitor
               watches. The monitor builds its watch list and its columns once, at start; when it has
               a `rewatch()` it is called after every change of the graph and the message says
@@ -658,7 +660,7 @@ class Extension:
         # ---- placement, then the whole graph with the metric in it
         settled = not any(c["status"] == "warn" for c in checks)
         final, found, applied = self._place(base, base_specs, others, spec, raw, sig, settled)
-        final, context = self._inherit(base, final)
+        final, context = self._inherit(base, final, sig)
         status ="validated" if settled and not any(c["status"] == "ambiguous" for c in found) else "tentative"
         if gave_way is not None and status != "validated":
             # it would be tentative as well: the one that was there first stays (and two such definitions
@@ -969,15 +971,21 @@ class Extension:
         return spec, found, None
 
     @staticmethod
-    def _inherit(base: MetricGraph, spec: MetricSpec) -> tuple[MetricSpec, dict]:
+    def _inherit(base: MetricGraph, spec: MetricSpec, sig: dict[str, np.ndarray]) -> tuple[MetricSpec, dict]:
         """The context of the metrics the validated formula is built from. Their release systems join the
         metric's own (the graph draws a release link for each and the calendar link for a calendar system);
-        their data sources reach it through the formula, so its freshness is theirs. Returns the spec with
-        the systems and the check that says what came from where."""
+        their data sources reach it through the formula, so its freshness is theirs. A metric that equals a
+        product of two or three watched rates for any data (orders / checkouts = payment_attempt_rate *
+        payment_success_rate * order_rate, found by signature) takes their systems as well: a release that
+        moves one of them moves it. Returns the spec with the systems and the check that says what came from where."""
         names = list(dict.fromkeys(spec.formula.names))
         own = list(dict.fromkeys(spec.systems))
+        rates = [w.metric for w in watch_list(base) if w.metric in sig]
+        products = [combo for k in (2, 3) for combo in itertools.combinations(rates, k)
+                    if spec.name in sig and same(np.prod([sig[m] for m in combo], axis=0), sig[spec.name])]
+        lenders = names + [m for combo in products for m in combo if m not in names]
         origin: dict[str, list[str]] = {}
-        for n in names:
+        for n in dict.fromkeys(lenders):
             for system in base.specs[n].systems:
                 origin.setdefault(system, [])
                 if n not in origin[system]:
@@ -1000,6 +1008,9 @@ class Extension:
         if sources:
             parts.append("freshness of " + "; ".join(f"{src} (from {_words(ms)})" for src, ms in sorted(sources.items())))
         whose, carry = _words(names), "carries" if len(names) == 1 else "carry"
+        if products:
+            whose += " and of the rates it equals the product of for any data (" + "; ".join(
+                f"{spec.name} = {' * '.join(c)}" for c in products) + ")"
         if inherited:
             detail = f"it takes the context of {whose}: {'; '.join(parts)}"
         elif own:

@@ -154,6 +154,7 @@ svg text { font-family: var(--mono); }
 .brief-sec { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
 .brief { font-size: 15px; line-height: 1.55; }
 .detail .brief-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
+.detail .brief-stale { margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--amber); }
 .row2 { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; font-size: 13px; }
 .contrib + .contrib { margin-top: 12px; }
 .share-bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin: 4px 0; } .share-bar i { display: block; height: 100%; background: var(--st, var(--hot)); }
@@ -223,7 +224,7 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
         <h1>Eye of the System</h1>
       </div>
       <div class="clock" title="The newest hour of simulated data the monitor has read">
-        <span class="clock-mode" id="clock-mode">Replay</span>
+        <span class="clock-mode" id="clock-mode">Simulated</span>
         <span id="clock">connecting...</span>
         <span class="clock-note" id="clock-note"></span>
       </div>
@@ -246,7 +247,8 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     <div class="grp" id="end-grp" hidden><label>In progress</label>
       <div><select id="end-select"></select><button id="end-go">End it (rollback)</button></div></div>
     <div class="grp"><label>Innocent change</label>
-      <div><select id="pr-country"></select><button id="pr-go">Promo (12 h)</button></div></div>
+      <div><select id="pr-country"></select><button id="pr-go">Promo (12 h)</button>
+      <select id="ms-category" aria-label="Category the traffic moves toward"></select><button id="ms-go" title="Traffic moves toward one category; every rate stays the same; no calendar announces it">Mix shift (innocent)</button></div></div>
     <div class="grp"><label>Data</label>
       <div><select id="dd-source"></select><button id="dd-go">Arrives 2 h late</button></div></div>
     <div class="grp"><label>New metric</label><div><button id="nm-go">Add refund_rate</button><button id="nm-dup" title="payment_rate: the query of payment_success_rate under another name">Add a duplicate metric</button></div></div>
@@ -314,6 +316,17 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     if (!delta || (d !== 'up' && d !== 'down')) return '';
     return (d === 'up') === (delta > 0) ? 'good' : 'bad';
   }
+  // in an incident a loss is red, and a gain is green only when the incident is explained (an innocent change): a
+  // fault can raise a figure for a while (an ad budget spent ahead of schedule raises ad revenue), which is no gain
+  function toneIn(i, metric, delta) { var t = tone(metric, delta); return t === 'good' && status(i) !== 'explained' ? '' : t; }
+  function euroTone(i, v) { v = num(v); return !v ? '' : v < 0 ? 'bad' : status(i) === 'explained' ? 'good' : ''; }
+  // the incident's effect in euros: on contribution when it has one, else the first euro figure
+  function euroOf(i) {
+    var imp = obj(i.impact);
+    var k = num(imp.contribution_eur) != null ? 'contribution_eur' : Object.keys(imp).filter(function (x) { return /_eur$/.test(x) && num(imp[x]) != null; })[0];
+    return k ? num(imp[k]) : null;
+  }
+  function eurText(v) { return (v > 0 ? '+' : '') + short(v) + ' EUR'; }
   function segText(s) { var o = obj(s), k = Object.keys(o); return k.length ? k.map(function (x) { return str(o[x]); }).join(' x ') : 'all'; }
   function when(t) { return str(t).replace('T', ' ').replace(':00Z', '').replace(/-/g, '‑'); }
   function svg(tag, attrs, parent) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
@@ -494,12 +507,17 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
       try {
         var ch = obj(i.change), st = status(i), d = obj(list(i.drivers)[0]);
         var quiet = st === 'explained' || st === 'pending';
+        // the row leads with what moved and what it cost; the place, and the outcome it was measured on, come under it
+        var moved = d.metric ? str(d.metric) : str(i.metric), dp = d.metric ? d.delta_pct : ch.delta_pct, eur = euroOf(i);
+        var line = [el('span', 'mono inc-metric', [moved])];
+        if (num(dp) != null) line.push(el('span', 'chg ' + toneIn(i, moved, dp), [pct(dp)]));
+        if (eur != null) line.push(el('span', 'chg ' + euroTone(i, eur), [eurText(eur)]));
         var sub = [segText(i.segment)];
-        if (d.metric && d.metric !== i.metric) sub.push(' · ', el('span', 'mono', [str(d.metric)]));
+        if (moved !== str(i.metric)) sub.push(' · ', el('span', 'mono', [str(i.metric) + (num(ch.delta_pct) != null ? ' ' + pct(ch.delta_pct) : '')]));
         var row = el('div', 'inc ' + stOf(i) + (quiet ? ' quiet' : '') + (i.id === selInc && mode === 'incident' ? ' sel' : ''), [
           el('span', 'pill ' + st, [st]),
           el('span', 'inc-main', [
-            el('span', 'inc-line', [el('span', 'mono inc-metric', [str(i.metric)])].concat(num(ch.delta_pct) != null ? [el('span', 'chg ' + tone(i.metric, ch.delta_pct), [pct(ch.delta_pct)])] : [])),
+            el('span', 'inc-line', line),
             el('span', 'inc-sub', sub)]),
           el('span', 'inc-meta', [el('span', 'mono', [when(i.first_seen)]), el('span', 'mono muted', [i.id])])]);
         row.tabIndex = 0; row.title = 'First seen ' + when(i.first_seen) + ' UTC';
@@ -597,21 +615,27 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     d.className = 'detail ' + stOf(i);
     var ch = obj(i.change), w = obj(ch.window), imp = obj(i.impact);
     // four figures first: what was seen, what was expected, the change, and what it cost in euros
-    var eur = num(imp.contribution_eur) != null ? 'contribution_eur' : Object.keys(imp).filter(function (k) { return /_eur$/.test(k) && num(imp[k]) != null; })[0];
-    var effect = eur ? imp[eur] : null;
+    var effect = euroOf(i);
     // a record with none of the four (a pending one: its data has not arrived) gets one quiet line, not four dashes
     d.appendChild([ch.observed, ch.expected, ch.delta_pct, effect].some(function (v) { return num(v) != null; }) ? el('div', 'readout', [
       cell('Observed', short(ch.observed)), cell('Expected', short(ch.expected)),
-      cell('Change', pct(ch.delta_pct), 'chg ' + tone(i.metric, ch.delta_pct)),
-      cell('Effect, EUR', effect == null ? '–' : (effect > 0 ? '+' : '') + short(effect), 'chg ' + (effect > 0 ? 'good' : effect < 0 ? 'bad' : ''))])
+      cell('Change', pct(ch.delta_pct), 'chg ' + toneIn(i, i.metric, ch.delta_pct)),
+      cell('Effect, EUR', effect == null ? '–' : (effect > 0 ? '+' : '') + short(effect), 'chg ' + euroTone(i, effect))])
       : el('p', 'muted', [status(i) === 'pending' ? 'No figures yet: the data for these hours has not arrived.' : 'No figures in this report.']));
-    // the narration (brain/narrate.py), only when a model wrote it and every number in it was checked
-    var story = obj(i.narrative);
-    if (story.source === 'model' && str(story.text).trim()) {
-      d.appendChild(section('In brief', [el('p', 'brief', [str(story.text)]),
+    // the narration (brain/narrate.py), only when a model wrote it and every number in it was checked. Without it the
+    // plain-language summary comes right under the figures, not at the end below the trail
+    var story = obj(i.narrative), told = story.source === 'model' && !!str(story.text).trim();
+    if (told) {
+      var brief = [];
+      // written before the newest figures: it says when, so it is not read as contradicting the readout above it
+      var asOf = Date.parse(str(story.as_of)), seen = Date.parse(str(i.last_seen));
+      if (isFinite(asOf) && isFinite(seen) && asOf < seen)
+        brief.push(el('p', 'brief-stale', ['written at ' + ('0' + new Date(asOf).getUTCHours()).slice(-2) + ':00 UTC; the figures above are newer']));
+      brief.push(el('p', 'brief', [str(story.text)]),
         el('p', 'brief-note', ['Written by ' + (str(story.model) || 'a language model') + ' from this report' + (story.as_of ? ' at ' + when(story.as_of) + ' UTC' : '')
-          + '; every number in it was checked against the evidence.'])], 'brief-sec'));
-    }
+          + '; every number in it was checked against the evidence.']));
+      d.appendChild(section('In brief', brief, 'brief-sec'));
+    } else if (i.report) d.appendChild(section('Summary', [el('p', 'summary', [str(i.report)])]));
     var rows = [['Metric', mono(i.metric)], ['Segment', segText(i.segment)],
                 ['Change', num(ch.delta_pct) != null ? pct(ch.delta_pct) + (num(ch.z) != null ? ' (z ' + fmt(ch.z) + ')' : '') : '-']];
     if (num(ch.delta) != null) rows.push(['Difference', fmt(ch.delta)]);
@@ -651,7 +675,7 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     });
     if (tr.length) d.appendChild(section('Investigation trail', [el('ol', 'trail', tr)]));
     if (list(i.uncertain).length) d.appendChild(section('Still uncertain', [el('ul', 'uncertain', i.uncertain.map(function (u) { return el('li', null, [str(u)]); }))]));
-    if (i.report) d.appendChild(section('Summary', [el('p', 'summary', [str(i.report)])]));
+    if (told && i.report) d.appendChild(section('Summary', [el('p', 'summary', [str(i.report)])]));
   }
   function renderDetail() {
     var d = $('detail'); d.textContent = ''; d.className = 'detail'; $('detail-status').textContent = '';
@@ -679,6 +703,20 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     return JSON.stringify([incidents, skipped]);
   }
   var wallMode = false;
+  // the clock's mode. Live: one data hour per real hour. Simulated, accelerated: the data clock is ahead of real time,
+  // or has moved on by more than an hour beyond the real time that passed since the page first looked (sim.live
+  // --speed 2 writes an hour every 2 s). Replay: a finished database read as it is
+  var clockFirst = null, accelerated = false, HOUR_MS = 3600000;
+  function clockMode(s) {
+    if (s.clock_mode === 'wall') { clockFirst = null; accelerated = false; return 'Live'; }
+    var hour = Date.parse(str(s.last_hour)), now = Date.parse(str(s.server_now));
+    if (isFinite(hour) && isFinite(now)) {
+      if (hour > now) accelerated = true;
+      if (!clockFirst) clockFirst = { hour: hour, now: now };
+      else if (hour - clockFirst.hour > now - clockFirst.now + HOUR_MS) accelerated = true;
+    }
+    return accelerated ? 'Simulated, accelerated' : 'Replay';
+  }
   function displayHour(ts) {
     return new Intl.DateTimeFormat('en-GB', {timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit',
       year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).format(new Date(ts)) + ' Europe/Berlin';
@@ -687,9 +725,12 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     get('/api/state').then(function (s) {
       wallMode = s.clock_mode === 'wall';
       var c = $('clock'), parts = s.ready ? clockParts(s.last_hour) : null;
-      $('clock-mode').textContent = wallMode ? 'Live' : 'Replay';
+      var label = s.ready ? clockMode(s) : (wallMode ? 'Live' : 'Simulated');
+      $('clock-mode').textContent = label;
       $('clock-mode').className = 'clock-mode' + (wallMode ? ' live' : '');
-      $('clock-mode').title = wallMode ? 'Current hour: one data hour per real hour' : 'Replay hour: the simulator runs faster than real time';
+      $('clock-mode').title = wallMode ? 'Current hour: one data hour per real hour'
+        : label === 'Replay' ? 'A finished database of simulated data, read hour by hour'
+        : 'Simulated data: the simulator writes an hour of data every few seconds, faster than real time';
       c.textContent = '';
       if (parts) { c.appendChild(el('span', 'clock-date', [parts.day])); c.appendChild(el('span', 'clock-hour', [parts.hour])); } else c.textContent = s.error;
       $('clock-note').textContent = s.ready ? 'Europe/Berlin · simulated data' : '';
@@ -713,19 +754,34 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     }).catch(function () { note('Could not read the incidents.'); });
   }
 
+  // the faults the test bench can write into the simulator: kind, label, settings it uses, hours it lasts unless
+  // someone ends it, and its severity when it takes one. At 2 s per simulated hour the demo's rollback step comes 50 s
+  // after the click, so the faults run 72 h (144 s): still bounded, and still running when "End it" is clicked. The ad
+  // fault keeps 12 h: its shape (boost for a third, then nothing) needs it.
+  var KINDS = [
+    ['payment_failure', 'Payment failure', ['country', 'platform'], 72, 0.4],
+    ['stockout_surge', 'Stockouts', ['category'], 72, 0.4],
+    ['search_regression', 'Search regression', ['country'], 72, 0.4],
+    ['ad_budget_exhausted', 'Ad budget gone early', ['country'], 12, 0.4],
+    ['traffic_drop', 'Traffic drop', ['country', 'platform'], 72, 0.5],
+    ['feed_unavailable', 'Feed shows unavailable', [], 72, null],
+    ['discount_push', 'Discount push', [], 72, null]];
+  // the request the bench posts to /api/inject: only the settings the fault uses (value(p) reads the bench's select)
+  function faultBody(kind, value) {
+    var k = KINDS.filter(function (x) { return x[0] === kind; })[0], hours = k[3];
+    var body = { kind: kind, hours: hours, when: 'now' };
+    if (k[4] != null) body.severity = k[4];
+    k[2].forEach(function (p) { body[p] = value(p); });
+    return body;
+  }
+  // an innocent change no calendar announces: traffic moves toward one category, every rate in it stays the same
+  function mixShiftBody(category) { return { kind: 'mix_shift', category: category, hours: 12, when: 'now' }; }
+
   // ------------------------------------------------------------- controls
   function fill(id, values) { var s = $(id); values.forEach(function (v) { var o = document.createElement('option'); o.value = v; o.textContent = v; s.appendChild(o); }); }
-  // kind, label, settings it uses, hours it lasts unless someone ends it. At 2 s per simulated hour the demo's
-  // rollback step comes 50 s after the click, so the first three run 72 h (144 s): still bounded, and still
-  // running when "End it" is clicked. The ad fault keeps 12 h: its shape (boost for a third, then nothing) needs it.
-  var KINDS = [
-    ['payment_failure', 'Payment failure', ['country', 'platform'], 72],
-    ['stockout_surge', 'Stockouts', ['category'], 72],
-    ['search_regression', 'Search regression', ['country'], 72],
-    ['ad_budget_exhausted', 'Ad budget gone early', ['country'], 12]];
   KINDS.forEach(function (k) { var o = document.createElement('option'); o.value = k[0]; o.textContent = k[1]; $('f-kind').appendChild(o); });
   fill('f-country', ['DE', 'FR', 'ES', 'PL']); fill('f-platform', ['Android', 'iOS', 'Web']); fill('f-category', ['electronics', 'fashion', 'home', 'beauty', 'sports']);
-  fill('pr-country', ['FR', 'DE', 'ES', 'PL']); fill('dd-source', ['payments', 'orders', 'traffic', 'search', 'recommendations', 'ads', 'inventory']);
+  fill('pr-country', ['FR', 'DE', 'ES', 'PL']); fill('ms-category', ['fashion', 'electronics', 'home', 'beauty', 'sports']); fill('dd-source', ['payments', 'orders', 'traffic', 'search', 'recommendations', 'ads', 'inventory']);
   function showParams() {
     var need = KINDS.filter(function (k) { return k[0] === $('f-kind').value; })[0][2];
     ['country', 'platform', 'category'].forEach(function (p) { $('f-' + p).hidden = need.indexOf(p) < 0; });
@@ -763,13 +819,10 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
   }
   $('f-go').onclick = function () {
     var kind = $('f-kind').value, label = KINDS.filter(function (k) { return k[0] === kind; })[0][1];
-    var need = KINDS.filter(function (k) { return k[0] === kind; })[0][2];
-    var hours = KINDS.filter(function (k) { return k[0] === kind; })[0][3];
-    var body = { kind: kind, severity: 0.4, hours: hours, when: 'now' };
-    need.forEach(function (p) { body[p] = $('f-' + p).value; });          // only the settings this fault uses
-    act(body, label + ' injected');
+    act(faultBody(kind, function (p) { return $('f-' + p).value; }), label + ' injected');
   };
   $('pr-go').onclick = function () { act({ kind: 'promo', country: $('pr-country').value, hours: 12, when: 'now' }, 'Promo started'); };
+  $('ms-go').onclick = function () { act(mixShiftBody($('ms-category').value), 'Mix shift started'); };
   $('dd-go').onclick = function () { act({ kind: 'data_delay', source: $('dd-source').value, hours: 3, delay_hours: 2, when: 'now' }, 'Late data scheduled'); };
   // adding a metric: hand it over, then wait for the monitor's answer (<name>.result.json). The bench shows the
   // answer's message with a link to its checks

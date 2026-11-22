@@ -105,6 +105,24 @@ def test_with_the_core_graph_refund_rate_inherits_freshness_and_says_no_system_i
     assert "freshness of orders" in context["detail"]
 
 
+def test_a_rate_that_is_a_product_of_watched_rates_takes_their_systems(agent):
+    """The audit's second case (E3b): orders_per_checkout = payment_attempt_rate * payment_success_rate * order_rate
+    for any data, but orders and checkouts carry no system, so the payments-sdk fault became a second incident
+    with no cause. The rates it is the product of (found by signature) lend it their release systems."""
+    ext = agent(MetricGraph.load())
+    drop(ext.incoming, "orders_per_checkout", definition("orders_per_checkout", "SUM(orders) * 1.0 / NULLIF(SUM(checkouts), 0)"))
+    [r] = look(ext)
+    assert r["status"] == "validated" and r["formula"] == "orders / checkouts", r["message"]
+    g = ext.graph
+    assert set(g.specs["orders_per_checkout"].systems) == {"checkout", "payments", "payments-sdk", "orders"}
+    assert "release:payments-sdk" in context_ids(g, "orders_per_checkout")
+    detail = by_check(r)["context"]["detail"]
+    assert "payment_attempt_rate * payment_success_rate * order_rate" in detail, detail
+    assert "payments-sdk" in detail
+    # the core rates are untouched
+    assert g.specs["payment_success_rate"].systems == ("payments", "payments-sdk")
+
+
 def test_a_rate_over_sessions_gets_the_calendar_link_so_a_promo_is_not_a_false_alarm(agent):
     """The audit's case (E3b): cart_per_session had no calendar link and the FR promo became an incident."""
     ext = agent(MetricGraph.load())
