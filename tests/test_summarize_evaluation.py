@@ -465,7 +465,7 @@ def test_the_paragraph_counts_the_unconfirmed_causes_that_are_stock_outs_in_a_ca
 
 
 def test_the_readme_quotes_the_tracked_holdout_numbers_in_one_sentence():
-    """The README's checklist line on the plain ranking says what docs/results.json gives, counted the page's way."""
+    """The README's paragraph on the plain ranking ("At a glance") says what docs/results.json gives, counted the page's way."""
     readme, tracked = ((ROOT / name).read_text(encoding="utf-8") for name in ("README.md", "docs/results.md"))
     assert OLD_WORDING not in readme and OLD_WORDING not in tracked
     saved = json.loads((ROOT / "docs" / "results.json").read_text(encoding="utf-8"))
@@ -474,7 +474,7 @@ def test_the_readme_quotes_the_tracked_holdout_numbers_in_one_sentence():
     brain, low, high = (se.tally(fresh(rs)) for rs in (saved["runs"], b["runs"], b["second"]["runs"]))
     built = se.tally([r for r in saved["runs"] if r["seed"] not in holdout])
     stockouts, unconfirmed = se.unconfirmed(fresh(b["runs"]))
-    line = next(text for text in readme.splitlines() if text.startswith("- [x] Plain-ranking baseline"))
+    line = next(text for text in readme.splitlines() if text.startswith("**Against the plain ranking**"))
     lead, numbers = line.split("`--baseline`). ")
     assert len(holdout) == 10 and numbers.endswith(".") and ". " not in numbers          # one sentence
     assert numbers.startswith(

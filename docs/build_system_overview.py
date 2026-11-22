@@ -99,7 +99,7 @@ def facts() -> dict:
         ("sim/world.py", "One hour of the marketplace for every segment: sessions to orders, money, ads, stockouts; seasonality and noise; faults and promos applied"),
         ("sim/schema.py", "The tables and columns (the contract, printed as docs/contracts/schema.sql)"),
         ("sim/db.py", "SQLite access, write or rewrite hours with every injection on record"),
-        # "about 3 s": measured by the simulator's author, README section 6, M1 ("Measured: about 3 s for 4 countries")
+        # "about 3 s": measured by the simulator's author when the backfill was built (about 3 s for 4 countries)
         ("sim/run.py", "Backfill a clean history (28 days in about 3 s)"),
         ("sim/live.py", "Move the simulated clock forward, one hour per tick; with --wall-clock, follow real time"),
         ("sim/clock.py", "Wall-clock mode: bring the database up to the real current hour"),
@@ -178,7 +178,7 @@ SCENARIOS = [
      "held as pending, no alert"),
 ]
 
-# What the README says is not built (sections 3.3, 3.5, 3.7 and the unticked boxes of section 6), checked against the code.
+# What the README says is not built ("Not built" at the top and in sections 3.3 to 3.5 and 3.7), checked against the code.
 NOT_BUILT = [
     "A euro threshold for alerts. A change is judged by its size against the rate's own history, not by what it costs.",
     "Judging volumes such as sessions. Only rates are watched.",
