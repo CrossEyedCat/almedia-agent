@@ -115,6 +115,13 @@ is our own simulator, so this is an engineering check, not proof on real traffic
   answered in 4.6 s, "formula refunds / orders found from the SQL, the only one of 1045 candidates", validated on 29 days,
   watched from the next tick; **Add a duplicate metric**: answered in 7.2 s, rejected as an alias of payment_success_rate.
 
+- Rehearsed on the new main console (design 3) on 22 Nov, 10:50 CET, fresh 28-day backfill, `--speed 2`, at 1280 x 800:
+  payment failure DE x Android from **Test bench**: incident about 1 s after the click, opened in the report with the
+  payments release supported; **Replay the investigation** steps through ten steps on the canvas (arrow keys work); close
+  the bench before the replay, it covers the canvas. **End it (rollback)**: resolved 5 s later; **Promo (12 h)** FR:
+  `explained` in 2.6 s; **Add refund_rate**: "formula refunds / orders found from the SQL, the only one of 1045 candidates"
+  in 3.6 s, with **Show the checks**.
+
 ## If something goes wrong
 
 - No incident after 20 seconds: say "it is still collecting evidence" and move on to the promo; or play the recording.
