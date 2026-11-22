@@ -147,3 +147,17 @@ def test_a_volume_series_answers_a_targeted_look(scenario):
     hours = monitor.hourly("sessions", PLACE, DROP - 2 * H, DROP + 3 * H)
     assert [h["hour"] for h in hours] == [DROP + k * H for k in range(-2, 3)]
     assert hours[0]["z"] > -3 > hours[-1]["z"]
+
+
+def test_a_volume_incident_is_not_healthy_while_the_drop_runs_on_into_the_night(scenario, tmp_path):
+    """The health check compares like with like: the episode's daytime average is not the faulty level at night."""
+    from brain.incidents import Book
+    monitor = scenario(scale("DE", "Android", DROP, DROP + 20 * H, 0.7))
+    book = Book(monitor, tmp_path / "inc", fresh=True)
+    t = DROP - H
+    while t <= T("2026-11-17T05:00:00Z"):
+        book.update(monitor.tick(as_of=t))
+        t += H
+    inc = next(i for i in book.incidents if "sessions" in i.metrics)
+    assert inc.status != "resolved"
+    assert not book._healthy(inc, monitor.tick(as_of=T("2026-11-17T08:00:00Z")))     # the drop is still on at 08:00

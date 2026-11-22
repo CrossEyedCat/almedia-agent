@@ -490,8 +490,10 @@ class Book:
         own = [a for a in inc.metrics.values() if a.segment == inc.segment] or list(inc.metrics.values())
         top = max(own, key=lambda a: a.score)
         # the faulty rate to look for: the episode's, unless the rate rose and then fell by amounts that
-        # cancel over the episode (then its newest bad hours say what "still faulty" would look like)
-        faulty = top.episode_observed
+        # cancel over the episode (then its newest bad hours say what "still faulty" would look like). A volume
+        # follows the hour of the day, so its episode average is not comparable with the expected count of the
+        # newest hours: for a count, the newest bad hours' share of their own expected count is the fault
+        faulty = top.observed if top.kind == "volume" else top.episode_observed
         if top.expected and abs(faulty / top.expected - 1) < self.monitor.config.min_effect:
             faulty = top.observed
         if top.kind == "volume":   # a count follows the hour of the day: ask for the faulty share of the expected count

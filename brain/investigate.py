@@ -876,7 +876,8 @@ class Investigator:
         trail.append({"action": "stop", "target": "investigation", "result": verdict})
 
         # 5. what stays open
-        if (primary.observed - primary.expected) * (primary.episode_observed - primary.expected) < 0:
+        if primary.kind != "volume" and \
+                (primary.observed - primary.expected) * (primary.episode_observed - primary.expected) < 0:
             uncertain.append(f"{primary.metric} changed direction during the incident; the effect so far nets both phases.")
         if primary.hours < 2 and inc.status == "open":
             uncertain.append("Only one hour of evidence so far.")
