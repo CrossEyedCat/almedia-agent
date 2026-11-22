@@ -1,6 +1,6 @@
 # Demo script (3 minutes)
 
-Status: integrated monitor a757828 has been replay-tested, and run live in the order of this script (payment fault, stockouts, search regression, promo: three separate incidents, the promo explained). Live recovery and the three-minute timing still need rehearsal. The whole script was run once in the console at `54ef95b` (investigator and new-metric intake on `main`): new metric validated and watched, payment fault raised and resolved after the rollback, promo explained, late data held.
+Status: rehearsed on 22 Nov, 01:00 CET with all open pull requests merged locally, fresh 28-day backfill, `--speed 2`: fault found 6 s after the click, resolved 8 s after the rollback, promo explained, late data held, `refund_rate` answered in about 10 s (`docs/pitch-script.md` has the timings). The three-minute timing still needs a run against a timer.
 
 ## Before we start (all terminals at the repository root)
 
@@ -14,6 +14,8 @@ Status: integrated monitor a757828 has been replay-tested, and run live in the o
 ```
 python -m sim.run --backfill 28d --db data/market.db --force
 python -m brain.run --db data/market.db --incidents incidents --incoming incoming_metrics --graph-out data/graph.json --fresh
+# Add --narrate to show "In brief" above each report: needs ANTHROPIC_API_KEY in .env, one request per milestone
+# (new incident, new leading cause, cost doubled, resolved). Without it, or without credit, the report is the template only.
 # --fresh empties incidents/ (archive it first, step 2, if the run is worth keeping). Without it a restarted
 # monitor leaves the previous run's incident and pending files as they were and opens duplicates beside them.
 # It also removes old answers in incoming_metrics/. A definition left there is taken again at start, so the
@@ -41,7 +43,7 @@ Do not start the accelerated clock five minutes early: launch it immediately bef
 At speed 2, a day passes in 48 seconds. Read the header clock before injecting; night-time counts are smaller.
 
 For scoring use a separate folder: `python -m sim.score generate --db data/eval.db --days 49`;
-run B's monitor replay against that database, writing to **eval_incidents/**, then
+then `python -m brain.run --replay --db data/eval.db --incidents eval_incidents --fresh` (it writes to **eval_incidents/**), then
 `python -m sim.score score --db data/eval.db --incidents eval_incidents --out data/eval-results.md`.
 The page `docs/results.md` is built from many such runs by `python -m scripts.summarize_evaluation` (its docstring has the
 command); a single-run report must not overwrite it.
@@ -52,14 +54,14 @@ Never point the live UI at eval_incidents. Missing or empty scoring output is an
 | Time | Say | Do | Must be visible |
 |---|---|---|---|
 | 0:00 | "A marketplace has thousands of metrics and nobody can watch them all. This system watches by itself." | Header and graph on screen | Moving clock, formula tree |
-| 0:20 | "It knows how the business works: orders are checkouts times payment success. Each line has a meaning." | Point at the tree; name the four line types | Tree from contribution down |
+| 0:20 | "It knows how the business works: orders are sessions times a chain of step rates, and payment success is one of them. Each line has a meaning." | Point at the tree; formula lines are solid, possible causes dashed with a sign; a click on a box lists its breakdown and context links | Tree from contribution down |
 | 0:45 | "Fault: a payment release breaks Android payments in Germany." | Choose **Payment failure** (DE, Android) in the DEMO bar, click **Inject fault** | Toast "Payment failure injected from ..." |
-| 1:00 | "It notices, follows the graph, and tells us where and why." | Wait for the incident (about 3 to 6 simulated hours = 6 to 12 s) [B] | Incident appears; path orders to payment success lit in red |
-| 1:20 | Read the report: the actual impact in euros, measured contribution, affected country/platform and supported cause; what is still uncertain | Click the incident | Impact, hypotheses with evidence, trail |
-| 1:35 | "Someone rolls the release back. The incident should close by itself." | Pick the fault in **In progress**, click **End it (rollback)** | A rollback release appears; after a few normal hours the incident turns resolved [B] |
-| 1:45 | "Not everything unusual is a problem: a planned French promo lifts orders." | Click **Promo (12 h)** (FR) | No new incident; the calendar explains it [B] |
-| 2:00 | "If data arrives late, it waits instead of crying wolf." | Click **Arrives 2 h late** (payments) | No incident for those hours [B] |
-| 2:15 | "A new metric arrives as a definition and a query. The system checks the query against the formula, finds the metric's place in the graph and starts watching it." | Click **Add refund_rate** | Message "refund_rate added: validated on 28 days of data ... placed as a factor of refunds ... watched from the next tick" (about 2 s); a new tree `refunds` = `orders` x `refund_rate` in the graph [B] |
+| 1:00 | "It notices, follows the graph, and tells us where and why." | Wait for the incident (about 5 to 6 s at `--speed 2`) | Incident appears; path orders to payment success lit in red |
+| 1:20 | Read the report: the actual impact in euros, measured contribution, affected country/platform and supported cause; what is still uncertain | Click the incident | Impact, hypotheses with evidence, trail; with `--narrate`, "In brief" above them a few seconds later |
+| 1:35 | "Someone rolls the release back. The incident should close by itself." | Pick the fault in **In progress**, click **End it (rollback)** | A rollback release appears; after a few normal hours the incident turns resolved |
+| 1:45 | "Not everything unusual is a problem: a planned French promo lifts orders." | Click **Promo (12 h)** (FR) | No new incident; the calendar explains it |
+| 2:00 | "If data arrives late, it waits instead of crying wolf." | Click **Arrives 2 h late** (payments) | No incident for those hours |
+| 2:15 | "A new metric arrives as a definition and a query. The system checks the query against the formula, finds the metric's place in the graph and starts watching it." | Click **Add refund_rate** | Message "refund_rate added: validated on 28 days of data ... placed as a factor of refunds ... watched from the next tick" (2 to 10 s: it validates the definition on all the data so far); a new tree `refunds` = `orders` x `refund_rate` in the graph |
 | 2:40 | "We scored it on 240 injected faults and 160 innocent events in twenty runs, ten of them never seen before: detection, place, cause, false alarms." | Show `docs/results.md` | The table with the holdout line; numbers from `python -m scripts.summarize_evaluation`, not hand-picked |
 | 2:55 | One-line close: "It watches the business, not the servers." | | |
 
@@ -87,4 +89,4 @@ The scoring script (`python -m sim.score generate`) mixes all four with promos a
 
 - Inject at a chosen header-clock hour and record it in each rehearsal. `--now` affects the latest data hour; it does not fix the hour of day.
 - Reset between rehearsals with the full stop/archive/backfill/restart list above.
-- Fault severity in the button is 0.4 (payment success falls by 40%), faults default to 12 simulated hours unless rolled back, promo is 12 hours, late data is 2 hours.
+- Fault severity in the button is 0.4 (payment success falls by 40%), a fault from the page lasts 72 simulated hours (the ad-budget fault 12) unless rolled back, promo is 12 hours, late data is 2 hours.

@@ -14,6 +14,89 @@ anyone asking questions.
 
 ---
 
+## At a glance
+
+**What it is.** A monitor that watches a simulated marketplace's hourly business numbers by itself. It decides what to
+watch from a graph of how the business works, notices a change worth attention, finds where it happened and what most
+likely caused it, says what it costs and what is still uncertain, keeps one incident per problem until the data shows
+the problem is gone, and takes in a new metric while it runs. Nobody asks it a question. All data is simulated.
+
+**Measured** ([`docs/results.md`](docs/results.md)): twenty 49-day runs of our simulator, each with 12 injected faults of
+four kinds, 8 innocent changes and a routine deployment every day. Ten of the runs are a holdout the system had never been
+run on; the table shows those ten.
+
+| On the 10 holdout runs | Faults found | In the right place | Cause confirmed | False alarms | Innocent changes left alone |
+|---|---:|---:|---:|---:|---:|
+| This system | 120 / 120 | 120 / 120 | 118 / 120 | 1 in 457 watched days | 80 / 80 |
+| Plain ranking, strict threshold | 49 / 120 | 49 / 49 | 31 / 49 | 0 | 80 / 80 |
+| Plain ranking, sensitive threshold | 92 / 120 | 92 / 92 | 74 / 92 | 71 | 40 / 80 |
+
+Place and cause are counted among the faults each monitor found: the strict ranking names the right cause for 31 of the
+49 it found, 31 of all 120. False alarms are counts on the same ten runs; for this system that is 1 in 457 watched days.
+
+The plain ranking is the honest baseline: each hour it reports the most anomalous rate and cell against the same hour of
+the previous three weeks, with no calendar, no pooled windows and no investigation. The strict threshold (z 50) was
+picked on the other ten runs by a fixed rule; the sensitive one (z 12) is the first version's threshold, fixed before
+this version ran on the holdout. These are engineering checks on our own simulator, not results on real traffic; the
+results page lists every miss, the false alarm and one report that leaves a harmless deployment supported next to the
+real cause.
+
+**How it works** (sections 3.2 to 3.7 have the details, [`docs/brain-architecture.html`](docs/brain-architecture.html)
+and [`docs/system-overview.html`](docs/system-overview.html) the pictures):
+
+1. **A graph of the business** ([`brain/metrics/`](brain/metrics)): 36 metrics from the outcome (contribution) down to
+   the step rates of the funnel, with typed links: exact formulas, breakdowns by country, platform, category and channel,
+   possible causes with a sign, and context (releases, data freshness, the promo calendar). Its links are checked for
+   unknown metrics and cycles every time it loads; its formulas and coverage are checked against the data when the live
+   monitor starts with `--graph-out` and whenever a new metric joins.
+2. **A monitor** ([`brain/monitor.py`](brain/monitor.py)): every hour it judges each of the 15 atomic rates (funnel
+   steps, money, ads, search, feed and stock-outs) in seven cuts of the market (48 series each, 720 in all) against its
+   own history, with an exact binomial test where the rate is a share and a spread test where it is not, over one and
+   three hours; it waits for late data instead of judging incomplete hours, and a planned promo explains the change it
+   causes.
+3. **An investigator** ([`brain/investigate.py`](brain/investigate.py)): separates the cause from its symptoms along the
+   graph, finds the place by scoring up to 479 places (every combination of dimension values that has counts, from one
+   country or one platform down to one finest cell), splits the outcome's change over its factors (LMDI) and puts a euro
+   figure on it, and tests every recent release, the calendar, late data and a mix shift as explanations, keeping the
+   rejected ones with the reason. Every step goes into the incident's trail.
+4. **Incidents** ([`brain/incidents.py`](brain/incidents.py)): one file per problem, updated in place, resolved only when
+   the data would show the fault and does not. The console ([`ui/`](ui)) draws the graph, the incidents and the reports.
+5. **New metrics** ([`brain/extension.py`](brain/extension.py)): a definition and its SQL dropped into a folder are run
+   in a sandbox, checked against its formula (the given one, or one found by search when the definition has none),
+   placed in the graph and watched from the next hour, without a language model.
+6. **A language model**, only where it helps a reader: with `--narrate` (an API key in `.env`; the scoring and all
+   results run without it) it writes a short summary of each incident from the incident's own evidence; every number in
+   it is checked against that evidence, and the template report stays. Seen live on Sunday morning: the console showed
+   it about 10 s after the fault began, and a new one when the incident resolved.
+
+**Run it** (Python 3.13, Windows PowerShell; the full demo with resets and timings is [`docs/demo.md`](docs/demo.md)):
+
+```powershell
+py -3.13 -m venv .venv; .venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m sim.run --backfill 28d --db data/market.db --force
+.venv\Scripts\python -m brain.run --db data/market.db --incidents incidents --incoming incoming_metrics --graph-out data/graph.json --fresh
+.venv\Scripts\python -m sim.live --speed 2 --db data/market.db
+$env:GRAPH_JSON="data/graph.json"; .venv\Scripts\python -m uvicorn ui.app:app --port 8000
+```
+
+Run the last three in three terminals, then open http://127.0.0.1:8000 and use the DEMO bar.
+
+On macOS or Linux (Python 3.13): `python3 -m venv .venv`, use `.venv/bin/python` in place of `.venv\Scripts\python`,
+and start the console with `GRAPH_JSON=data/graph.json .venv/bin/python -m uvicorn ui.app:app --port 8000`.
+
+**Check it yourself**: `python -m pytest` (the whole suite); `python -m scripts.live_check --run runs/check` (the real
+processes for a simulated day and a half with every kind of event and nobody watching; it exits with an error if any check
+fails); and, to rebuild `docs/results.md`: for each seed N in 4 8 9 10 11 12 13 22 71 80 101 102 103 104 105 106 107
+108 109 110, `python -m sim.score generate --seed N --db runs/seedN.db` then
+`python -m brain.run --replay --db runs/seedN.db --incidents runs/seedN-incidents --fresh`; then
+`python -m scripts.summarize_evaluation --runs runs --seeds 4,8,9,10,11,12,13,22,71,80,101,102,103,104,105,106,107,108,109,110 --holdout 101,102,103,104,105,106,107,108,109,110 --commit <the brain commit you ran> --warmup-hours 80`
+(its docstring explains every option).
+
+**Not built**: a euro threshold for alerts; watching volumes such as sessions; formulas with constants in the new-metric
+search; cause links proposed for a new metric; a range around the euro figure.
+
+---
+
 ## 1. What the brief asks for, and how it is judged
 
 | Capability | What it means here | Weight |
@@ -25,7 +108,7 @@ anyone asking questions.
 | Communication | Alerts with numbers and an investigation trail; track whether an issue persists or resolves; never re-report the same problem | |
 | Demo | Run the full loop live: a fault, an innocent change, a new metric | 20% |
 
-## 2. Demo scope (proposed — adjust in the first hour)
+## 2. Demo scope
 
 A small marketplace, enough to show the complete loop:
 
@@ -33,16 +116,17 @@ A small marketplace, enough to show the complete loop:
 - **Time:** hourly data on a simulated clock; 4 weeks of history backfilled, then the clock runs live (fast-forward for the demo).
 - **Domains:** traffic, search, "For You" feed, cart, checkout, payment, orders, revenue, ads, inventory.
 
-Scenarios the simulator must produce:
+Scenarios of the demo (all six are built; S4 is the new metric, the other five are injected by the simulator and scored
+in `docs/results.md`):
 
 | # | Kind | Scenario | What the system should do |
 |---|---|---|---|
 | S1 | Fault | Payment success drops for **Android in Germany** after a payment SDK release | orders ↓ → traffic fine → checkout → payment success ↓ → narrows to DE × Android → matches the release → reports impact and remaining uncertainty |
 | S2 | Innocent change | Planned promo in France: traffic and orders up | finds the event in the promo calendar, explains it, does **not** alert |
 | S3 | Data completeness | The payments source arrives 2 h late | holds judgement on the incomplete hours instead of raising a false alarm |
-| S4 | New metric | `refund_rate` (or `ad_roas`) is added live as definition + SQL | agent places it in the graph, validates the formula and dimensions, starts monitoring it |
-| S5 | Fault (stretch) | "For You" shifts exposure to attractive but **out-of-stock** products: feed clicks up, purchases down | follows feed → product exposure → availability; separates the symptom (conversion) from the first cause (inventory filtering) |
-| S6 | Fault (stretch) | An advertiser's daily budget is spent by 10:00 | spend pacing → impressions, clicks, prices → pacing controller vs traffic surge |
+| S4 | New metric | `refund_rate` is added live as definition + SQL | agent places it in the graph, validates the formula and dimensions, starts monitoring it |
+| S5 | Fault | "For You" shifts exposure to attractive but **out-of-stock** products: feed clicks up, purchases down | follows feed → product exposure → availability; separates the symptom (conversion) from the first cause (inventory filtering) |
+| S6 | Fault | An advertiser's daily budget is spent by 10:00 | spend pacing → impressions, clicks, prices → pacing controller vs traffic surge |
 
 ## 3. Architecture
 
@@ -112,7 +196,8 @@ Rules for an incident file (agreed in the review of 21 Nov, issue 14; details in
 - Every hypothesis has a `kind`: `release`, `metric`, `calendar` or `freshness`. The cause of a release is built from the row,
   `release <system>: <description>`; a rollback row ends a release, it is not a new cause.
 - `explained` (a calendar event covers the deviation) and `pending` (hours held because a source has not arrived) use the same
-  file shape. The scorer skips both; the console shows them in grey. Until they are shipped, keep them in `incidents/notes/`.
+  file shape and are written beside the incidents as `explained-*.json` and `pending-*.json`. The scorer skips both; the
+  console shows them in grey.
 
 ### 3.2 Metric graph
 
@@ -123,7 +208,7 @@ A picture of the brain - the data path, the graph as loaded from the code, the l
   - `formula` — an exact identity used for decomposition (`gmv = orders × aov`). The formula graph is a DAG, not a tree: `gmv` feeds `marketplace_fees` with a plus and `discounts` with a minus, `sessions` feeds `orders` and `ad_impressions`.
   - `definition` — how a derived metric is computed when that differs from its decomposition (`take_rate = marketplace_fees / gmv`).
   - `breakdown` — split by a dimension; additive metrics sum, ratios are always ratios of sums.
-  - `may_affect` — a possible cause with a prior and a sign (which way the effect moves when the cause rises). It stays `assumed` until it is tested inside an incident; it is never "validated" by correlation on history (see 3.8).
+  - `may_affect` — a possible cause with a prior and a sign (which way the effect moves when the cause rises). It stays `assumed` in the graph: an incident tests the link and records the result in its own report, and it is never "validated" by correlation on history (see 3.8).
   - `context` — releases, the promo calendar and data freshness. Freshness is inherited through formulas: a metric is as fresh as its least fresh source.
 - **Declared outcome:** `contribution` carries `outcome: true`. A contributed metric never becomes a second root by accident; until it is placed it is listed under `unplaced_roots`.
 - **Tree view:** a spanning tree over `formula` edges from the declared outcome, for people to browse. The algorithms work on the DAG.
@@ -131,7 +216,7 @@ A picture of the brain - the data path, the graph as loaded from the code, the l
 
 ### 3.3 Extension agent (M4)
 
-Built in `brain/extension.py`; no language model is used. The live monitor looks into `$INCOMING_METRICS_DIR` on every poll, takes a `<name>.yaml` once it reads the same on two looks in a row, and answers with `<name>.result.json`: a status, a message, and every check with its numbers. On the 28-day demo data the console's `refund_rate` is answered in about two seconds.
+Built in `brain/extension.py`; no language model is used. The live monitor looks into `$INCOMING_METRICS_DIR` on every poll, takes a `<name>.yaml` once it reads the same on two looks in a row, and answers with `<name>.result.json`: a status, a message, and every check with its numbers. On the 28-day demo data the console's `refund_rate` is answered within about 2 to 10 seconds (it validates the definition on all the data so far).
 
 1. **Read the definition.** A new lower_snake_case name with a formula, a query or both. The formula may use only metrics the graph has (a near miss gets a suggestion). A definition may set the tolerance of its own comparison only above 0 and up to 1e-4 (the default is 1e-6); anything looser is rejected.
 2. **Run the SQL** inside the contract tables with a 3 s time limit and a 500,000-row limit, and read its grain from the result columns.
@@ -150,14 +235,14 @@ Statuses: `validated`, `tentative` (in the graph, with the caveat named in the m
 Built in `brain/clock.py`, `brain/stats.py`, `brain/monitor.py`, `brain/impact.py`, `brain/incidents.py`; run with `python -m brain.run`.
 
 - **Clock and completeness.** `clock = MAX(facts_hourly.ts) + 1 h`; a source's hour has arrived when `arrived_at <= clock + 10 min` (`docs/contracts/`). An hour of a metric is judged only when every source the metric depends on has arrived; until then it is *pending*: neither healthy nor an alert. `--replay` walks a finished database with the same rule and never reads a row from the future.
-- **What to watch.** Every atomic rate of the graph (15 today), on the formula tree or not, in seven cuts: total, each dimension, country × platform and country × category (48 series). Outcomes are not judged directly, because a fault in one cell is diluted in them (3.8); they are used for the impact.
+- **What to watch.** Every atomic rate of the graph (15 today), on the formula tree or not, in seven cuts: total, each dimension, country × platform and country × category (48 series per rate, 720 in all). Outcomes are not judged directly, because a fault in one cell is diluted in them (3.8); they are used for the impact.
 - **Expected rate.** Pooled numerator over pooled denominator of the series' own visible history (up to three weeks; three days are enough to start), without the hours being judged, hours already flagged, hours of calendar events and held hours. A fault that lasts therefore does not become the new normal. The simulator's rates have no daily pattern; real data would need an hour-of-week factor here.
 - **Detection.** The test is chosen per metric from its own history. If numerator and denominator count events and the hour-to-hour spread is binomial: the exact two-sided binomial tail, p below 1e-7. The same on the surplus for a ratio that never falls below 1 (payment attempts per checkout). Otherwise (money, impressions per session): the residual against its historical spread, beyond 6 spreads and beyond anything clean history showed. Each hour is judged alone and summed with the two before it, and the rate must have moved by at least 10 %. The last 8 hours are re-read and re-judged on every tick, because an injection can rewrite them.
 - **One fault, one incident.** A fault in one cell also shows, diluted, in every series that contains the cell: per metric the strongest series wins, alerts on other metrics in a compatible place join it, and an open incident is updated in place (same file, same `first_seen`), its place refined when stronger evidence arrives. Alerts join one incident only when one place lies inside the other and the graph relates the metrics, so faults that merely overlap stay apart. It is resolved when, three hours after the last bad hour, there is enough data that the faulty rate would show and it does not.
 - **After a release.** The scan asks thousands of questions an hour and needs overwhelming evidence for each. A release asks one: did the metrics linked to its system change, in its scope, since it went out? That is tested on the sum since the release (exact tests only, p below 1e-4, one episode per release and metric), which finds a fault in a small cell at night that the scan cannot.
 - **Planned events and late data.** A calendar event that overlaps a deviation in time and scope explains it for the metrics the graph links to the calendar (traffic, pricing, promotions): written as a record with status `explained`, no alert; its hours stay out of later baselines. Hours held for late data are written with status `pending` and removed when the data is in.
 - **Impact.** The outcome is recomputed through the formulas of the graph with the moved rates back at their expected values, so every path counts (a payment fault lowers fees and discounts together). From a metric that moved, the `may_affect` links are followed with one targeted test each: out-of-stock listings cost orders through the add-to-cart rate.
-- **Not built yet.** Volumes (sessions) with an hour-of-week baseline; attribution between several interacting factors and the comparison of rival causes belong to 3.5.
+- **Not built.** Judging volumes such as sessions (they would need an hour-of-week baseline); a euro threshold for alerts.
 
 ### 3.5 Investigation (M3)
 
@@ -174,17 +259,22 @@ Built in `brain/investigate.py`, `brain/localize.py`, `brain/attribution.py`; it
 
 ### 3.6 Reporting and lifecycle
 
-- **Deduplication:** a fingerprint (root metric, segment, cause) prevents repeated alerts; a recurring issue updates its incident instead.
-- **Lifecycle:** `open` → `ongoing` → `resolved` after K normal hours.
-- **Report content:** what changed, where, business impact, evidence numbers, investigation trail, what remains uncertain.
+Built in `brain/incidents.py`.
+
+- **One incident per problem.** A fault shows up as many alerts: in the cell where it happened, diluted in every series that contains the cell, and on the metrics downstream. Alerts join one incident when one place lies inside the other and the graph relates their metrics (a cause link either way, or a shared system); the strongest alert of each metric leads. An open incident that matches is updated in place: same file, same id, same `first_seen`; its place is refined when stronger evidence points to a narrower series.
+- **Lifecycle.** `open` on the tick that raises it, `ongoing` while alerts continue, `resolved` after three normal hours, and only on evidence of health: the data since the last bad hour would show the fault if it were still there, and does not. A quiet night in a small cell proves nothing, so the incident stays open.
+- **Not an alert.** A deviation that a planned event explains is written as `explained`; hours held back for late data as `pending` (removed once the data is in). Same file shape, no alert, grey in the console, skipped by the scorer.
+- **Report content.** What changed and where, the cost in EUR and in orders, the drivers with their role (cause candidate or symptom), where in the segments, the hypotheses with status, score and evidence, the trail of every step, what is still uncertain, and a template summary. With `--narrate` a checked narration is added (3.7).
 
 ### 3.7 Where the language model is used
 
-The core loop runs without it, so the demo cannot fail on an API call.
+The core loop runs without it, so the demo cannot fail on an API call. Built in `brain/narrate.py`, switched on with `python -m brain.run --narrate` (live loop only; the replay and the scoring never call it).
 
-- Writing the narrative from the structured evidence; a template is the fallback.
-- Suggesting descriptions and possible cause links for new metrics; suggestions pass the structural checks of 3.3 and stay `assumed`.
-- Not needed to find a formula or a place for a new metric: that is a deterministic search (3.3).
+- **A narration of each incident**, three or four plain sentences, written by `claude-opus-5-5` from the incident's own evidence and nothing else. One request per milestone (a new incident, a change of the leading explanation, a cost that has doubled since the last text, the incident resolved), never per tick; background threads, 20 s per request.
+- **Checked before it is shown.** The text must be plain and finished, and every number in it must appear in the evidence (as given, rounded to the precision written, or as a percentage of a share). A text with any other number is dropped, not repaired. The template report always stays; the console shows the narration as "In brief" above it.
+- **Fails quietly.** No credit or a refused key turns narration off for the run, with the reason in the incident file and in the monitor's start line; a timeout or a server error waits a minute before the same milestone is tried again. The key comes from the environment or `.env` and never appears in a reason.
+- **Seen live** on Sunday morning, four requests in all: "In brief" showed about 10 s after the fault began, and a new text when the incident resolved. That run also showed the text falling behind the figures (−345 EUR in the text, −1,943 EUR above it), so a cost that has doubled is now a milestone too.
+- **Not needed** to find a formula or a place for a new metric: that is a deterministic search (3.3). **Not built:** suggesting descriptions or cause links for new metrics.
 
 ### 3.8 What the algorithm choices are based on
 
@@ -203,6 +293,9 @@ After M1 the plan was checked against open implementations and published researc
 | Contributed SQL runs with a table whitelist inside SQLite, plus time and row limits | [SQLite security guide](https://www.sqlite.org/security.html) | none of about 80 bypass attempts read the scoring table |
 
 ## 4. Team split
+
+Sections 4 to 6 are our working plan, kept as the record of the 24 hours; scores quoted in them are from earlier commits.
+The system as built is section 3; the current numbers are those of `docs/results.md`, quoted in "At a glance".
 
 | Person | Owns | First deliverable for the other |
 |---|---|---|
@@ -232,14 +325,14 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 
 ### M0 Setup — Sat 11:00–12:30
 
-- [ ] **A+B** Accept the repo invite, clone, create the venv, `pip install -r requirements.txt`.
-- [ ] **A+B** Each claims the free Claude API credits (event page → *Infrastructure Tools & Credits*) and puts the key in their own `.env`.
-- [ ] **A+B** Fix the scenario list: S1–S4 are mandatory, S5 and S6 only if time allows.
-- [ ] **A+B** Fix the dimensions: countries, platforms, categories, channels (§2).
-- [ ] **A+B** Freeze the three contracts in §3.1: column names, units, timestamp format (UTC, hour start, `2026-11-01T13:00:00Z`), database path `data/market.db`.
-- [ ] **A+B** Define the top outcome: `contribution = marketplace_fees + ad_revenue − platform_funded_discounts − payment_costs` (or simpler — decide now, it is the root of the tree).
-- [ ] **A+B** Agree the simulated clock: history start date, 4 weeks of backfill, demo speed (e.g. 1 simulated hour every 2 s).
-- [ ] **A+B** Agree who edits what: A only `sim/` and `ui/`, B only `brain/`; shared files (README, `docs/contracts/`) only after telling the other.
+- [x] **A+B** Accept the repo invite, clone, create the venv, `pip install -r requirements.txt`.
+- [ ] **A+B** Each claims the free Claude API credits (event page → *Infrastructure Tools & Credits*) and puts the key in their own `.env`. B's key is in `.env` with credit, and narration (3.7) was seen live on Sunday morning; A's is open.
+- [x] **A+B** Fix the scenario list: S1–S4 are mandatory, S5 and S6 only if time allows.
+- [x] **A+B** Fix the dimensions: countries, platforms, categories, channels (§2).
+- [x] **A+B** Freeze the three contracts in §3.1: column names, units, timestamp format (UTC, hour start, `2026-11-01T13:00:00Z`), database path `data/market.db`.
+- [x] **A+B** Define the top outcome: `contribution = marketplace_fees + ad_revenue − platform_funded_discounts − payment_costs` (or simpler — decide now, it is the root of the tree). Decided simpler: `contribution = marketplace_fees + ad_spend − discounts` (3.2).
+- [x] **A+B** Agree the simulated clock: history start date, 4 weeks of backfill, demo speed (e.g. 1 simulated hour every 2 s).
+- [x] **A+B** Agree who edits what: A only `sim/` and `ui/`, B only `brain/`; shared files (README, `docs/contracts/`) only after telling the other. Written down in `CONTRIBUTING.md`: shared files by pull request.
 - [x] **A** Put contract fixtures in `docs/contracts/`: `facts_hourly.sql` (table DDL), `metric_example.yaml`. The table DDL is `docs/contracts/schema.sql` (generated by `python -m sim.schema`).
 - [x] **B** Put `docs/contracts/incident_example.json` there, with realistic values for S1.
 - [x] **B** A stub in `brain/` that opens `data/market.db` and prints row counts per table — proof that the data contract works.
@@ -257,7 +350,7 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 
 **B — graph v1**
 - [x] `brain/graph.py`: node and edge types (`formula`, `breakdown`, `may_affect`, `context`) with metadata (formula text, dimension, prior strength, status).
-- [x] Core metric definitions in `brain/metrics/*.yaml` following the contract — about 15 metrics from `contribution` down to the funnel rates.
+- [x] Core metric definitions in `brain/metrics/*.yaml` following the contract, from `contribution` down to the funnel rates (36 today).
 - [x] Evaluator: compute any metric for any segment and time window from the database.
 - [x] Validation on load: every formula recomputed against its components; breakdowns of additive metrics sum to the parent.
 - [x] Tree view in the terminal: `python -m brain.graph --tree`.
@@ -273,7 +366,7 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 **B — monitor v1**
 - [x] Clock and completeness: `clock = MAX(ts) + 1 h`, arrived when `arrived_at <= clock + 10 min` (agreed in issue 14, `docs/contracts/`); an hour is pending until every source the metric depends on (`graph.sources`) has arrived. `brain/clock.py`.
 - [x] Expected rate per series from its own history, robust to a lasting fault and to promo hours (instead of an hour-of-week state of base columns: the rates have no daily pattern, and counts give an exact test). `brain/monitor.py`.
-- [x] Watch list from the graph: every atomic rate (15), in total, per dimension, per country × platform and per country × category (48 series).
+- [x] Watch list from the graph: every atomic rate (15), in total, per dimension, per country × platform and per country × category (48 series per rate, 720 in all).
 - [x] Detector: exact binomial tail for proportions, historical spread for other ratios, one hour and three hours, minimum change of 10 %. `brain/stats.py`.
 - [x] Watch after a release: the metrics linked to its system, in its scope, on the sum since the release; finds a fault in a small cell at night that the hourly scan cannot (the miss on seed 8 of the 49-day harness, issue 10).
 - [x] Incidents: one file per fault, refined in place; faults that only overlap stay separate (one place inside the other and metrics related in the graph); resolved only on evidence of health; impact through the formulas; releases around the onset as hypotheses with `kind`. `brain/incidents.py`, `brain/impact.py`.
@@ -282,7 +375,7 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [x] Reviewed: an independent review of the monitor confirmed 35 findings; the ones that show on stage are fixed (a757828), the rest are listed in that commit.
 - [ ] Minimum impact in EUR as a gate (today: minimum change of the rate).
 - [ ] Sessions and other volumes with a seasonal baseline.
-- [ ] Known limits, not fixed: a monitor started in the middle of a fault takes it into its baseline (start on a fresh backfill with `--fresh`); a source more than 8 hours late is never judged; an incident stays alive about two hours after its fault ends.
+- Known limits, not fixed: a monitor started in the middle of a fault takes it into its baseline (start on a fresh backfill with `--fresh`); a source more than 8 hours late is never judged; an incident stays alive about two hours after its fault ends.
 
 **A+B checkpoint (dinner):** live simulator with S1 → the brain detects it; write down the detection delay in simulated hours. **Done 21 Nov.** S1 from the console (DE × Android) started at 02:00 simulated time, the night trough: raised after 2 simulated hours with the release as the supported cause. In the demo order (payment fault, stockouts, search regression, promo) the console shows three separate incidents with the right place and cause, and the promo as explained. Scoring at that point (seeds 4 to 8 had not been used for tuning then; they were later, and the current numbers with a holdout are in `docs/results.md`): 28-day harness, seeds 4 to 8: 59 of 60 faults detected (the one miss is a correct incident that the scorer on `main` assigns to the previous fault, issue 10), 100 % localized, right cause 59 of 59, 0 false alarms, 40 of 40 innocent events silent, mean delay 0.0 to 0.2 h after the first affected hour. 49-day harness of PR 17 with routine releases, seeds 4, 8, 9, 10: 48 of 48 detected, right cause 46 of 48, 0 false alarms, 32 of 32 innocent events silent.
 
@@ -328,12 +421,12 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 **A**
 - [x] S5 simulator: stockout_surge; search_regression and ad_budget_exhausted also available. How the brain handles each kind is scored in `docs/results.md`.
 - [x] Scoring harness: N random injections + random innocent events → detection rate, false alarms per watched day, correct-cause rate, mean detection delay → `docs/results.md`. `python -m sim.score generate` then `score` report one run (to `data/eval-results.md`); `docs/results.md` is built from many runs by `python -m scripts.summarize_evaluation`.
-- [x] Demo script `docs/demo.md`: exact clicks and timing, plus a fallback if something hangs. Draft is there; lines marked [B] need B's confirmation.
+- [x] Demo script `docs/demo.md`: exact clicks and timing, plus a fallback if something hangs. Rehearsed on 22 Nov, 01:00 CET; the measured timings are in `docs/pitch-script.md`.
 
 **B**
 - [x] Lifecycle `open → ongoing → resolved`: one file per incident, matched by place and related metrics and updated in place; resolved only on evidence of health. `brain/incidents.py`, built with the monitor (3.4, 3.6).
-- [ ] LLM narration from structured evidence, template fallback, 20 s timeout.
-- [ ] Unattended run of one simulated day with mixed events: no crash, no duplicate alerts.
+- [x] LLM narration from structured evidence, template fallback, 20 s timeout. `brain/narrate.py`, `python -m brain.run --narrate`; every number checked against the evidence (3.7). Seen live on Sunday morning with credit.
+- [x] Unattended run of one simulated day with mixed events: no crash, no duplicate alerts. `python -m scripts.live_check --run <new folder>`: the real clock, monitor and console-style injections for 36 simulated hours with four faults and their rollbacks, a promo, late data and the new metric. Run on 21 Nov: every fault found once, in place, with its cause, and resolved after its rollback; no false alarm; promo explained; late hours held and released; `refund_rate` validated; no traceback.
 
 **A+B** From 12:00 only bug fixes.
 
@@ -341,8 +434,8 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 
 - [ ] **A+B** Two full demo rehearsals against a 3-minute timer.
 - [ ] **A** Record the screen and one of us speaking to camera; cut to ≤ 3:00; upload to YouTube as unlisted; open the link in a private window to check access.
-- [ ] **B** README "How it works": algorithm summary and the numbers from `docs/results.md`; complete the library list (§10).
-- [ ] **A+B** Slides for 5 minutes: problem, graph, autonomous loop, demo screenshot, results, what failed, what next.
+- [x] **B** README "How it works": algorithm summary and the numbers from `docs/results.md`; complete the library list (§10). See "At a glance" at the top.
+- [x] **A+B** Slides for 5 minutes: problem, graph, autonomous loop, demo, results, what failed, what next. A draft deck of 8 slides (cover, problem, graph, loop, demo, results, limits, close) is made; the team still has to check it. The talk outline is in `docs/pitch-script.md`.
 - [ ] **B** Make the repo public: `gh repo edit CrossEyedCat/almedia-agent --visibility public --accept-visibility-change-consequences`; check it from a logged-out browser.
 - [ ] **A** Submit the form with the registration email **by 14:30**; screenshot the confirmation.
 - [ ] **A+B** Be at the venue for the 18:00 pitches.
@@ -364,10 +457,11 @@ Submit at https://tally.so/r/GexoxQ with the email used for registration.
 ## 8. Repository layout
 
 ```
-sim/         marketplace simulator, injections, ground truth
-brain/       graph, extension agent, monitor, investigator, reporter
-ui/          dashboard
-docs/        algorithm notes, demo script
+sim/         marketplace simulator, injections, ground truth, scorer
+brain/       graph, monitor, investigator, incidents, new-metric agent, narration
+ui/          console (graph, incidents, reports, DEMO bar) and data browser
+scripts/     results page from many runs, plain-ranking baseline, unattended live check, core rehearsal, guardrails
+docs/        results, demo and pitch scripts, contracts, architecture pages
 tests/       tests
 data/        SQLite database (not committed)
 incidents/   live incident JSON output (not committed)
@@ -381,9 +475,11 @@ incoming_metrics/ YAML handoff and result files (runtime)
 ```powershell
 py -3.13 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pytest
 ```
 
-Put the API key in `.env` (never commit it):
+The commands that run the whole system are under "Run it" at the top; `docs/demo.md` has the full reset and the timings.
+For narration (3.7) put an API key with credit in `.env` (never commit it) and add `--narrate` to the monitor:
 
 ```
 ANTHROPIC_API_KEY=...
@@ -391,4 +487,6 @@ ANTHROPIC_API_KEY=...
 
 ## 10. Third-party libraries
 
-anthropic, fastapi, uvicorn, httpx, pandas, numpy, pydantic, pyyaml, scipy, pytest, python-dotenv — used as published packages under their own licenses. More are added here as they come in.
+Python packages, used as published under their own licenses (versions in `requirements.txt`): anthropic (narration only), fastapi and uvicorn (the console's server), httpx (the console's tests), pandas and numpy (data), scipy (exact binomial tails), pydantic (request bodies), pyyaml (metric definitions), python-dotenv (the API key), pytest (tests).
+
+The console uses no third-party JavaScript, CSS or fonts. The algorithm sources are cited in 3.8.

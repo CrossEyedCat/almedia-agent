@@ -40,7 +40,7 @@ uvicorn ui.app:app --port 8000                # console; /data browses the table
 python -m sim.score generate && python -m sim.score score   # one run: needs the brain's replay in eval_incidents/, writes data/eval-results.md
 ```
 
-See `docs/system-overview.html` for the whole picture (world, console, scoring; the monitor links to its own page).
+See `docs/system-overview.html` for the whole picture (world, brain, console, scoring); the brain has its own page, `docs/brain-architecture.html`.
 It is generated from the code: `python docs/build_system_overview.py`.
 
 ## Open questions for B (answer by editing this file)
@@ -61,8 +61,8 @@ It is generated from the code: `python docs/build_system_overview.py`.
    `release <system>: <description>`. A row whose description says rollback ends that release; it is not a new cause.
 4. **Statuses `explained` and `pending`**, same folder, same file shape. `explained` carries the metric, segment, change and
    one hypothesis of kind `calendar`. `pending` carries the sources and the held hours. The scorer skips both; the console
-   shows them in grey and keeps them out of the open count and the node colours. Until the console and scorer ship this,
-   the brain keeps them in `incidents/notes/`, which both ignore.
+   shows them in grey and keeps them out of the open count and the node colours. The brain writes them in the incidents
+   folder as `explained-*.json` and `pending-*.json`.
 5. **Result of adding a metric**: the brain writes `<name>.result.json` next to the YAML in `$INCOMING_METRICS_DIR`
    and re-exports the graph to `$GRAPH_JSON`. The console reads it with `GET /api/metric/{name}`. Fields: `name`,
    `status` (`validated`, `tentative` or `rejected`), `message` (one sentence for a person), `placed` (where it sits in

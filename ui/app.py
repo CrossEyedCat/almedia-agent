@@ -102,7 +102,7 @@ def _read_incident(path: Path) -> dict | None:
         return None
     if not isinstance(data, dict) or not isinstance(data.get("id"), str):
         return None
-    # The monitor currently keeps non-alert status records in notes/; these carry no outcome metric.
+    # explained and pending records carry no outcome metric; notes/ is still read for older runs.
     if not isinstance(data.get("metric"), str):
         if data.get("status") not in ("pending", "explained"):
             return None

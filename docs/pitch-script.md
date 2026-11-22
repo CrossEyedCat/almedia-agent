@@ -5,15 +5,16 @@ of implying it. Numbers come from `docs/results.md`. Read the whole page once be
 
 ## Before you start (5 minutes)
 
-1. Clean state, accelerated clock. In four terminals, from a clean clone, in this order:
-   `python -m sim.run --backfill 28d --db data/market.db --force`, then
+1. Clean state, accelerated clock, from a clean clone: run `python -m sim.run --backfill 28d --db data/market.db --force`
+   once, then start these three in their own terminals, in this order:
    `python -m brain.run --db data/market.db --incidents incidents --graph-out data/graph.json --fresh`, then
    `python -m sim.live --speed 2 --db data/market.db`, then `uvicorn ui.app:app --port 8000`. Open http://127.0.0.1:8000.
    Start the console with the four environment variables of `docs/demo.md`, step 4, and with an empty `incoming_metrics/`
    folder: without `GRAPH_JSON=data/graph.json` the console shows the tracked example graph and a metric added on stage never appears.
 2. Wait until the clock in the header moves and the incident list reads "No incidents. The monitor is watching."
 3. Open the folded DEMO controls once so you know where the buttons are, then fold them again. Dark or light theme: add `?theme=light` or `?theme=dark`.
-4. Inject the faults in different places or an hour apart. Faults that begin in the same hour are folded into one or two incidents by design.
+4. Two faults of one metric that begin in the same hour in places sharing a country or a platform can be reported as one
+   incident (a known limit, README 3.5); inject them an hour apart or in places that share neither a country nor a platform.
 
 ## The 3-minute script (about 420 words)
 
@@ -23,7 +24,7 @@ payments fail for Android users in Germany and orders quietly fall. We built a s
 change, finds where and why, and explains it. No one asks it questions."
 
 **0:25 How it understands the business.** (Point at the graph, then click one box.)
-"It starts from a graph of how the business works: profit is fees plus ads minus discounts, orders are sessions times conversion,
+"It starts from a graph of how the business works: contribution is fees plus ad spend minus discounts, orders are sessions times conversion,
 conversion is a chain of step rates. Lines have meanings: exact formulas, breakdowns, possible causes, and context such as releases and promos.
 That graph is what lets it trace a change instead of just flagging it."
 
@@ -68,18 +69,40 @@ false alarm was a one-hour jump in ad click-through in Poland on the web that cl
 - Payment failure in Germany on Android: the incident appears about 5 seconds after the click, with the payments release as the cause.
 - "End it (rollback)": the incident turns resolved about 8 seconds later (three normal data hours).
 - Promo in France: an `explained` record, grey, no alert. Late data: `pending` for about 4 seconds, then it disappears by itself.
+- Rehearsed again on 22 Nov, 01:00 CET, with the redesigned console and all open pull requests merged locally, fresh 28-day
+  backfill, `--speed 2`: incident 6 s after the click (seen at the next data hour), resolved 8 s after the rollback, promo
+  `explained` within 6 s, late data `pending` at once; **Add refund_rate** answered within about 10 s while the clock ran
+  (validation over 30 days of data), and the new `refunds` tree appeared in the graph.
 
 ## If something goes wrong
 
 - No incident after 20 seconds: say "it is still collecting evidence" and move on to the promo; or play the recording.
 - A fault in a small segment at night needs more hours of evidence; use Germany, Android or iOS payments, or a category such as electronics.
-- To start over: stop the four processes, run the first command again, empty `incidents/`, start them in the same order.
+- To start over: stop the three processes, run the first command again, empty `incidents/`, start them in the same order.
 
 ## The 5-minute slides
 
 1. **The problem** (30 s): too many numbers; failures that are not outages; nobody asks the question.
-2. **How it sees the business** (45 s): the graph, one picture from `docs/system-overview.html`; four kinds of line.
+2. **How it sees the business** (45 s): the metric graph figure of `docs/brain-architecture.html` (formula, breakdown, possible cause, context); the parts picture of `docs/system-overview.html` if there is time.
 3. **The loop that runs by itself** (60 s): read, expect, detect, locate, explain, keep tracking; one fault is one incident, updated in place.
 4. **Demo** (60 s): a screenshot of the console with an incident and the lit path.
 5. **Results** (60 s): the table from `docs/results.md`; say the caveat on the same slide.
 6. **What failed and what next** (45 s): four unconfirmed causes in 240 faults (all stockouts); one false alarm; two faults at the same time are not tested; new metrics with constants in the formula; low-traffic hours.
+
+## Recording the video (3:00 at most)
+
+The rules ask for the pitch, how the solution works and a live demo, with a team member speaking to camera. One way that
+needs nothing beyond Windows 11:
+
+1. **Prepare** (10 minutes): a clean start as in "Before you start"; the console in a browser window of 1280 x 800 (the
+   projector size the page is tuned for), light theme (`?theme=light`), zoom 100 %; notifications off; the DEMO bar folded.
+   Let the clock run a few data hours into the day before you inject: night hours have small counts.
+2. **Camera parts**: open with 15 s to camera (who you are, the problem in one sentence) and close with 15 s (the result and
+   the one-line close). The Camera app records them.
+3. **Screen part**: Xbox Game Bar (Win+Alt+R) records the browser window. Follow the 3-minute script from 0:25 to 2:40 and
+   say it over the screen as you click. The timings above say how long each step takes to show.
+4. **Cut** in Clipchamp (built into Windows 11): camera opening, screen part, the results slide (the "Measured" table of
+   the README or `docs/results.md`), camera close. Keep it under 3:00; export at 1080p.
+5. **Upload** to YouTube as Unlisted (or Google Drive, anyone with the link can view). Open the link in a private window to
+   check that it plays for someone who is not signed in. Put the link in the form and in the README.
+

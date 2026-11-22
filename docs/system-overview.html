@@ -6,78 +6,104 @@
 <title>System overview</title>
 <script>var t = new URLSearchParams(location.search).get('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;</script>
 <style>
-/* Console style: Precise, quiet, intentional.
-   Warm neutrals, one accent (amber), flat surfaces (no gradients, shadows, glow), radius 8px at most, 8px grid,
-   weights 400/500/700, everything left aligned. Status is shown with words and one small colour, not with animation.
+/* Console style: graphite on porcelain. Precise, quiet, intentional.
+   One accent (cobalt) for focus, selection and links; status colours only for status. Flat surfaces: a hairline
+   border, never a shadow, glow or colour ramp. Radius 6-8px, 8px grid, weights 400 and 600 (500 only for the large
+   mono readouts). System fonts only: Segoe UI Variable / SF Pro for words, Cascadia Mono / SF Mono for data and ids.
    Both themes are defined here; ?theme=light|dark (or data-theme on <html>) overrides the system setting. */
 :root {
-  --bg: #FAF7F2;        /* paper */
-  --block: #F0EBE2;     /* colour block behind cards */
-  --line: #D9D1C3;
-  --edge: #A89F8F;      /* graph lines and node outlines */
-  --ink: #1C1917;
-  --muted: #57534E;
-  --accent: #B45309;    /* focus ring and small marks; buttons stay ink in light mode */
-  --sel-bg: #1C1917;    /* selected chip / primary button */
-  --sel-fg: #FAF7F2;
-  --hot: #B42318;   --hot-bg: #F9E1DC;      /* open incident */
-  --amber: #7A5200; --amber-bg: #F3E4BD;    /* ongoing */
-  --ok: #1F6F5C;    --ok-bg: #D5ECE4;       /* resolved */
-  --ui: Inter, "Noto Sans SC", system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --bg: #F4F5F7;        /* porcelain */
+  --block: #FFFFFF;     /* cards */
+  --line: #E2E5EA;      /* hairlines */
+  --edge: #9AA1AE;      /* graph lines and node outlines */
+  --ink: #13161C;       /* graphite */
+  --muted: #5A6170;
+  --accent: #2F4AC6;    /* cobalt: focus, selection, links, possible-cause lines */
+  --accent-bg: #EDF0FB; /* selected row */
+  --surface: #F7F8FA;   /* quiet panels inside a card, hover */
+  --sel-bg: #13161C;    /* selected segment / primary button */
+  --sel-fg: #FFFFFF;
+  --hot: #B42318;   --hot-bg: #FDECEA;      /* open incident */
+  --amber: #8A5A00; --amber-bg: #FBF0D9;    /* ongoing */
+  --ok: #11694A;    --ok-bg: #E3F3EC;       /* resolved */
+  --ui: "Segoe UI Variable Text", "Segoe UI Variable Display", "SF Pro Text", "SF Pro Display", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --display: "Segoe UI Variable Display", "Segoe UI Variable Text", "SF Pro Display", "SF Pro Text", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Cascadia Mono", "SF Mono", "JetBrains Mono", ui-monospace, Consolas, monospace;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #12100D; --block: #1C1915; --line: #332E27; --edge: #5E574B; --ink: #F5F1EA; --muted: #A8A196; --accent: #F59E0B;
-    --sel-bg: #F59E0B; --sel-fg: #12100D;
-    --hot: #FF8A7A; --hot-bg: #3A1F1B; --amber: #E0B35C; --amber-bg: #352B14; --ok: #6FD0BD; --ok-bg: #15302A;
+    --bg: #0F1218; --block: #161B24; --line: #263041; --edge: #4A5568; --ink: #E8ECF2; --muted: #9AA3B2;
+    --accent: #8EA2FF; --accent-bg: #1C2440; --surface: #121720;
+    --sel-bg: #E8ECF2; --sel-fg: #0F1218;
+    --hot: #FF8B7B; --hot-bg: #3A1A18; --amber: #F2C063; --amber-bg: #33280F; --ok: #5FD3A7; --ok-bg: #11291F;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #12100D; --block: #1C1915; --line: #332E27; --edge: #5E574B; --ink: #F5F1EA; --muted: #A8A196; --accent: #F59E0B;
-  --sel-bg: #F59E0B; --sel-fg: #12100D;
-  --hot: #FF8A7A; --hot-bg: #3A1F1B; --amber: #E0B35C; --amber-bg: #352B14; --ok: #6FD0BD; --ok-bg: #15302A;
+  --bg: #0F1218; --block: #161B24; --line: #263041; --edge: #4A5568; --ink: #E8ECF2; --muted: #9AA3B2;
+  --accent: #8EA2FF; --accent-bg: #1C2440; --surface: #121720;
+  --sel-bg: #E8ECF2; --sel-fg: #0F1218;
+  --hot: #FF8B7B; --hot-bg: #3A1A18; --amber: #F2C063; --amber-bg: #33280F; --ok: #5FD3A7; --ok-bg: #11291F;
   color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }      /* a hidden element stays hidden even where a rule sets display */
 html { background: var(--bg); }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/1.6 var(--ui); font-variant-numeric: tabular-nums; }
-h1, h2, h3 { margin: 0; line-height: 1.2; }
-h1 { font-size: 24px; font-weight: 700; }
-a { color: var(--ink); font-weight: 500; text-underline-offset: 3px; }
-
-.page { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
-.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; padding: 24px 0 16px; }
-.top .grow { margin-left: auto; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/1.5 var(--ui); font-variant-numeric: tabular-nums;
+       -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+h1, h2, h3 { margin: 0; line-height: 1.25; font-weight: 600; }
+h1 { font: 600 20px/1.2 var(--display); letter-spacing: -.01em; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.mono, code { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); }
+.label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+/* page frame and the top bar both pages share */
+.page { max-width: 1680px; margin: 0 auto; padding: 0 24px; }
+.bar { background: var(--block); border-bottom: 1px solid var(--line); }
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; min-height: 56px; padding: 8px 0; }
+.top .grow { margin-left: auto; }
+.brand { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.mark { width: 24px; height: 24px; flex: none; color: var(--ink); }
+.mark .pupil { fill: var(--accent); }
+.navlink { font-weight: 600; font-size: 13px; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; white-space: nowrap; }
+.navlink:hover { border-color: var(--edge); text-decoration: none; }
 
 /* controls */
-button, select, input { font: inherit; color: var(--ink); background: var(--block); border: 1px solid var(--line); border-radius: 8px; padding: 8px 16px; }
-input { padding: 8px; }
-select { padding: 8px; }
-button { cursor: pointer; font-weight: 500; }
-button:hover { border-color: var(--ink); }
+button, select, input { font: inherit; font-size: 13px; color: var(--ink); background: var(--block); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; min-height: 32px; }
+select { padding: 4px 8px; }
+input { padding: 4px 8px; }
+button { cursor: pointer; font-weight: 600; }
+button:hover, select:hover { border-color: var(--edge); }
 button.primary, button.on { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-bg); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button:disabled { opacity: .45; cursor: default; }
+button:disabled:hover { border-color: var(--line); }
 
-/* status: words, one colour, no outline */
-.pill { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+/* status: a word in one colour; open, ongoing and resolved are counted, explained and pending stay muted */
+.pill { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
 .pill.open { color: var(--hot); } .pill.ongoing, .pill.plausible, .pill.example { color: var(--amber); }
-.pill.example { text-transform: none; letter-spacing: 0; font-weight: 500; white-space: normal; }
+.pill.example { text-transform: none; letter-spacing: 0; font-size: 12px; white-space: normal; background: var(--amber-bg); border-radius: 6px; padding: 2px 8px; }
 .pill.resolved, .pill.supported { color: var(--ok); } .pill.rejected, .pill.explained, .pill.pending { color: var(--muted); }
+/* the colour of a status, for rails, bars and the trace in the graph */
+.st-open { --st: var(--hot); --st-bg: var(--hot-bg); }
+.st-ongoing { --st: var(--amber); --st-bg: var(--amber-bg); }
+.st-resolved { --st: var(--ok); --st-bg: var(--ok-bg); }
+.st-explained, .st-pending, .st-other { --st: var(--muted); --st-bg: var(--surface); }
 
-/* a quiet surface: colour block, no border, no shadow */
-.card { background: var(--block); border-radius: 8px; }
-.card > h2 { padding: 16px 24px 8px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.empty { padding: 16px 24px 24px; color: var(--muted); }
-.kv { display: grid; grid-template-columns: auto 1fr; gap: 0 24px; }
-.kv span:nth-child(odd) { color: var(--muted); }
+/* a card: white surface, one hairline, no shadow */
+.card { background: var(--block); border: 1px solid var(--line); border-radius: 8px; }
+.card-head { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; min-height: 48px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.card-head h2, .card > h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.empty { padding: 16px; color: var(--muted); }
+.kv { display: grid; grid-template-columns: minmax(104px, max-content) minmax(0, 1fr); gap: 4px 16px; font-size: 13px; }
+.kv > span:nth-child(odd) { color: var(--muted); }      /* the label; a value's own spans (mono) keep the ink */
+.kv > span:nth-child(even) { overflow-wrap: anywhere; }
 
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
 
     .page { max-width: 1100px; }
@@ -118,7 +144,7 @@ shows what the brain found. Around them: a way to put faults into the world, and
 truth. This page covers the world, the console and the scoring; the brain has its own page:
 <a href="brain-architecture.html">brain-architecture.html</a>.</p>
 <div class="stats"><span><b>180</b>segments per hour</span><span><b>120,960</b>rows in 28 days</span>
-<span><b>6</b>kinds of injection</span><span><b>419</b>test functions</span></div>
+<span><b>6</b>kinds of injection</span><span><b>422</b>test functions</span></div>
 
 <h2>The parts</h2>
 <div class="dia">
@@ -240,7 +266,7 @@ causes; it is validated against the data before its export is written. Every hou
 watched rate. For each open incident the investigator finds the place, the cost in EUR and in orders, and the cause, and records
 every question and its answer in a trail. Each incident is one file, <code>incidents/*.json</code>, that is updated in place while
 the incident is open, ongoing and then resolved. The extension agent takes in new metrics while the brain runs
-(see <a href="#console">the console</a>). The brain has 19 modules and 5,057 lines;
+(see <a href="#console">the console</a>). The brain has 19 modules and 5,068 lines;
 <a href="brain-architecture.html">brain-architecture.html</a> describes them.</p>
 
 <h2>What the world contains</h2>
@@ -316,12 +342,12 @@ without the hours of each run that pass before the replay's first judgement.</p>
 <ul><li>A euro threshold for alerts. A change is judged by its size against the rate&#x27;s own history, not by what it costs.</li><li>Judging volumes such as sessions. Only rates are watched.</li><li>Formulas with constants, or with more than two metrics, in the search for the formula of a new metric.</li><li>Proposing cause links for a new metric. A definition can declare such links itself.</li><li>A range around the cost of an incident. The cost is one estimate, and it is noisy for a short incident in a small place.</li></ul>
 
 <h2>Modules</h2>
-<p>The simulator, the console and the scripts. The brain's 19 modules (5,057 lines) are described on
+<p>The simulator, the console and the scripts. The brain's 19 modules (5,068 lines) are described on
 <a href="brain-architecture.html">its own page</a>.</p>
-<div class="tw"><table><thead><tr><th>Module</th><th>Job</th><th>Lines</th></tr></thead><tbody><tr><td>sim/world.py</td><td>One hour of the marketplace for every segment: sessions to orders, money, ads, stockouts; seasonality and noise; faults and promos applied</td><td>209</td></tr><tr><td>sim/schema.py</td><td>The tables and columns (the contract, printed as docs/contracts/schema.sql)</td><td>64</td></tr><tr><td>sim/db.py</td><td>SQLite access, write or rewrite hours with every injection on record</td><td>90</td></tr><tr><td>sim/run.py</td><td>Backfill a clean history (28 days in about 3 s)</td><td>72</td></tr><tr><td>sim/live.py</td><td>Move the simulated clock forward, one hour per tick; with --wall-clock, follow real time</td><td>73</td></tr><tr><td>sim/clock.py</td><td>Wall-clock mode: bring the database up to the real current hour</td><td>28</td></tr><tr><td>sim/inject.py</td><td>Faults, promos, late data, and the rollback; each one is recorded in ground_truth</td><td>273</td></tr><tr><td>sim/score.py</td><td>Generate a history with random faults and innocent events; score one replayed run against ground_truth</td><td>312</td></tr><tr><td>scripts/summarize_evaluation.py</td><td>Score many replayed runs with the scorer of sim/score.py; write docs/results.md and docs/results.json, holdout seeds on their own line</td><td>537</td></tr><tr><td>scripts/check_guardrails.py</td><td>Exit code 1 when brain/ names ground_truth or a fault kind, imports sim/ or ui/ or opens SQLite outside brain/data.py, or when a secret, data/ or incidents/ is tracked or in the git history</td><td>145</td></tr><tr><td>scripts/rehearse_core.py</td><td>Rehearsal in a new folder, without the console: a payment fault is found in its country and resolved after the rollback, a promo raises no alert, late data is reported as pending</td><td>69</td></tr><tr><td>scripts/baseline_ranking.py</td><td>The plain ranking that docs/results.md sets beside the brain: each hour the most anomalous rate and cell against the same hour of the previous three weeks, no calendar and no investigation</td><td>354</td></tr><tr><td>ui/app.py</td><td>The console&#x27;s API: graph export, incidents, state, injection, rollback, new metric, data browser</td><td>336</td></tr><tr><td>ui/domains.py</td><td>Which metric belongs to which business domain</td><td>22</td></tr><tr><td>ui/static/index.html</td><td>Console: domain selector, graph, incidents, report, DEMO controls</td><td>520</td></tr><tr><td>ui/static/data.html</td><td>Read-only browser of the simulator tables</td><td>114</td></tr><tr><td>ui/static/console.css</td><td>One style for both pages, light and dark</td><td>72</td></tr></tbody></table></div>
+<div class="tw"><table><thead><tr><th>Module</th><th>Job</th><th>Lines</th></tr></thead><tbody><tr><td>sim/world.py</td><td>One hour of the marketplace for every segment: sessions to orders, money, ads, stockouts; seasonality and noise; faults and promos applied</td><td>209</td></tr><tr><td>sim/schema.py</td><td>The tables and columns (the contract, printed as docs/contracts/schema.sql)</td><td>64</td></tr><tr><td>sim/db.py</td><td>SQLite access, write or rewrite hours with every injection on record</td><td>90</td></tr><tr><td>sim/run.py</td><td>Backfill a clean history (28 days in about 3 s)</td><td>72</td></tr><tr><td>sim/live.py</td><td>Move the simulated clock forward, one hour per tick; with --wall-clock, follow real time</td><td>73</td></tr><tr><td>sim/clock.py</td><td>Wall-clock mode: bring the database up to the real current hour</td><td>28</td></tr><tr><td>sim/inject.py</td><td>Faults, promos, late data, and the rollback; each one is recorded in ground_truth</td><td>273</td></tr><tr><td>sim/score.py</td><td>Generate a history with random faults and innocent events; score one replayed run against ground_truth</td><td>312</td></tr><tr><td>scripts/summarize_evaluation.py</td><td>Score many replayed runs with the scorer of sim/score.py; write docs/results.md and docs/results.json, holdout seeds on their own line</td><td>537</td></tr><tr><td>scripts/check_guardrails.py</td><td>Exit code 1 when brain/ names ground_truth or a fault kind, imports sim/ or ui/ or opens SQLite outside brain/data.py, or when a secret, data/ or incidents/ is tracked or in the git history</td><td>145</td></tr><tr><td>scripts/rehearse_core.py</td><td>Rehearsal in a new folder, without the console: a payment fault is found in its country and resolved after the rollback, a promo raises no alert, late data is reported as pending</td><td>69</td></tr><tr><td>scripts/baseline_ranking.py</td><td>The plain ranking that docs/results.md sets beside the brain: each hour the most anomalous rate and cell against the same hour of the previous three weeks, no calendar and no investigation</td><td>354</td></tr><tr><td>scripts/live_check.py</td><td>Unattended live check: the real clock, brain and console-style injections for 36 simulated hours with every kind of event, then eight checks; exit code 1 if one fails</td><td>172</td></tr><tr><td>ui/app.py</td><td>The console&#x27;s API: graph export, incidents, state, injection, rollback, new metric, data browser</td><td>336</td></tr><tr><td>ui/domains.py</td><td>Which metric belongs to which business domain</td><td>22</td></tr><tr><td>ui/static/index.html</td><td>Console: domain selector, graph, incidents, report, DEMO controls</td><td>887</td></tr><tr><td>ui/static/data.html</td><td>Read-only browser of the simulator tables</td><td>128</td></tr><tr><td>ui/static/console.css</td><td>One style for both pages, light and dark</td><td>98</td></tr></tbody></table></div>
 
 <h2>Tests</h2>
-<div class="tw"><table><thead><tr><th>Test file</th><th>Tests</th></tr></thead><tbody><tr><td>test_attribution.py</td><td>9</td></tr><tr><td>test_baseline_ranking.py</td><td>16</td></tr><tr><td>test_brain_page.py</td><td>6</td></tr><tr><td>test_clock.py</td><td>6</td></tr><tr><td>test_demo_rehearsal.py</td><td>1</td></tr><tr><td>test_demo_remaining.py</td><td>2</td></tr><tr><td>test_end_to_end.py</td><td>8</td></tr><tr><td>test_evaluator.py</td><td>8</td></tr><tr><td>test_extension.py</td><td>48</td></tr><tr><td>test_formula.py</td><td>7</td></tr><tr><td>test_graph.py</td><td>10</td></tr><tr><td>test_guardrails.py</td><td>10</td></tr><tr><td>test_incidents.py</td><td>16</td></tr><tr><td>test_investigate.py</td><td>16</td></tr><tr><td>test_localize.py</td><td>11</td></tr><tr><td>test_monitor.py</td><td>16</td></tr><tr><td>test_narrate.py</td><td>18</td></tr><tr><td>test_overlap.py</td><td>8</td></tr><tr><td>test_overview.py</td><td>12</td></tr><tr><td>test_plan_fixes.py</td><td>15</td></tr><tr><td>test_review_fixes.py</td><td>24</td></tr><tr><td>test_score.py</td><td>27</td></tr><tr><td>test_sim.py</td><td>32</td></tr><tr><td>test_stats.py</td><td>7</td></tr><tr><td>test_summarize_evaluation.py</td><td>36</td></tr><tr><td>test_ui.py</td><td>35</td></tr><tr><td>test_ui_runtime.py</td><td>5</td></tr><tr><td>test_validate.py</td><td>6</td></tr><tr><td>test_wall_clock.py</td><td>4</td></tr><tr><td>total</td><td>419</td></tr></tbody></table></div>
+<div class="tw"><table><thead><tr><th>Test file</th><th>Tests</th></tr></thead><tbody><tr><td>test_attribution.py</td><td>9</td></tr><tr><td>test_baseline_ranking.py</td><td>16</td></tr><tr><td>test_brain_page.py</td><td>6</td></tr><tr><td>test_clock.py</td><td>6</td></tr><tr><td>test_demo_rehearsal.py</td><td>1</td></tr><tr><td>test_demo_remaining.py</td><td>2</td></tr><tr><td>test_end_to_end.py</td><td>8</td></tr><tr><td>test_evaluator.py</td><td>8</td></tr><tr><td>test_extension.py</td><td>48</td></tr><tr><td>test_formula.py</td><td>7</td></tr><tr><td>test_graph.py</td><td>10</td></tr><tr><td>test_guardrails.py</td><td>10</td></tr><tr><td>test_incidents.py</td><td>16</td></tr><tr><td>test_investigate.py</td><td>16</td></tr><tr><td>test_localize.py</td><td>11</td></tr><tr><td>test_monitor.py</td><td>16</td></tr><tr><td>test_narrate.py</td><td>20</td></tr><tr><td>test_overlap.py</td><td>8</td></tr><tr><td>test_overview.py</td><td>12</td></tr><tr><td>test_plan_fixes.py</td><td>15</td></tr><tr><td>test_review_fixes.py</td><td>24</td></tr><tr><td>test_score.py</td><td>27</td></tr><tr><td>test_sim.py</td><td>32</td></tr><tr><td>test_stats.py</td><td>7</td></tr><tr><td>test_summarize_evaluation.py</td><td>36</td></tr><tr><td>test_ui.py</td><td>36</td></tr><tr><td>test_ui_runtime.py</td><td>5</td></tr><tr><td>test_validate.py</td><td>6</td></tr><tr><td>test_wall_clock.py</td><td>4</td></tr><tr><td>total</td><td>422</td></tr></tbody></table></div>
 <p class="note">The table counts every test file in the repository, the brain's included.</p>
 <p class="note">Generated by <code>docs/build_system_overview.py</code> from the code and from <code>docs/results.json</code>. All data is simulated.</p>
 </div>
