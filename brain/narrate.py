@@ -6,8 +6,8 @@ extra field, `narrative`, that arrives on a later tick. The rules:
 - Only the evidence goes out: the incident's numbers, place, hypotheses with their evidence, what is
   uncertain and the template report (`evidence`). No database rows, no ground truth, nothing else.
 - One request per milestone of an incident, not per tick: a new incident, a change of the leading
-  explanation or of its status, the incident resolved. Numbers that grow while the story stays the same
-  do not trigger a new request. At most one request per incident is in flight; a newer milestone waits.
+  explanation or of its status, a cost that has doubled, the incident resolved. Numbers that grow a
+  little while the story stays the same do not trigger a new request. At most one request per incident is in flight; a newer milestone waits.
 - It runs in background threads and is bounded: 20 s per request, no retries inside the SDK.
 - What comes back is checked before it is used: a plain text that finished normally, and every number in
   it must appear in the evidence (as given, rounded to the precision written, or as a percentage of a
@@ -19,6 +19,7 @@ extra field, `narrative`, that arrives on a later tick. The rules:
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import time
@@ -87,12 +88,22 @@ def numbers_backed(text: str, facts: dict) -> tuple[bool, str]:
     return True, "every number appears in the evidence"
 
 
+def cost_scale(body: dict) -> int | None:
+    """The power of two of the incident's cost in euros: a new value means the cost has doubled (or halved)."""
+    for key, value in (body.get("impact") or {}).items():
+        if key.endswith("_eur") and isinstance(value, (int, float)) and math.isfinite(value) and abs(value) >= 1:
+            return int(math.log2(abs(value)))
+    return None
+
+
 def milestone(body: dict) -> tuple:
-    """What a narration is about: the incident's place, status and leading explanation, not its growing numbers."""
+    """What a narration is about: the incident's place, status and leading explanation, and the size of its cost
+    to within a factor of two. Numbers that grow a little each tick do not make a new milestone; a cost that has
+    doubled does, so the story keeps up with the figures shown above it at a few requests per incident."""
     lead = next(iter(body.get("hypotheses") or []), {})
     state = "resolved" if body.get("status") == "resolved" else "active"
     return (state, body.get("metric"), tuple(sorted((body.get("segment") or {}).items())),
-            lead.get("cause"), lead.get("status"))
+            lead.get("cause"), lead.get("status"), cost_scale(body))
 
 
 def _api_message(e) -> str:
