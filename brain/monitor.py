@@ -1,8 +1,11 @@
-"""The monitor: every tick it judges the newest hours of every watched rate in every watched cut.
+"""The monitor: every tick it judges the newest hours of every watched rate in every watched cut,
+and the volumes (sessions, orders) in the coarser cuts.
 
 What is watched comes from the graph: every atomic rate (a ratio of two columns), on the formula
-tree or not. Outcomes such as orders are not judged directly, because a fault in one cell is lost
-in their noise; they are used for the impact once a rate has moved (brain/impact.py).
+tree or not. Money outcomes such as contribution are not judged directly, because a fault in one
+cell is lost in their noise; they are used for the impact once something has moved
+(brain/impact.py). Sessions and orders are judged as counts (below): a drop in traffic or orders
+with unchanged rates moves no rate at all.
 
 For a rate in a series (one cut of the dimensions, one value combination):
 
@@ -10,9 +13,14 @@ For a rate in a series (one cut of the dimensions, one value combination):
   leaving out the hours being judged, hours already flagged as bad, hours covered by a calendar
   event and hours whose data has not arrived;
 - an hour is bad when its counts, alone or summed with the two hours before, are too surprising
-  against that rate (brain/stats.py) and the rate moved by at least `min_effect`;
+  against that rate (brain/stats.py) and the rate moved by at least `min_effect`; an hour of a bad
+  summed window is marked bad only when it alone moved that way at p below 0.01, so an episode ends
+  at its last faulty hour and its newest-hours rate is the fault's rate;
 - hours whose sources have not arrived are held: not judged, not healthy;
-- the last hours are re-read on every tick, so a rewritten past is seen too.
+- the last hours are re-read on every tick, so a rewritten past is seen too;
+- a calendar event explains an alert only when the change goes the way the event predicts and is
+  not much larger than earlier events of that kind and place did (EVENT_EFFECTS); otherwise the
+  alert is raised with the event as `partial_explanation`.
 
 Volumes (sessions, orders) are judged as counts, in the whole market, per country, per platform and
 per country x platform, because an outage or a lost app-store listing removes visits and orders
