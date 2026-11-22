@@ -168,7 +168,6 @@ SCENARIOS = [
 
 # What the README says is not built (sections 3.3, 3.5, 3.7 and the unticked boxes of section 6), checked against the code.
 NOT_BUILT = [
-    "A plain-ranking baseline in the scoring, to show what the graph adds to the result.",
     "A euro threshold for alerts. A change is judged by its size against the rate's own history, not by what it costs.",
     "Judging volumes such as sessions. Only rates are watched.",
     "Formulas with constants, or with more than two metrics, in the search for the formula of a new metric.",
