@@ -37,6 +37,12 @@
     </div>
   </header>
 
+  <!-- the dock comes before the canvas in the tab order (pick an incident, then its graph and report); the grid puts it at the bottom -->
+  <footer class="dock" aria-label="Incidents">
+    <div class="dock-head"><h2 id="feed-title">Incidents</h2><span class="dock-sub" id="feed-sub"></span></div>
+    <div class="dock-track" id="feed"></div>
+  </footer>
+
   <main class="stage" id="stage">
     <div class="canvas" id="canvas">
       <svg id="g" aria-label="Metric graph"><g id="vp"><g id="l-edges"></g><g id="l-trace"></g><g id="l-nodes"></g><g id="l-tags"></g><g id="l-pins"></g></g></svg>
@@ -147,10 +153,6 @@
     </aside>
   </main>
 
-  <footer class="dock" aria-label="Incidents">
-    <div class="dock-head"><h2 id="feed-title">Incidents</h2><span class="dock-sub" id="feed-sub"></span></div>
-    <div class="dock-track" id="feed"></div>
-  </footer>
 </div>
 <script src="/static/v3/app.js"></script>
 </body>

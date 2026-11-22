@@ -227,6 +227,7 @@
     var from = view, t0 = null, T = 620;
     tween = {};
     var step = function (now) {
+      if (tween !== mine) return;      // a frame queued before this fly was replaced or finished must not move the view
       if (t0 == null) t0 = now;
       var t = Math.min(1, (now - t0) / T), e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
       // zoom moves in log space, so the fly feels even
@@ -247,7 +248,11 @@
     var right = !pinned && !$('sheet').hidden ? $('sheet').offsetWidth + 12 : 0;
     return { x: 24, y: top, w: Math.max(120, s.w - 48 - right), h: Math.max(120, s.h - top - bottom) };
   }
+  // auto: how the view was last framed by the page itself (the incident's path, the trees, everything). While the viewer
+  // has not moved the view since, a change of the canvas size (window, report pinned or closed) frames it again
+  var auto = null;
   function frame(b, maxK, instant) {
+    auto = null;
     var r = room(), k = Math.min(r.w / Math.max(1, b.w), r.h / Math.max(1, b.h), maxK);
     animateTo({ k: k, x: r.x + (r.w - b.w * k) / 2 - b.x * k, y: r.y + (r.h - b.h * k) / 2 - b.y * k }, instant);
   }
@@ -259,15 +264,16 @@
     pad = pad == null ? 60 : pad;
     return { x: x0 - pad, y: y0 - pad, w: x1 - x0 + 2 * pad, h: y1 - y0 + 2 * pad };
   }
-  function fit(animate) { if (drawn && drawn.world) frame({ x: 0, y: 0, w: drawn.world.w, h: drawn.world.h }, 1.15, !animate); }
+  function fit(animate) { if (drawn && drawn.world) { frame({ x: 0, y: 0, w: drawn.world.w, h: drawn.world.h }, 1.15, !animate); auto = function () { fit(false); }; } }
   // the first view: the formula trees, without the cluster of metrics off them (the Fit button shows everything)
   function fitTrees() {
     var t = drawn ? drawn.nodes.filter(function (n) { return !n.off; }).map(function (n) { return n.metric; }) : [];
-    var b = t.length && boxOf(t, 24); if (b) frame(b, 1, true); else fit(false);
+    var b = t.length && boxOf(t, 24); if (b) { frame(b, 1, true); auto = fitTrees; } else fit(false);
   }
-  function reset() { animateTo({ x: 0, y: 0, k: 1 }); }
+  function reset() { auto = null; animateTo({ x: 0, y: 0, k: 1 }); }
   function zoomBy(f, cx, cy) {
     var s = size(); if (cx == null) { cx = s.w / 2; cy = s.h / 2; }
+    auto = null;
     var k = Math.max(0.2, Math.min(3, view.k * f)), r = k / view.k;
     setView({ k: k, x: cx - (cx - view.x) * r, y: cy - (cy - view.y) * r });
   }
@@ -293,7 +299,7 @@
       if (!start || e.pointerId !== start.id) return;
       var dx = e.clientX - start.x, dy = e.clientY - start.y;
       if (!dragMoved && Math.abs(dx) + Math.abs(dy) < 4) return;
-      if (!dragMoved) { dragMoved = true; c.classList.add('panning'); if (tween) { cancelAnimationFrame(tween.raf); tween = null; } }
+      if (!dragMoved) { dragMoved = true; auto = null; c.classList.add('panning'); if (tween) { cancelAnimationFrame(tween.raf); tween = null; } }
       setView({ x: start.vx + dx, y: start.vy + dy, k: view.k });
     });
     window.addEventListener('pointerup', function (e) {
@@ -319,7 +325,7 @@
       var r = mini.getBoundingClientRect(), vb = mini.viewBox.baseVal;
       var sc = Math.max(vb.width / r.width, vb.height / r.height);
       var wx = vb.x + (e.clientX - r.left - (r.width - vb.width / sc) / 2) * sc, wy = vb.y + (e.clientY - r.top - (r.height - vb.height / sc) / 2) * sc;
-      var s = size();
+      var s = size(); auto = null;
       setView({ k: view.k, x: s.w / 2 - wx * view.k, y: s.h / 2 - wy * view.k });
     };
     mini.addEventListener('pointerdown', function (e) { miniDrag = true; mini.setPointerCapture(e.pointerId); miniGo(e); });
@@ -458,13 +464,14 @@
     });
     setTimeout(function () { if (traceKey === key) layer.textContent = ''; }, depths.length * 140 + 900);
   }
-  function flyToIncident(force) {
+  function flyToIncident(force, instant) {
     var inc = selected(); if (!inc || !drawn) return;
     var on = Object.keys(litSet(inc)).concat(Object.keys(nodeStates(inc)));
     var b = boxOf(on.filter(function (m) { return drawn.at[m]; }), 36);
     if (!b) return;
     if (!force && visible(on)) return;
-    frame(b, 1.3);
+    frame(b, 1.3, instant);
+    auto = function () { if (mode === 'incident' && selected() && !replay) flyToIncident(true, true); };
   }
 
   // --------------------------------------------------------------- the dock
@@ -592,7 +599,8 @@
       answers[name] = r; if (mode === 'node' && selNode === name) renderDetail(); return r;
     });
   }
-  function showChecks(name) { pickNode(name); if (drawn && drawn.at[name]) frame(boxOf([name], 120), 1.2); }
+  // the bench would cover the report's head: fold it so the metric and its checks are in view
+  function showChecks(name) { toggleBench(false); $('flash').hidden = true; pickNode(name); if (drawn && drawn.at[name]) frame(boxOf([name], 120), 1.2); }
   function answerToast(res) {
     res = obj(res); var name = str(res.name), parts = [str(res.message) || ('Monitor: ' + str(res.status))];
     if (name) answers[name] = res;
@@ -956,7 +964,9 @@
   // the view flies to the selected incident's path once per selection, as soon as both the graph and the incident are in
   function ensureFlown() {
     if (!drawn || firstDraw || mode !== 'incident' || !selInc || flown === selInc || !selected()) return;
-    flown = selInc; setTimeout(function () { flyToIncident(true); }, 80);
+    // the first framing after the page loads is a cut, not a flight: the page opens on the incident's path
+    var first = flown == null;
+    flown = selInc; setTimeout(function () { flyToIncident(true, first); }, 80);
     // ?replay=3 opens the replay at that step (for a demo or a screenshot)
     if (askedStep != null) { var k = askedStep; askedStep = null; setTimeout(function () { startReplay(k); }, 900); }
   }
@@ -1084,7 +1094,9 @@
   var lastSize = null;
   window.addEventListener('resize', function () { miniView(); });
   if (window.ResizeObserver) new ResizeObserver(function () {
-    var s = size(); if (lastSize && drawn) {
+    var s = size();
+    if (lastSize && drawn && auto && (Math.abs(s.w - lastSize.w) > 1 || Math.abs(s.h - lastSize.h) > 1)) { lastSize = s; auto(); return; }
+    if (lastSize && drawn) {
       // keep the middle of the view where it was when the canvas changes size (the report pinned or closed)
       setView({ k: view.k, x: view.x + (s.w - lastSize.w) / 2, y: view.y + (s.h - lastSize.h) / 2 });
     }

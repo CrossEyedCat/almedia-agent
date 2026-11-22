@@ -63,6 +63,7 @@ button.primary { background: var(--iris); border-color: var(--iris); color: var(
 button.primary:hover { background: var(--iris-ink); border-color: var(--iris-ink); }
 
 .app { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100vh; }
+.hdr { grid-row: 1; } .stage { grid-row: 2; } .dock { grid-row: 3; }
 
 /* ------------------------------------------------------------------ header */
 .hdr { background: var(--paper); border-bottom: 1px solid var(--line); position: relative; z-index: 20; }
@@ -234,7 +235,7 @@ svg text { font-family: var(--mono); }
 .rp-verb { font: 700 12px var(--ui); letter-spacing: .04em; color: var(--on-iris); background: var(--iris); border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
 .rp-target { font: 600 13px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .rp-x { margin-left: auto; min-height: 28px; font-size: 12px; flex: none; }
-.rp-result { font-size: 14px; line-height: 1.5; max-height: 4.6em; overflow: auto; overflow-wrap: anywhere; }
+.rp-result { font-size: 14px; line-height: 1.5; max-height: 7.6em; overflow: auto; overflow-wrap: anywhere; }
 .rp-nav { display: flex; align-items: center; gap: 8px; }
 .rp-nav button { min-height: 30px; }
 .rp-rail { display: flex; flex: 1; gap: 4px; align-items: center; justify-content: center; min-width: 0; }
