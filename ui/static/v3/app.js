@@ -925,6 +925,7 @@
     var tag = (e.target && e.target.tagName) || '';
     if (/INPUT|SELECT|TEXTAREA/.test(tag)) return;
     if (replay && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) { e.preventDefault(); pause(); goStep(replay.i + (e.key === 'ArrowRight' ? 1 : -1)); return; }
+    if (e.key === ',' && !e.ctrlKey && !e.metaKey && !e.altKey && $('settings').hidden) { e.preventDefault(); openSettings(); return; }
     if (e.key === 'Escape') {
       if (!$('bench').hidden) { toggleBench(false); return; }
       if (replay) { stopReplay(); return; }
@@ -1129,6 +1130,260 @@
   $('bench-btn').onclick = function () { toggleBench(null, true); };
   $('bench-close').onclick = function () { toggleBench(false); $('bench-btn').focus(); };
 
+  // --------------------------------------------------------- settings
+  // GET /api/settings every 2 s while the panel is open; Save sends only what changed (PUT), so a value the file does
+  // not hold keeps coming from the command line. The API key goes to .env and never comes back to the page.
+  var SET = null, setBase = null, setTimer = null, setWait = null, setLastFocus = null;
+  var DET = ['min_surprise', 'min_effect', 'volume_min_effect', 'release_min_surprise'], SPH_PRESETS = [0.5, 1, 2, 5, 10];
+  function send(url, method, body) {
+    var o = { method: method, headers: { 'Content-Type': 'application/json' } };
+    if (body !== undefined) o.body = JSON.stringify(body);
+    return fetch(url, o).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(str(j.detail) || r.status); return j; }); });
+  }
+  function bigName(n) {
+    var u = [[1e9, ' billion'], [1e6, ' million'], [1e3, ' thousand']];
+    for (var k = 0; k < u.length; k++) if (n >= u[k][0]) return Number((n / u[k][0]).toPrecision(2)) + u[k][1];
+    return String(Math.round(n));
+  }
+  function pText(x) { return Number.isInteger(x) ? '1e-' + x : Math.pow(10, -x).toExponential(0); }
+  // a threshold in plain words: [before, the value in bold, after]
+  function words(k, v) {
+    if (k === 'min_surprise' || k === 'release_min_surprise') return ['', 'p below ' + pText(v), ' · 1 in ' + bigName(Math.pow(10, v)) + ' by chance'];
+    return [(k === 'min_effect' ? 'a rate' : 'a count') + ' must move at least ', Math.round(v * 100) + ' %', ''];
+  }
+  function fmtVal(k, v) { return k === 'min_effect' || k === 'volume_min_effect' ? Math.round(v * 100) + ' %' : String(v); }
+  function berlinTime(t) {
+    var d = new Date(t); if (!isFinite(d)) return str(t);
+    return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(d);
+  }
+  function agoText(s) { s = Math.max(0, Math.round(s)); return s < 90 ? s + ' s ago' : s < 5400 ? Math.round(s / 60) + ' min ago' : Math.round(s / 3600) + ' h ago'; }
+  // the form: what is on the controls now
+  function formValues() {
+    var v = { narration: { enabled: $('set-narrate').checked }, clock: { seconds_per_hour: Number($('set-sph').value) }, detection: {} };
+    DET.forEach(function (k) { v.detection[k] = Number($('set-' + k).value); });
+    return v;
+  }
+  function changes() {
+    if (!setBase) return {};
+    var now = formValues(), out = {};
+    Object.keys(now).forEach(function (s) {
+      Object.keys(now[s]).forEach(function (k) {
+        var a = now[s][k], b = setBase[s][k];
+        if (s === 'clock' && wallClock()) return;
+        if (typeof a === 'number' ? Math.abs(a - b) > 1e-9 : a !== b) (out[s] = out[s] || {})[k] = a;
+      });
+    });
+    return out;
+  }
+  function nChanges(c) { var n = 0; Object.keys(c).forEach(function (s) { n += Object.keys(c[s]).length; }); return n; }
+  function wallClock() { return !!SET && obj(SET.environment).clock_mode === 'wall'; }
+  function fillForm(s) {
+    $('set-narrate').checked = !!obj(s.narration).enabled;
+    setSph(obj(s.clock).seconds_per_hour);
+    DET.forEach(function (k) { $('set-' + k).value = obj(s.detection)[k]; });
+    paintForm();
+  }
+  function setSph(v) { $('set-sph').value = v; paintForm(); }
+  function paintForm() {
+    if (!SET) return;
+    var d = obj(SET.defaults), r = obj(SET.ranges);
+    DET.forEach(function (k) {
+      var input = $('set-' + k), v = Number(input.value), def = obj(d.detection)[k], rg = obj(obj(r.detection)[k]);
+      var w = words(k, v), out = $('set-' + k + '-out'); out.textContent = '';
+      out.appendChild(text(w[0])); out.appendChild(el('b', null, [w[1]])); out.appendChild(text(w[2]));
+      var mark = input.parentNode.querySelector('.def-mark');
+      mark.style.setProperty('--at', String((def - rg.min) / (rg.max - rg.min)));
+      mark.textContent = 'default ' + fmtVal(k, def);
+      input.closest('.slider').classList.toggle('changed', Math.abs(v - def) > 1e-9);
+      input.setAttribute('aria-valuetext', w.join('').replace(' · ', ', '));
+    });
+    var sph = Number($('set-sph').value), rg = obj(obj(r.clock).seconds_per_hour);
+    $('set-sph-seg').querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', Number(b.dataset.v) === sph ? 'true' : 'false'); });
+    var ok = isFinite(sph) && sph >= rg.min && sph <= rg.max, day = 24 * sph;
+    $('set-sph-words').textContent = !ok ? 'From ' + rg.min + ' to ' + rg.max + ' seconds.'
+      : 'One simulated day takes ' + (day < 120 ? fmt(day, 1) + ' s' : fmt(day / 60, 1) + ' min') + ' of real time.' + (sph === obj(d.clock).seconds_per_hour ? ' (the default)' : '');
+    $('set-sph-words').classList.toggle('set-msg', !ok); $('set-sph-words').classList.toggle('bad', !ok);
+    var c = changes(), n = nChanges(c);
+    $('set-save').disabled = !n || !ok;
+    // a change on the form shows how many are unsaved; the result of the last save stays until the next change
+    if (!setWait && (n || fbKind === 'changes')) {
+      var f = $('set-feedback');
+      f.className = 'set-feedback'; f.textContent = n ? n + ' change' + (n > 1 ? 's' : '') + ' not saved yet' : '';
+      fbKind = n ? 'changes' : '';
+    }
+  }
+  var fbKind = '';
+  function kvRows(target, pairs) { target.textContent = ''; pairs.forEach(function (p) { target.appendChild(el('span', null, [p[0]])); target.appendChild(el('span', null, [p[1]])); }); }
+  function paintStatus() {
+    var st = SET.status, e = obj(SET.environment), line = $('set-mon-line'), t = $('set-mon-text');
+    var now = Date.parse(str(SET.server_now)), up = st ? Date.parse(str(st.updated_at)) : NaN;
+    t.textContent = '';
+    $('set-mon-help').hidden = !!st;
+    if (!st) { line.className = 'mon-line none'; t.textContent = 'Monitor status: not reported yet'; }
+    else {
+      line.className = 'mon-line ' + (SET.monitor_alive ? 'alive' : 'stale');
+      t.appendChild(text(SET.monitor_alive ? 'Running' : 'Not running'));
+      if (isFinite(now) && isFinite(up)) t.appendChild(el('span', 'ago', [(SET.monitor_alive ? ' · updated ' : ' · last report ') + agoText((now - up) / 1000)]));
+    }
+    var pairs = [['Newest data hour', e.newest_hour ? displayHour(e.newest_hour) : 'no data yet']];
+    if (st) {
+      pairs.push(['Series watched', num(st.watched_series) != null ? fmt(st.watched_series, 0) : '-']);
+      pairs.push(['Settings applied at', st.applied_at ? berlinTime(st.applied_at) + ' Europe/Berlin' : 'not yet']);
+      var a = obj(st.applied);
+      var NAMES = { min_surprise: 'alert at p < ', min_effect: 'rate ', volume_min_effect: 'count ', release_min_surprise: 'release at p < ' };
+      if (Object.keys(a).length) pairs.push(['Running with', DET.filter(function (k) { return num(a[k]) != null; })
+        .map(function (k) { return NAMES[k] + (/surprise/.test(k) ? pText(a[k]) : fmtVal(k, a[k])); }).join(' · ')
+        + (a.narration_enabled != null ? ' · In brief ' + (a.narration_enabled ? 'on' : 'off') : '')]);
+      if (st.pid != null) pairs.push(['Process', mono(st.pid)]);
+    }
+    kvRows($('set-mon-kv'), pairs);
+    var err = st && st.settings_error ? 'Not applied: ' + str(st.settings_error) : list(SET.warnings).join(' ');
+    $('set-mon-err').hidden = !err; $('set-mon-err').textContent = err;
+    // the language model
+    var n = st ? obj(st.narration) : {}, ns = str(n.status), pill = $('set-narr-pill');
+    var on = ns === 'on', off = /^off/.test(ns);
+    pill.className = 'pill' + (on ? ' on' : '');
+    pill.textContent = !st ? 'not reported' : on ? 'on' : off ? 'off' : ns || 'unknown';
+    $('set-narr-why').textContent = off ? ns.replace(/^off:?\s*/, '') : ns === 'not asked' ? 'not asked to' : '';
+    $('set-narr-model').textContent = str(n.model);
+    var ks = $('set-key-state');
+    ks.className = 'pill' + (e.key_set ? ' set' : ''); ks.textContent = e.key_set ? 'Set' : 'Not set';
+    ks.title = e.key_source === 'environment' ? 'Set in the environment of the console' : e.key_source === '.env' ? 'Set in ' + str(e.env_file) : 'No key in the environment or in .env';
+    $('set-key-remove').disabled = e.key_source !== '.env';
+    $('set-key-note').textContent = 'The key is stored in .env on this computer' + (e.env_file ? ' (' + str(e.env_file) + ')' : '') + ' and never sent back to the page. The monitor reads the file again when it changes, without a restart.'
+      + (e.key_source === 'environment' ? ' A key is also set in the environment of this console.' : '');
+    // the clock
+    var wall = wallClock();
+    $('set-clock-off').hidden = !wall;
+    $('set-sph').disabled = wall; $('set-sph-seg').querySelectorAll('button').forEach(function (b) { b.disabled = wall; });
+    paintEnv(e);
+    checkApplied();
+  }
+  var ENV_ROWS = [['Market database', 'market_db'], ['Settings file', 'settings_file'], ['Monitor status file', 'status_file'], ['Incidents folder', 'incidents_dir'],
+    ['Incoming metrics', 'incoming_metrics_dir'], ['Graph export', 'graph_json'], ['Repository', 'repository'], ['Key file', 'env_file']];
+  var envKey = '';
+  function paintEnv(e) {
+    var k = JSON.stringify(e); if (k === envKey) return; envKey = k;
+    var box = $('set-env'); box.textContent = '';
+    ENV_ROWS.forEach(function (r) {
+      if (e[r[1]] == null) return;
+      var v = str(e[r[1]]), b = el('button', 'copy', ['Copy']);
+      b.setAttribute('aria-label', 'Copy the path of the ' + r[0].toLowerCase());
+      b.onclick = function () { copyText(v).then(function () { b.textContent = 'Copied'; b.classList.add('done'); setTimeout(function () { b.textContent = 'Copy'; b.classList.remove('done'); }, 1500); }); };
+      box.appendChild(el('div', 'env-row', [el('span', 'k', [r[0]]), el('span', 'v', [v]), b]));
+    });
+    [['Clock mode', e.clock_mode === 'wall' ? 'wall clock: one data hour per real hour' : 'simulated: replay or the accelerated clock'], ['Display time zone', e.display_timezone]].forEach(function (r) {
+      box.appendChild(el('div', 'env-row', [el('span', 'k', [r[0]]), el('span', 'v', [str(r[1])]), el('span')]));
+    });
+  }
+  function copyText(s) {
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(s).catch(function () { return copyOld(s); });
+    return Promise.resolve(copyOld(s));
+  }
+  function copyOld(s) { var t = document.createElement('textarea'); t.value = s; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); } catch (e) {} t.remove(); }
+  function loadSettings(syncForm) {
+    return get('/api/settings').then(function (s) {
+      var first = !SET; SET = s;
+      if (first || syncForm || !nChanges(changes())) { setBase = JSON.parse(JSON.stringify(s.settings)); fillForm(s.settings); }
+      paintStatus(); paintForm();
+    }).catch(function (e) { var f = $('set-feedback'); f.className = 'set-feedback bad'; f.textContent = 'Could not read the settings: ' + e.message; });
+  }
+  function feedback(cls, msg) { var f = $('set-feedback'); f.className = 'set-feedback ' + cls; f.textContent = msg; fbKind = 'result'; }
+  // after a save: wait for the monitor to take it up (status.applied_at moves past the save), at most 10 s
+  function checkApplied() {
+    if (!setWait || !SET) return;
+    var st = SET.status, at = st ? Date.parse(str(st.applied_at)) : NaN;
+    if (st && st.settings_error && SET.monitor_alive) { feedback('bad', 'Saved, but the monitor did not apply it: ' + str(st.settings_error)); setWait = null; return; }
+    if (isFinite(at) && at >= setWait.at) { feedback('good', 'Saved. The monitor applied it at ' + berlinTime(st.applied_at)); setWait = null; return; }
+    if (Date.now() - setWait.t0 > 10000) { feedback('warn', 'Saved; the monitor has not picked it up yet'); setWait = null; }
+  }
+  function afterSave(r, onlyClock) {
+    setWait = null;
+    if (onlyClock) feedback('good', 'Saved. The clock takes the new pace from its next hour.');
+    else { setWait = { at: Date.parse(str(r.updated_at)), t0: Date.now() }; feedback('wait', 'Saved. Waiting for the monitor to apply it...'); setTimeout(function () { loadSettings(); }, 10300); }
+    loadSettings(true);
+  }
+  function saveSettings() {
+    var c = changes(); if (!nChanges(c)) return;
+    var onlyClock = Object.keys(c).length === 1 && c.clock;
+    $('set-save').disabled = true; feedback('wait', 'Saving...');
+    send('/api/settings', 'PUT', c).then(function (r) { afterSave(r, onlyClock); })
+      .catch(function (e) { setWait = null; feedback('bad', 'Not saved: ' + e.message); paintForm(); });
+  }
+  var resetArmed = null;
+  function resetAll() {
+    var b = $('set-reset-all');
+    if (!resetArmed) { b.textContent = 'Reset everything?'; resetArmed = setTimeout(function () { resetArmed = null; b.textContent = 'Reset all'; }, 4000); return; }
+    clearTimeout(resetArmed); resetArmed = null; b.textContent = 'Reset all';
+    send('/api/settings/reset', 'POST').then(function (r) { afterSave(r, false); }).catch(function (e) { feedback('bad', 'Not reset: ' + e.message); });
+  }
+  function keyMsg(cls, msg) { var m = $('set-key-msg'); m.className = 'set-msg ' + cls; m.textContent = msg; }
+  function saveKey() {
+    var input = $('set-key'), v = input.value.trim();
+    if (!v) { keyMsg('bad', 'Paste a key first.'); input.focus(); return; }
+    $('set-key-save').disabled = true;
+    send('/api/settings/key', 'POST', { key: v }).then(function () {
+      keyMsg('good', 'Key saved in .env. ' + ($('set-narrate').checked ? 'The monitor picks it up on its next tick.' : 'Switch In brief on to use it.'));
+      loadSettings();
+    }).catch(function (e) { keyMsg('bad', 'Not saved: ' + e.message); })
+      .then(function () { input.value = ''; v = ''; $('set-key-save').disabled = false; });
+  }
+  function removeKey() {
+    send('/api/settings/key', 'DELETE').then(function (r) {
+      keyMsg(r.key_set ? '' : 'good', r.key_set ? 'Removed from .env; a key is still set in the environment of this console.' : 'Key removed from .env.');
+      loadSettings();
+    }).catch(function (e) { keyMsg('bad', 'Not removed: ' + e.message); });
+  }
+  function focusables() {
+    return Array.prototype.filter.call($('settings').querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])'),
+      function (x) { return !x.disabled && x.offsetParent !== null; });
+  }
+  function openSettings() {
+    if (!$('settings').hidden) return;
+    setLastFocus = document.activeElement;
+    $('settings').hidden = false; $('set-scrim').hidden = false;
+    $('settings-btn').setAttribute('aria-expanded', 'true');
+    $('set-key-msg').textContent = ''; $('set-key').value = '';
+    loadSettings(true);
+    clearInterval(setTimer); setTimer = setInterval(function () { loadSettings(); }, 2000);
+    $('settings').focus();      // the dialog itself: Tab goes on to its first control, Esc closes it
+  }
+  function closeSettings() {
+    if ($('settings').hidden) return;
+    $('settings').hidden = true; $('set-scrim').hidden = true; $('set-key').value = '';
+    $('settings-btn').setAttribute('aria-expanded', 'false');
+    clearInterval(setTimer); setTimer = null; setWait = null;
+    var back = setLastFocus && setLastFocus !== document.body && document.contains(setLastFocus) ? setLastFocus : $('settings-btn');
+    back.focus();
+  }
+  SPH_PRESETS.forEach(function (v) {
+    var b = el('button', null, [String(v)]); b.dataset.v = v; b.setAttribute('aria-pressed', 'false');
+    b.setAttribute('aria-label', v + ' seconds per simulated hour');
+    b.onclick = function () { setSph(v); }; $('set-sph-seg').appendChild(b);
+  });
+  $('set-sph').addEventListener('input', paintForm);
+  $('set-narrate').addEventListener('change', paintForm);
+  DET.forEach(function (k) { $('set-' + k).addEventListener('input', paintForm); });
+  $('set-det-reset').onclick = function () { if (!SET) return; DET.forEach(function (k) { $('set-' + k).value = obj(SET.defaults.detection)[k]; }); paintForm(); };
+  $('set-save').onclick = saveSettings;
+  $('set-reset-all').onclick = resetAll;
+  $('set-key-save').onclick = saveKey;
+  $('set-key').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); saveKey(); } });
+  $('set-key-remove').onclick = removeKey;
+  $('settings-btn').onclick = openSettings;
+  $('set-close').onclick = closeSettings;
+  $('set-scrim').onclick = closeSettings;
+  $('settings').addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSettings(); return; }
+    if (e.key === 'Tab') {
+      var f = focusables(); if (!f.length) return;
+      var first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === $('settings'))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+    e.stopPropagation();      // the page's own keys (arrows of the replay, ",") stay out of the panel
+  });
+
   // --------------------------------------------------------- chrome
   $('legend-btn').onclick = function () {
     var b = $('legend-body'), open = b.hidden; b.hidden = !open;
@@ -1169,6 +1424,8 @@
   var askedMetric = params.get('metric');
   if (askedMetric) { selNode = askedMetric; mode = 'node'; flown = '-'; openSheet(); }
   if (params.get('bench') === 'open' || (params.get('bench') == null && store('v3-bench') === '1')) toggleBench(true);
+  // ?settings=1 opens the settings panel (for a demo or a screenshot)
+  if (params.get('settings') === '1') openSettings();
 
   get('/api/domains').then(function (d) { domains = d; }).catch(function () {}).then(function () { refresh(); setInterval(refresh, 2000); });
 })();

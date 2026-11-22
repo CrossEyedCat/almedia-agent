@@ -25,6 +25,9 @@
       <div class="hdr-actions">
         <a class="hbtn" href="/data">Data browser <span aria-hidden="true">&rarr;</span></a>
         <button class="hbtn bench-btn" id="bench-btn" aria-expanded="false" aria-controls="bench"><span class="demo-tag">DEMO</span>Test bench</button>
+        <button class="hbtn icon" id="settings-btn" aria-label="Settings" title="Settings (,)" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8.6 2.5h2.8l.4 2.1 1.3.7 2-.8 1.4 2.4-1.6 1.4v1.4l1.6 1.4-1.4 2.4-2-.8-1.3.7-.4 2.1H8.6l-.4-2.1-1.3-.7-2 .8-1.4-2.4 1.6-1.4V8.3L3.5 6.9l1.4-2.4 2 .8 1.3-.7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        </button>
         <button class="hbtn icon" id="theme-btn" aria-label="Switch between light and dark theme" title="Switch between light and dark theme">
           <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 3.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"/></svg>
         </button>
@@ -154,6 +157,92 @@
   </main>
 
 </div>
+
+<div class="set-scrim" id="set-scrim" hidden></div>
+<section class="settings" id="settings" role="dialog" aria-modal="true" aria-labelledby="set-title" aria-describedby="set-sub" tabindex="-1" hidden>
+  <div class="set-head">
+    <div class="set-titles">
+      <h2 id="set-title">Settings</h2>
+      <p class="set-sub" id="set-sub">How this stack runs. Saved in settings.json beside the market database; the monitor and the clock read it on their next tick.</p>
+    </div>
+    <button class="hbtn icon" id="set-close" aria-label="Close the settings" title="Close (Esc)">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="set-body" id="set-body">
+    <section class="set-sec" aria-labelledby="set-h-mon">
+      <h3 id="set-h-mon">Monitor</h3>
+      <p class="mon-line" id="set-mon-line"><i class="mon-dot"></i><span id="set-mon-text">Reading...</span></p>
+      <p class="small muted" id="set-mon-help" hidden>The live monitor writes brain_status.json beside the database on every poll. Until it does, settings are still saved here and apply when a monitor that reads them runs.</p>
+      <div class="kv" id="set-mon-kv"></div>
+      <p class="set-err" id="set-mon-err" hidden></p>
+    </section>
+
+    <section class="set-sec" aria-labelledby="set-h-llm">
+      <h3 id="set-h-llm">Language model</h3>
+      <p class="set-row"><span class="muted">In brief</span><span class="pill" id="set-narr-pill">-</span><span class="small" id="set-narr-why"></span><span class="mono small muted" id="set-narr-model"></span></p>
+      <div class="switch-row">
+        <label for="set-narrate"><b>Write In brief with the language model</b><span class="small muted">A short paragraph on top of each report; every number in it is checked against the evidence. Needs the API key.</span></label>
+        <input type="checkbox" role="switch" class="switch" id="set-narrate">
+      </div>
+      <div class="key-box">
+        <div class="key-head"><label for="set-key" class="set-lbl">Anthropic API key</label><span class="pill" id="set-key-state">Not set</span></div>
+        <div class="key-row">
+          <input type="password" id="set-key" autocomplete="off" spellcheck="false" autocapitalize="off" maxlength="300" placeholder="Paste a key to set or replace it">
+          <button class="primary" id="set-key-save">Save key</button>
+          <button id="set-key-remove">Remove key</button>
+        </div>
+        <p class="small muted" id="set-key-note">The key is stored in .env on this computer and never sent back to the page. The monitor reads the file again when it changes, without a restart.</p>
+        <p class="set-msg" id="set-key-msg" role="status"></p>
+      </div>
+    </section>
+
+    <section class="set-sec" aria-labelledby="set-h-clock">
+      <h3 id="set-h-clock">Clock</h3>
+      <div class="set-field">
+        <label for="set-sph" class="set-lbl">Seconds per simulated hour</label>
+        <div class="seg-row">
+          <div class="seg" role="group" aria-label="Seconds per simulated hour: presets" id="set-sph-seg"></div>
+          <input type="number" id="set-sph" min="0.25" max="60" step="0.25"><span class="muted small">s</span>
+        </div>
+        <p class="small muted" id="set-sph-words"></p>
+        <p class="set-note" id="set-clock-off" hidden>The clock follows real time in this stack (wall clock): one hour of data per real hour. This setting is used only by the accelerated clock.</p>
+      </div>
+    </section>
+
+    <section class="set-sec" aria-labelledby="set-h-det">
+      <div class="sec-top"><h3 id="set-h-det">Detection</h3><button class="hbtn small-btn" id="set-det-reset">Reset to defaults</button></div>
+      <p class="set-caution">Changing these changes what the monitor reports from its next tick.</p>
+      <div class="slider" data-k="min_surprise">
+        <div class="sl-top"><label for="set-min_surprise">Surprise needed for an alert</label><output id="set-min_surprise-out" for="set-min_surprise"></output></div>
+        <div class="sl-track"><input type="range" id="set-min_surprise" min="5" max="10" step="0.5"><span class="def-mark"></span></div>
+      </div>
+      <div class="slider" data-k="min_effect">
+        <div class="sl-top"><label for="set-min_effect">Smallest move of a rate</label><output id="set-min_effect-out" for="set-min_effect"></output></div>
+        <div class="sl-track"><input type="range" id="set-min_effect" min="0.03" max="0.5" step="0.01"><span class="def-mark"></span></div>
+      </div>
+      <div class="slider" data-k="volume_min_effect">
+        <div class="sl-top"><label for="set-volume_min_effect">Smallest move of a count</label><output id="set-volume_min_effect-out" for="set-volume_min_effect"></output></div>
+        <div class="sl-track"><input type="range" id="set-volume_min_effect" min="0.05" max="0.6" step="0.01"><span class="def-mark"></span></div>
+      </div>
+      <div class="slider" data-k="release_min_surprise">
+        <div class="sl-top"><label for="set-release_min_surprise">Surprise to blame a release</label><output id="set-release_min_surprise-out" for="set-release_min_surprise"></output></div>
+        <div class="sl-track"><input type="range" id="set-release_min_surprise" min="3" max="7" step="0.5"><span class="def-mark"></span></div>
+      </div>
+    </section>
+
+    <section class="set-sec" aria-labelledby="set-h-env">
+      <h3 id="set-h-env">Environment</h3>
+      <div class="env-list" id="set-env"></div>
+    </section>
+  </div>
+  <div class="set-foot">
+    <p class="set-feedback" id="set-feedback" role="status" aria-live="polite"></p>
+    <button id="set-reset-all" title="Write the defaults of every setting to settings.json">Reset all</button>
+    <button class="primary" id="set-save">Save</button>
+  </div>
+</section>
+<!-- /settings -->
 <script src="/static/v3/app.js"></script>
 </body>
 </html>
