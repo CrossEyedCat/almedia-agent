@@ -487,7 +487,6 @@ class Monitor:
         best_z = np.full(bad.shape, np.nan)
         single = np.full(bad.shape, np.nan)   # how far each hour alone is from the expected rate
         single_score = np.full(bad.shape, np.nan)
-        resid = np.full(bad.shape, np.nan)    # each hour's own deviation from the expected counts
         for width in cfg.windows:
             Nw, Dw = np.full(bad.shape, np.nan), np.full(bad.shape, np.nan)
             for i, r in enumerate(range(j0, rows)):
@@ -504,14 +503,13 @@ class Monitor:
                         & (np.abs(scaled_residual(Nw, Dw, rate)) >= cfg.beyond_history * extreme)
             with np.errstate(divide="ignore", invalid="ignore"):
                 effect = (Nw / Dw + shift) / (rate + shift) - 1.0
-            resid_w = Nw - rate * Dw
             if width == 1:
-                single, single_score, resid = effect, score, resid_w
+                single, single_score = effect, score
             hit = ok & enough & (np.abs(effect) >= cfg.min_effect)
             better = hit & ~(best >= score)
             best = np.where(better, score, best)
             best_z = np.where(better, z, best_z)
-            self._mark(bad, hit, effect, single, single_score, width, cfg.min_effect, resid, resid_w)
+            self._mark(bad, hit, effect, single, single_score, width, cfg.min_effect)
         flags[j0:rows] = bad
 
         # one alert per series whose newest bad hour is recent
@@ -577,25 +575,24 @@ class Monitor:
             return bool(np.isfinite(score[0]) and score[0] >= self.config.release_min_surprise)
         return beyond
 
-    def _mark(self, bad, hit, effect, single, single_score, width: int, min_effect: float,
-              resid=None, resid_w=None) -> None:
+    def _mark(self, bad, hit, effect, single, single_score, width: int, min_effect: float) -> None:
         """Mark the bad hours of one window width, in place.
 
         A window of one hour is that hour's own evidence. A sum over several hours says "somewhere in
-        here", so the newest hour of a bad window is bad only when it carries its part: it moved the
-        same way by at least min_effect and is itself unusual or holds at least half its fair share
-        of the window's deviation. Without this the normal hours right after a fault ended were
-        marked bad while the window still reached back into the fault, which made the episode two
-        hours too long and halved the change reported for its newest hours."""
-        if width == 1 or resid is None:
+        here", so each of its hours, the newest one included, is bad only when it alone moved the same
+        way by at least min_effect and is itself unusual (p below 0.01). A summed window at p below
+        1e-7 always holds such an hour: three hours each above p 0.01 sum to about p 5e-5 at most.
+        Without this the normal hours right after a fault ended were marked bad while the window still
+        reached back into the fault, which made the episode two hours too long and halved the change
+        reported for its newest hours."""
+        if width == 1:
             bad |= hit
-        else:
-            with np.errstate(invalid="ignore", divide="ignore"):
-                own = (np.sign(single) == np.sign(effect)) & (np.abs(single) >= min_effect)
-                share = resid / resid_w >= 0.5 / width
-                bad |= hit & own & ((single_score >= self.config.onset_min_surprise) | share)
-        # an earlier hour of the window is bad too when it alone moved the same way, by at least
-        # min_effect, and is itself unusual
+            return
+        with np.errstate(invalid="ignore"):
+            own = (np.sign(single) == np.sign(effect)) & (np.abs(single) >= min_effect) \
+                & (single_score >= self.config.onset_min_surprise)
+        bad |= hit & own
+        # an earlier hour of the window is bad too on the same terms
         for i in range(bad.shape[0]):
             for back in range(1, width):
                 if i - back >= 0:
@@ -694,7 +691,6 @@ class Monitor:
         best_z = np.full(bad.shape, np.nan)
         single = np.full(bad.shape, np.nan)
         single_score = np.full(bad.shape, np.nan)
-        resid = np.full(bad.shape, np.nan)
         for width in cfg.windows:
             Xw, Ew, Vw = (np.full(bad.shape, np.nan) for _ in range(3))
             for i, r in enumerate(range(j0, rows)):
@@ -706,14 +702,13 @@ class Monitor:
             with np.errstate(divide="ignore", invalid="ignore"):
                 effect = Xw / Ew - 1.0
                 enough = (score >= cfg.min_surprise) & (Ew >= cfg.volume_min_expected)
-            resid_w = Xw - Ew
             if width == 1:
-                single, single_score, resid = effect, score, resid_w
+                single, single_score = effect, score
             hit = ok & enough & (np.abs(effect) >= cfg.volume_min_effect)
             better = hit & ~(best >= score)
             best = np.where(better, score, best)
             best_z = np.where(better, z, best_z)
-            self._mark(bad, hit, effect, single, single_score, width, cfg.volume_min_effect, resid, resid_w)
+            self._mark(bad, hit, effect, single, single_score, width, cfg.volume_min_effect)
         flags[j0:rows] = bad
 
         alerts = []
