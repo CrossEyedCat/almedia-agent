@@ -148,3 +148,68 @@ def test_a_discount_bug_across_a_country_is_one_incident(clean_db, tmp_path):
     (inc,) = got
     assert inc["segment"] == {"country": "FR"}
     assert {d["metric"] for d in inc["drivers"]} >= {"discount_rate"}
+
+
+# ------------------------------------------------------------------ I2: innocent explanations found by the investigation
+MIX = {"innocent": {"kind": "mix", "reason": "Traffic moved toward electronics: the mix explains 96 % of the change "
+                                              "in take_rate, the cells' own rates did not move."}}
+DE = {"country": "DE"}
+
+
+def assert_readable(record):
+    """What the console and the scorer need from any record, alert or not."""
+    for k in ("id", "status", "metric", "first_seen", "last_seen", "report"):
+        assert isinstance(record[k], str) and record[k], k
+    assert isinstance(record["segment"], dict)
+    assert all(isinstance(h["cause"], str) and h["kind"] and h["status"] and
+               all(isinstance(e, str) for e in h["evidence"]) for h in record["hypotheses"])
+    assert all(isinstance(s["target"], str) and s["target"] and isinstance(s["result"], str) for s in record["trail"])
+
+
+def test_an_innocent_change_is_written_as_explained_and_not_as_an_incident(stub_book):
+    book = stub_book(extra={key(DE): MIX})
+    feed(book, alert("take_rate", DE, 30))
+    feed(book, alert("take_rate", DE, 35, hour=FAULT + H), hour=FAULT + H)
+    assert alerts_in(book.folder) == []
+    (note,) = records(book.folder)
+    assert_readable(note)
+    assert note["id"].startswith("explained-mix-") and note["status"] == "explained"
+    assert note["innocent"] == MIX["innocent"]
+    assert MIX["innocent"]["reason"] in note["report"]
+    assert note["hypotheses"][0]["status"] == "supported" and MIX["innocent"]["reason"] in note["hypotheses"][0]["evidence"]
+    assert note["first_seen"] == iso_hour(FAULT) and note["last_seen"] == iso_hour(FAULT + H)
+    assert not [i for i in book.incidents if i.status in ("open", "ongoing")]   # nothing live
+    assert book._next == 1                                                        # no incident number spent
+    assert book.monitor.open_episodes == []
+
+
+def test_an_open_incident_found_innocent_later_turns_explained_in_place(stub_book):
+    book = stub_book()
+    feed(book, alert("take_rate", DE, 30))
+    (inc,) = alerts_in(book.folder)
+    book.investigator.extra = {key(DE): MIX}
+    feed(book, alert("take_rate", DE, 35, hour=FAULT + H), hour=FAULT + H)
+    feed(book, alert("take_rate", DE, 36, hour=FAULT + 2 * H), hour=FAULT + 2 * H)
+    (note,) = records(book.folder)       # no duplicate beside it
+    assert_readable(note)
+    assert note["id"] == inc["id"] and note["status"] == "explained"
+    assert note["first_seen"] == inc["first_seen"] and note["innocent"]["kind"] == "mix"
+    assert not [i for i in book.incidents if i.status in ("open", "ongoing")]
+
+
+def test_a_calendar_innocence_names_its_kind(stub_book):
+    cal = {"innocent": {"kind": "calendar", "reason": "Black Friday in DE (2026-11-03 10:00 to 22:00 UTC) fits: "
+                                                       "traffic +38 % against +40 % planned."}}
+    book = stub_book(extra={key(DE): cal})
+    feed(book, alert("take_rate", DE, 30))
+    (note,) = records(book.folder)
+    assert note["id"].startswith("explained-calendar-") and note["hypotheses"][0]["kind"] == "calendar"
+
+
+def test_an_explained_group_that_stops_looking_innocent_becomes_an_incident(stub_book):
+    book = stub_book(extra={key(DE): MIX})
+    feed(book, alert("take_rate", DE, 30))
+    book.investigator.extra = {}
+    feed(book, alert("take_rate", DE, 40, hour=FAULT + H), hour=FAULT + H)
+    (inc,) = records(book.folder)        # the incident's file replaces the explained record
+    assert inc["id"] == "inc-0001" and inc["status"] == "open" and inc["first_seen"] == iso_hour(FAULT)
