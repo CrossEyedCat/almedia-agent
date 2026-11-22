@@ -13,7 +13,7 @@ def test_the_demo_lifecycle_rehearsal_passes(tmp_path):
     run = tmp_path / "run"
     # a bare environment, plus what Windows needs to start Python at all (SYSTEMROOT) and a place for temporary files
     env = {"PYTHONPATH": str(ROOT), "PATH": "/usr/bin:/bin", "TEMP": str(tmp_path), "TMP": str(tmp_path)}
-    env.update({k: os.environ[k] for k in ("SYSTEMROOT", "WINDIR") if k in os.environ})
+    env.update({k: os.environ[k] for k in ("SYSTEMROOT", "WINDIR", "SYSTEMDRIVE", "PROGRAMDATA") if k in os.environ})
     out = subprocess.run([sys.executable, "scripts/rehearse_core.py", "--run", str(run)], cwd=ROOT, capture_output=True, text=True,
                          timeout=240, env=env)
     assert out.returncode == 0, out.stdout[-400:] + out.stderr[-800:]
