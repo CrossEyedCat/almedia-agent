@@ -93,12 +93,23 @@
             <span><i class="bdg held">held</i>Checked, normal</span>
             <span><i class="pin">3</i>Replay step</span>
           </div>
-          <div class="lg-col">
+          <div class="lg-col lg-links">
             <span class="lg-h">Links</span>
-            <span><svg viewBox="0 0 28 10"><line x1="0" y1="5" x2="28" y2="5" class="lg-line"/></svg>Formula</span>
-            <span><svg viewBox="0 0 28 10"><line x1="0" y1="5" x2="28" y2="5" class="lg-line may"/></svg>Possible cause &plusmn;</span>
+            <span><svg class="lg-sign" viewBox="0 0 56 20" aria-hidden="true"><path d="M2,12 L46,12" class="lg-line"/><rect class="lg-target" x="46" y="4.5" width="14" height="15" rx="3"/></svg>Formula</span>
+            <!-- the possible-cause samples are drawn by app.js (drawSignSamples) in the cause mark picked on the right -->
+            <span><svg class="lg-sign" id="lg-sign-up" viewBox="0 0 56 20" aria-hidden="true"></svg>Possible cause, may raise</span>
+            <span><svg class="lg-sign" id="lg-sign-down" viewBox="0 0 56 20" aria-hidden="true"></svg>May lower</span>
+            <span><svg class="lg-sign" id="lg-sign-any" viewBox="0 0 56 20" aria-hidden="true"></svg>May affect, sign unknown</span>
+            <span class="lg-note">Heavier dashes: more likely</span>
             <span><i class="sw outcome"></i>Outcome</span>
             <span><i class="sw again"></i>Shown again</span>
+          </div>
+          <div class="lg-col lg-pick" role="radiogroup" aria-labelledby="lg-pick-h">
+            <span class="lg-h" id="lg-pick-h">Cause mark</span>
+            <label title="A small grey diamond with + or &minus; half way along the link, an arrowhead at the metric it affects"><input type="radio" name="cause-mark" value="1" checked><b>1</b>Tag on the line</label>
+            <label title="An open arrowhead at the metric it affects, with + or &minus; beside it"><input type="radio" name="cause-mark" value="2"><b>2</b>Sign at the arrow</label>
+            <label title="A chip half way along with a rising or falling line, a small arrow after it towards the metric it affects"><input type="radio" name="cause-mark" value="3"><b>3</b>Trend chip</label>
+            <label title="The link ends in an arrowhead if it may raise the metric, a flat bar if it may lower it, a ring if unknown; heavier dashes are more likely"><input type="radio" name="cause-mark" value="4"><b>4</b>Arrow, bar or ring</label>
           </div>
         </div>
       </div>

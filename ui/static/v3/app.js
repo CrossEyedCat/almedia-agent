@@ -198,11 +198,245 @@
   }
   // a drawn item as route.js takes a box: its centre and half sizes; the key tells the boxes apart
   function boxOfItem(i) { return { id: i.key, x: i.x, y: i.y, hw: i.hw, hh: NODE_H / 2 }; }
-  // the mark on a possible cause: the sign of the effect, half way along the link (g: its geometry from route.js)
-  function drawSign(layer, e, g) {
-    var sg = svg('g', { 'class': 'sign', transform: 'translate(' + g.mid.x.toFixed(1) + ',' + g.mid.y.toFixed(1) + ')' }, layer);
-    svg('circle', { r: 10 * S }, sg); var s = svg('text', { dy: '0.35em' }, sg); s.textContent = e.sign > 0 ? '+' : e.sign < 0 ? '−' : '?';
-    svg('title', {}, sg).textContent = e.source + ' may affect ' + e.target + (e.note ? ': ' + e.note : '');
+  // ------------------------------------------------- the mark on a possible cause: four styles for the owner to compare
+  // A possible cause reads "source may raise / lower / affect target". Its mark says which, and which way the link runs:
+  //   1 Tag on the line: a small grey diamond with + / − / ? half way along, a small arrowhead at the target (a diamond,
+  //     not a square or a circle, so it does not pass for an expand or zoom button)
+  //   2 Sign at the arrow: an open arrowhead at the target with + / − / ? beside it, nothing in the middle
+  //   3 Trend chip: a flat chip half way along with a rising or falling trend line, a chevron after it towards the target
+  //   4 Arrow, bar or ring: at the target an arrowhead (raises), a flat bar (lowers) or an open circle (unknown); the
+  //     more likely the cause, the heavier its dashed line
+  // ?signs=1..4 picks one and this browser remembers it; the Legend's "Cause mark" choices switch it at once.
+  // Every mark is placed from the link's own geometry (g from route.js), so it follows whichever side the link enters.
+  var signStyle = (function () {
+    var asked = new URLSearchParams(location.search).get('signs') || '', kept = store('v3-signs') || '';
+    if (/^[1-4]$/.test(asked)) { store('v3-signs', asked); return +asked; }
+    return /^[1-4]$/.test(kept) ? +kept : 1;
+  })();
+  // the shapes, drawn in units of one around their origin (every number an absolute coordinate, so they scale by k)
+  var MK = {
+    plus: 'M-1,0 H1 M0,-1 V1', minus: 'M-1,0 H1',
+    ask: 'M-0.62,-0.42 C-0.62,-1.18 0.68,-1.22 0.68,-0.4 C0.68,0.08 0,0.12 0,0.6 M0,1.05 L0,1.07',
+    rise: 'M-1,0.55 L-0.35,-0.1 L0.1,0.35 L1,-0.55 M0.38,-0.55 H1 V0.07',     // a trend line going up, with its head
+    fall: 'M-1,-0.55 L-0.35,0.1 L0.1,-0.35 L1,0.55 M0.38,0.55 H1 V-0.07',
+    dart: 'M0,0 L-1,-0.46 L-0.72,0 L-1,0.46 Z',      // arrowheads point along +x with the tip at the origin
+    vee: 'M-1,-0.56 L0,0 L-1,0.56',
+    tri: 'M0,0 L-1,-0.56 L-1,0.56 Z',
+    chev: 'M-0.6,-1 L0.4,0 L-0.6,1',
+    diamond: 'M0,-1 L1,0 L0,1 L-1,0 Z'
+  };
+  function mkPath(d, k) { return d.replace(/-?\d*\.?\d+/g, function (n) { return String(Math.round(n * k * 100) / 100); }); }
+  // a transform putting a shape's origin at (x, y) with its +x axis along the unit direction (dx, dy)
+  function mkTurn(x, y, dx, dy) { return 'matrix(' + [dx, dy, -dy, dx, x, y].map(function (v) { return Math.round(v * 1000) / 1000; }).join(' ') + ')'; }
+  function mkAt(x, y) { return 'translate(' + Math.round(x * 10) / 10 + ',' + Math.round(y * 10) / 10 + ')'; }
+  function mkLen(a, b) { var x = b[0] - a[0], y = b[1] - a[1]; return Math.sqrt(x * x + y * y); }
+  function mkCurve(g) { return g.p && g.p.length === 4; }
+  // a point on the link `shift` units back along it from where it meets its target (0: right at the box), and the way
+  // the link travels there: along the chord over the next `back` units back, so a mark there lies on the line as drawn;
+  // a link with no curve arrives against the normal of the side it enters
+  function mkArrival(g, back, shift) {
+    shift = shift || 0;
+    var tip = [g.end.x, g.end.y], from = null;
+    if (mkCurve(g)) {
+      var run = 0, prev = tip;
+      for (var t = 0.995; t >= 0.2; t -= 0.005) {
+        var c = R.point(g.p, t); run += mkLen(prev, c); prev = c;
+        if (run < shift) tip = c;
+        else if (mkLen(c, tip) >= back) { from = c; break; }
+      }
+      if (!from) from = prev;
+    } else if (shift) tip = [g.end.x + g.end.nx * shift, g.end.y + g.end.ny * shift];
+    var dx = from ? tip[0] - from[0] : 0, dy = from ? tip[1] - from[1] : 0, n = Math.sqrt(dx * dx + dy * dy);
+    if (n < 1e-6) { dx = -g.end.nx; dy = -g.end.ny; n = Math.sqrt(dx * dx + dy * dy) || 1; }
+    return { x: tip[0], y: tip[1], dx: dx / n, dy: dy / n };
+  }
+  // the point `dist` units on along the curve from t0, towards the target, and the curve's direction there
+  function mkAlong(g, t0, dist) {
+    if (!mkCurve(g)) { var m = mkTx(g); return { x: g.mid.x + m[0] * dist, y: g.mid.y + m[1] * dist, tx: m[0], ty: m[1] }; }
+    var a = R.point(g.p, t0), run = 0, t = t0;
+    while (t < 1 && run < dist) { var t2 = Math.min(1, t + 0.005), b = R.point(g.p, t2); run += mkLen(a, b); a = b; t = t2; }
+    var tan = R.tangent(g.p, t);
+    return { x: a[0], y: a[1], tx: tan[0], ty: tan[1] };
+  }
+  function mkTx(g) { return num(g.mid.tx) != null ? [g.mid.tx, g.mid.ty] : mkCurve(g) ? R.tangent(g.p, 0.5) : [1, 0]; }
+  // The marks placed in this drawing of the graph (drawGraph makes a new `drawn` each time): a mark keeps off the boxes
+  // and off the marks placed before it, and marks at the end of links that enter a box side by side are staggered
+  // back along their own lines, so an arrowhead, a bar and a circle never sit on top of each other
+  var mkSeen = { of: null, rects: [], ends: [], pts: [], done: 0 };
+  function mkRoom(layer, line) {
+    if (mkSeen.of !== drawn) mkSeen = { of: drawn, rects: [], ends: [], pts: [], done: 0 };
+    mkLines(mkSeen, layer, line);
+    return mkSeen;
+  }
+  // points along the links already drawn in the layer (every formula link, the causes before this one), so a mark
+  // does not sit on a line it does not belong to; the link's own line is left out
+  function mkLines(room, layer, line) {
+    var kids = layer.children || layer.childNodes || [], i;
+    for (i = room.done; i < kids.length && kids[i] !== line; i++) {
+      var k = kids[i], cls = (k.getAttribute && k.getAttribute('class')) || '';
+      if (!/\bedge\b/.test(cls)) continue;
+      var n = (k.getAttribute('d') || '').match(/-?\d*\.?\d+/g) || [];
+      if (n.length === 8) {
+        var p = [[+n[0], +n[1]], [+n[2], +n[3]], [+n[4], +n[5]], [+n[6], +n[7]]];
+        for (var s = 0; s <= 32; s++) room.pts.push(R.point(p, s / 32));
+      } else for (var j = 0; j + 1 < n.length; j += 2) room.pts.push([+n[j], +n[j + 1]]);
+    }
+    room.done = i;
+  }
+  // how much a mark of half sizes (a, b) centred at (x, y) overlaps the boxes (kept `pad` away), the placed marks and
+  // the lines of other links
+  function mkClash(room, x, y, a, b, pad) {
+    var hit = 0, over = function (cx, cy, ca, cb) {
+      var ox = Math.min(x + a, cx + ca + pad) - Math.max(x - a, cx - ca - pad), oy = Math.min(y + b, cy + cb + pad) - Math.max(y - b, cy - cb - pad);
+      if (ox > 0 && oy > 0) hit += ox * oy;
+    };
+    list(drawn && drawn.nodes).forEach(function (n) { over(n.x, n.y, n.hw, NODE_H / 2); });
+    room.rects.forEach(function (r) { over(r.x, r.y, r.a, r.b); });
+    room.pts.forEach(function (q) { if (Math.abs(q[0] - x) < a + 1.5 * S && Math.abs(q[1] - y) < b + 1.5 * S) hit += 12 * S * S; });
+    return hit;
+  }
+  // where a mark half way along sits: the point nearest the middle (t from 0.5 out to 0.22 and 0.78) that keeps off the
+  // boxes and the other marks, else the least crowded of them; the Legend's samples (no room) keep the middle
+  function mkSpot(g, room, a, b) {
+    var best = { t: 0.5, x: g.mid.x, y: g.mid.y, c: 0 };
+    if (!room) return best;
+    var ts = [0.5];
+    if (mkCurve(g)) for (var d = 0.04; d < 0.29; d += 0.04) ts.push(0.5 - d, 0.5 + d);
+    best = null;
+    for (var i = 0; i < ts.length; i++) {
+      var q = i ? R.point(g.p, ts[i]) : [g.mid.x, g.mid.y], c = mkClash(room, q[0], q[1], a, b, 4 * S);
+      if (!best || c < best.c) best = { t: ts[i], x: q[0], y: q[1], c: c };
+      if (!c) break;
+    }
+    room.rects.push({ x: best.x, y: best.y, a: a, b: b });
+    return best;
+  }
+  // how far back from the box a mark at the end of g sits: one step for each end already drawn close beside it
+  function mkStagger(g, room, u) {
+    if (!room) return 0;
+    var near = room.ends.filter(function (p) { return mkLen(p, [g.end.x, g.end.y]) < 8.5 * u; }).length;
+    room.ends.push([g.end.x, g.end.y]);
+    return near * 12 * u;
+  }
+  // the words of a mark's tooltip: "stockouts may lower add_to_cart_rate: unavailable products ... (prior 0.6, assumed)"
+  function signWords(e) {
+    var verb = e.sign > 0 ? ' may raise ' : e.sign < 0 ? ' may lower ' : ' may affect ', p = num(e.prior);
+    var more = [p != null ? 'prior ' + p : '', str(e.status)].filter(Boolean).join(', ');
+    return str(e.source) + verb + str(e.target) + (e.note ? ': ' + str(e.note) : '') + (more ? ' (' + more + ')' : '');
+  }
+  // the Legend's samples of a possible cause (raises, lowers, sign unknown) in the style now picked
+  function drawSignSamples() {
+    [['lg-sign-up', 1], ['lg-sign-down', -1], ['lg-sign-any', 0]].forEach(function (s) {
+      var box = $(s[0]); if (!box) return;
+      box.textContent = '';
+      var y = 12, x0 = 2, x1 = 46, p = [[x0, y], [x0 + 15, y], [x1 - 15, y], [x1, y]];
+      var g = { d: 'M' + x0 + ',' + y + ' L' + x1 + ',' + y, p: p, start: { x: x0, y: y, nx: 1, ny: 0, side: 'r' },
+        end: { x: x1, y: y, nx: -1, ny: 0, side: 'l' }, mid: { x: (x0 + x1) / 2, y: y, tx: 1, ty: 0 } };
+      var line = svg('path', { d: g.d, 'class': 'edge may' }, box);
+      // the edge of the box the link enters: taller than wide, so the samples do not look like check boxes
+      svg('rect', { 'class': 'lg-target', x: x1, y: y - 7.5, width: 14, height: 15, rx: 3 }, box);
+      drawSign(box, { sign: s[1], prior: 0.5 }, g, line, 0.85);
+    });
+  }
+  function showSignStyle() {
+    document.documentElement.setAttribute('data-signs', String(signStyle));
+    var r = document.querySelectorAll('input[name="cause-mark"]');
+    for (var i = 0; i < r.length; i++) r[i].checked = +r[i].value === signStyle;
+    drawSignSamples();
+  }
+  // a choice in the Legend: kept in this browser (and in the address, when it names one), the graph drawn again
+  function pickSignStyle(n) {
+    if (!/^[1-4]$/.test(String(n))) return;
+    signStyle = +n; store('v3-signs', String(signStyle));
+    try {
+      var u = new URL(location.href);
+      if (u.searchParams.has('signs')) { u.searchParams.set('signs', String(signStyle)); history.replaceState(null, '', u); }
+    } catch (err) { /* an old browser: the choice is still kept */ }
+    showSignStyle();
+    if (drawn) drawGraph();      // drawGraph draws the marks with their links and puts the selected incident's look back
+  }
+  (function wireSignPicker() {
+    var r = document.querySelectorAll('input[name="cause-mark"]');
+    for (var i = 0; i < r.length; i++) r[i].addEventListener('change', function (ev) { if (ev.target.checked) pickSignStyle(ev.target.value); });
+    showSignStyle();
+  })();
+  // the mark on one possible cause e, drawn in `layer` after its link: g is the link's geometry from route.js, line its
+  // dashed path (style 4 sets its weight). `unit` is given only for the Legend's samples: their size, no tooltip
+  function drawSign(layer, e, g, line, unit) {
+    var u = unit || S, kind = e.sign > 0 ? 'up' : e.sign < 0 ? 'down' : 'any', k = signStyle;
+    var sg = svg('g', { 'class': 'sign sign-' + kind + ' sign-v' + k }, layer);
+    var shape = function (d, cls, at, parent) { var a = { d: d, 'class': cls }; if (at) a.transform = at; return svg('path', a, parent || sg); };
+    var sym = MK[kind === 'up' ? 'plus' : kind === 'down' ? 'minus' : 'ask'];
+    if (!unit) {
+      svg('title', {}, sg).textContent = signWords(e);
+      shape(g.d, 'sign-hit');      // a wide invisible stroke along the link, so its tooltip shows anywhere on the line
+    }
+    var room = unit ? null : mkRoom(layer, line), end, spot, chip;
+    // styles 1 and 2 have one arrowhead for every sign, so arrowheads of links entering side by side may overlap;
+    // style 4's differ (arrowhead, bar, circle), so those are staggered back along their lines
+    if (k === 1) {
+      end = mkArrival(g, 8 * u);
+      shape(mkPath(MK.dart, 7.5 * u), 'sign-head', mkTurn(end.x, end.y, end.dx, end.dy));
+      // a diamond tag the colour of the line, a little larger than the old square so the sign inside reads at Fit
+      spot = mkSpot(g, room, 8.2 * u, 8.2 * u);
+      chip = svg('g', { transform: mkAt(spot.x, spot.y) }, sg);
+      shape(mkPath(MK.diamond, 8.2 * u), 'sign-tag', null, chip);
+      shape(mkPath(sym, 3.6 * u), 'sign-glyph', null, chip);
+    } else if (k === 2) {
+      end = mkArrival(g, 9 * u);
+      shape(mkPath(MK.vee, 8.5 * u), 'sign-vee', mkTurn(end.x, end.y, end.dx, end.dy));
+      // the sign sits beside its own line, on the side away from where the curve comes in (the open side); a link that
+      // comes straight in puts it above, or to the right when it comes down or up. First beside the arrowhead; if that
+      // spot is taken (a box, another mark, another link's line, as where several causes enter one side) it moves
+      // back along its own line, where the lines have drawn apart, and tries the other side of the line too
+      var s = [-end.dy, end.dx], from = mkCurve(g) ? R.point(g.p, 0.7) : [g.start.x, g.start.y];
+      var lean = (from[0] - end.x) * s[0] + (from[1] - end.y) * s[1];
+      var flip = Math.abs(lean) > 2 * u ? lean > 0 : (Math.abs(s[1]) >= 0.3 ? s[1] > 0 : s[0] < 0);
+      if (flip) s = [-s[0], -s[1]];
+      var gs = 3.8 * u, pick = null;
+      // [which side, how far back from the tip]: beside the arrowhead it keeps clear of the arrowhead's wings
+      [[1, 7], [1, 16], [-1, 16], [1, 26], [-1, 26], [1, 38], [-1, 38], [1, 52], [-1, 52]].forEach(function (o) {
+        if (pick && !pick.c) return;
+        var q = o[1] > 7 ? mkArrival(g, 6 * u, o[1] * u) : { x: end.x, y: end.y, dx: end.dx, dy: end.dy };
+        var n = [-q.dy, q.dx], off = (o[1] > 7 ? gs + 3.2 * u : 9.8 * u) * o[0];
+        if (n[0] * s[0] + n[1] * s[1] < 0) n = [-n[0], -n[1]];
+        var x = q.x - q.dx * (o[1] > 7 ? 0 : o[1] * u) + n[0] * off, y = q.y - q.dy * (o[1] > 7 ? 0 : o[1] * u) + n[1] * off;
+        var c = room ? mkClash(room, x, y, gs + u, gs + u, 1.5 * u) : 0;
+        if (!pick || c < pick.c) pick = { x: x, y: y, c: c };
+      });
+      if (room) room.rects.push({ x: pick.x, y: pick.y, a: gs + u, b: gs + u });
+      var at = mkAt(pick.x, pick.y);
+      shape(mkPath(sym, gs), 'sign-halo', at);
+      shape(mkPath(sym, gs), 'sign-glyph', at);
+    } else if (k === 3) {
+      // an upright chip; the chevron sits on the line just past it, pointing on towards the target
+      var hw = 12.5 * u, hh = 8 * u;
+      spot = mkSpot(g, room, hw + 2 * u, hh + 2 * u);
+      var t = spot.t === 0.5 || !mkCurve(g) ? mkTx(g) : R.tangent(g.p, spot.t);
+      var out = Math.min(Math.abs(t[0]) > 1e-6 ? hw / Math.abs(t[0]) : 1e9, Math.abs(t[1]) > 1e-6 ? hh / Math.abs(t[1]) : 1e9);
+      var c = mkAlong(g, spot.t, out + 6 * u);
+      shape(mkPath(MK.chev, 3.4 * u), 'sign-chev', mkTurn(c.x, c.y, c.tx, c.ty));
+      chip = svg('g', { transform: mkAt(spot.x, spot.y) }, sg);
+      svg('rect', { 'class': 'sign-chip', x: -hw, y: -hh, width: 2 * hw, height: 2 * hh, rx: hh }, chip);
+      shape(kind === 'any' ? mkPath(MK.ask, 4 * u) : mkPath(MK[kind === 'up' ? 'rise' : 'fall'], 7 * u), 'sign-glyph sign-trend', null, chip);
+    } else {
+      // the more likely the cause, the heavier its dashed line: 1 px at prior 0 (still seen on a projector) to 3.2 px
+      // at prior 1 (about the weight of an incident's lit path, never far past it)
+      var pr = num(e.prior); pr = pr == null ? 0.5 : Math.max(0, Math.min(1, pr));
+      if (line && line.style) line.style.setProperty('--may-w', (1 + 2.2 * pr).toFixed(2) + 'px');
+      var back = mkStagger(g, room, u);
+      end = mkArrival(g, 9 * u, back);
+      if (kind === 'up') shape(mkPath(MK.tri, 8.5 * u), 'sign-tri', mkTurn(end.x, end.y, end.dx, end.dy));
+      else if (kind === 'down') {
+        // a flat bar across the line; at the box it stands a little off it, the line's last bit hidden: a T-end
+        var gap = back ? 0 : 2.4 * u;
+        if (gap) shape('M' + (-gap).toFixed(2) + ',0 L0,0', 'sign-cut', mkTurn(end.x, end.y, end.dx, end.dy));
+        shape(mkPath('M0,-1 L0,1', 5.5 * u), 'sign-bar', mkTurn(end.x - end.dx * gap, end.y - end.dy * gap, end.dx, end.dy));
+      } else {
+        var r = 3.6 * u, o = back ? 0 : r + 0.6 * u;
+        svg('circle', { 'class': 'sign-ring', cx: Math.round((end.x - end.dx * o) * 10) / 10, cy: Math.round((end.y - end.dy * o) * 10) / 10, r: r }, sg);
+      }
+    }
     return sg;
   }
   function drawGraph() {
@@ -261,7 +495,7 @@
     causes.forEach(function (e, k) {
       var g = geo[all.edges.length + k];
       var p = svg('path', { d: g.d, 'class': 'edge may' }, E);
-      drawSign(E, e, g);
+      drawSign(E, e, g, p);
       drawn.edges.push({ el: p, from: e.source, to: e.target, may: true });
     });
     // the world also holds any box moved past the layout's edges, so Fit and the minimap include it
