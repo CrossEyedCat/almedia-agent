@@ -93,6 +93,13 @@ is our own simulator, so this is an engineering check, not proof on real traffic
   `explained` within 6 s, late data `pending` at once; **Add refund_rate** answered within about 10 s while the clock ran
   (validation over 30 days of data), and the new `refunds` tree appeared in the graph.
 
+- Rehearsed again on 22 Nov, 08:10 CET, on the final code (`e220dfc`), fresh 28-day backfill, `--speed 2`, in the browser:
+  payment failure DE x Android injected at 14:00 on the header clock: incident about 2 s after the click, the payments
+  release supported; **End it (rollback)**: resolved 6 s later; **Promo (12 h)** FR: `explained` within 1.5 s, no alert;
+  **Mix shift (innocent)** toward fashion: two `explained` records whose reason is the mix, no alert; **Add refund_rate**:
+  answered in 4.6 s, "formula refunds / orders found from the SQL, the only one of 1045 candidates", validated on 29 days,
+  watched from the next tick; **Add a duplicate metric**: answered in 7.2 s, rejected as an alias of payment_success_rate.
+
 ## If something goes wrong
 
 - No incident after 20 seconds: say "it is still collecting evidence" and move on to the promo; or play the recording.
