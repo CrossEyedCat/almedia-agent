@@ -56,10 +56,13 @@
   function hourOf(t) { var m = /T(\d\d:\d\d)/.exec(str(t)); return m ? m[1] : when(t); }
   function svg(tag, attrs, parent) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
   function still() { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+  // presenter progress lives in this tab only (sessionStorage): a reload mid-demo keeps the step, but a rehearsal in
+  // another window or yesterday never leaves the cue at step 8 with stale "done" marks
   var store = {
-    get: function (k) { try { return window.localStorage.getItem('v4.' + k); } catch (e) { return null; } },
-    set: function (k, v) { try { window.localStorage.setItem('v4.' + k, v); } catch (e) { /* private window: fine */ } }
+    get: function (k) { try { return window.sessionStorage.getItem('v4.' + k); } catch (e) { return null; } },
+    set: function (k, v) { try { window.sessionStorage.setItem('v4.' + k, v); } catch (e) { /* private window: fine */ } }
   };
+  try { window.localStorage.removeItem('v4.cue'); window.localStorage.removeItem('v4.present'); } catch (e) { /* fine */ }
   var toastTimer = null;
   function toast(msg, extra) {
     var t = $('toast'); t.textContent = ''; t.appendChild(text(msg)); if (extra) t.appendChild(extra);
@@ -82,12 +85,11 @@
   function touches(i, d) { return d === 'all' || incidentNodes(i).some(function (m) { return domainOf(m) === d; }); }
   function inScope() { return incidents.filter(function (i) { return touches(i, dom); }); }
   function sevRank(i) { return SEV[str(i.severity)] || 0; }
-  function worst(l) {        // the most severe live incident: open before ongoing, then severity, then the euro loss
-    return l.filter(isLive).slice().sort(function (a, b) {
-      return (status(a) === 'open' ? 0 : 1) - (status(b) === 'open' ? 0 : 1) || sevRank(b) - sevRank(a)
-        || Math.abs(euroOf(b) || 0) - Math.abs(euroOf(a) || 0);
-    })[0];
+  function liveOrder(a, b) {  // open before ongoing, then severity, then the euro loss
+    return (status(a) === 'open' ? 0 : 1) - (status(b) === 'open' ? 0 : 1) || sevRank(b) - sevRank(a)
+      || Math.abs(euroOf(b) || 0) - Math.abs(euroOf(a) || 0);
   }
+  function worst(l) { return l.filter(isLive).slice().sort(liveOrder)[0]; }   // the most severe live incident
   function hasOther() { return !!graph && list(graph.nodes).some(function (n) { return n.kind === 'metric' && !domOf[n.id]; }); }
   // the series the monitor reads in a domain: each metric's total and each of its breakdowns
   function seriesCount(d) {
@@ -237,6 +239,7 @@
     GROUPS.forEach(function (g) {
       var rows = l.filter(function (i) { return g[2](status(i)); });
       if (!rows.length) return;
+      if (g[0] === 'live') rows = rows.slice().sort(liveOrder);       // the worst live incident first, as in the Now banner
       f.appendChild(el('div', 'group-h ' + g[0], [el('b', null, [String(rows.length)]), g[1]]));
       rows.forEach(function (i) {
         try { f.appendChild(incRow(i)); }
@@ -244,7 +247,9 @@
       });
     });
     if (skipped) f.appendChild(el('p', 'empty', [skipped + ' file' + (skipped > 1 ? 's' : '') + ' in the incidents folder ignored (not an incident, or still being written).']));
-    f.scrollTop = top;
+    // a new live incident is at the top of the list: bring it into view instead of keeping an old scroll position
+    var arrived = l.some(function (i) { return fresh[i.id] && isLive(i); });
+    f.scrollTop = arrived ? 0 : top;
     applySpot(false);
   }
   function incRow(i) {
@@ -297,8 +302,11 @@
       buildReport(head, body, i);
     } catch (err) { body.textContent = ''; body.appendChild(el('p', 'empty', ['This report could not be shown: ' + err.message])); }
     sc.scrollTop = sameInc && !force ? top : 0;
+    var pinned = reportPin && reportPin.id === selInc && P.on && document.querySelector(reportPin.sel);
+    if (pinned) sc.scrollTop = pinY(sc, pinned);
     applySpot(false);
   }
+  var reportPin = null;     // presenter step 3: the report section kept in view while the live report is rebuilt
   function buildReport(head, d, i) {
     var st = status(i), ch = obj(i.change), w = obj(ch.window), imp = obj(i.impact), effect = euroOf(i), quiet = st === 'explained' || st === 'pending';
     var title = el('h2', null, [mono(i.metric), ' ' + (num(ch.delta_pct) != null ? pct(ch.delta_pct) + ' ' : '') + placeText(i.segment)]);
@@ -318,7 +326,7 @@
     d.appendChild([ch.observed, ch.expected, ch.delta_pct, effect].some(function (v) { return num(v) != null; }) ? el('div', 'readout', [
       fig('Observed', short(ch.observed)), fig('Expected', short(ch.expected)),
       fig('Change', pct(ch.delta_pct), 'chg ' + toneIn(i, i.metric, ch.delta_pct)),
-      fig('Effect', effect == null ? '\u2013' : (effect > 0 ? '+' : '') + short(effect), 'effect chg ' + euroTone(i, effect), 'EUR')])
+      fig('Effect', effect == null ? '\u2013' : (effect > 0 ? '+' : '') + short(effect), 'effect chg ' + euroTone(i, effect), effect == null ? null : 'EUR')])
       : el('p', 'muted', [st === 'pending' ? 'No figures yet: the data for these hours has not arrived.' : 'No figures in this report.']));
     var story = obj(i.narrative), told = story.source === 'model' && !!str(story.text).trim();
     if (told) {
@@ -369,7 +377,7 @@
       var sc = num(h.score), bar = el('span', 'score'), bi = el('i'); bi.style.width = Math.max(0, Math.min(1, sc || 0)) * 100 + '%'; bar.appendChild(bi);
       var r = el('div', 'hyp ' + str(h.status), [el('span', 'verdict ' + str(h.status), [str(h.status) || '-']),
         el('div', null, [el('div', 'hyp-cause', [str(h.cause)]),
-          el('div', 'hyp-meta', (sc != null ? [bar, 'score ' + fmt(sc, 2)] : []).concat(h.kind ? [(sc != null ? '\u00b7 ' : '') + str(h.kind)] : [])),
+          el('div', 'hyp-meta', (sc != null ? [bar] : []).concat([[sc != null ? 'score ' + fmt(sc, 2) : '', str(h.kind)].filter(Boolean).join(' \u00b7 ')])),
           el('ul', 'evidence', list(h.evidence).map(function (e) { return el('li', null, [str(e)]); }))])]);
       if (h.status === 'supported' && !firstSupported) { firstSupported = r; r.id = 'sec-cause'; }
       return r;
@@ -783,14 +791,17 @@
     if (!l.length) { box.appendChild(el('p', 'bnote', ['Nothing injected is running.'])); return; }
     l.forEach(function (i) {
       var where = ['country', 'platform', 'category', 'source'].map(function (d) { return obj(i.scope)[d]; }).filter(Boolean).join(' ');
-      var b = el('button', null, ['End it (rollback)']); b.type = 'button';
-      b.onclick = function () { endInjection(i.id, b); };
-      box.appendChild(el('div', 'run', [el('span', 'what', [str(i.kind) + (where ? ' ' + where : '')]), el('span', 'since', ['from ' + displayHour(obj(i.scope).start)]), b]));
+      var b = el('button', null, ['End it (rollback)']), name = str(i.kind) + (where ? ' ' + where : ''); b.type = 'button';
+      b.onclick = function () { endInjection(i.id, b, name); };
+      // a fault is red; a promo, a mix shift or late data is an innocent change and stays neutral
+      var innocent = /^(promo|mix_shift|data_delay)$/.test(str(i.kind));
+      var kindWord = str(i.kind) === 'data_delay' ? 'Late data' : innocent ? 'Innocent change' : 'Fault';
+      box.appendChild(el('div', 'run' + (innocent ? ' innocent' : ''), [el('span', 'what', [name]), el('span', 'since', [kindWord + ', from ' + displayHour(obj(i.scope).start)]), b]));
     });
   }
-  function endInjection(id, btn) {
+  function endInjection(id, btn, name) {
     if (btn) btn.disabled = true;
-    return post('/api/end', { id: id }).then(function (r) { report('Ended from ' + displayHour(r.ended_from) + '. The monitor should see the metric recover.'); refresh(); return r; })
+    return post('/api/end', { id: id }).then(function (r) { report((name ? name + ' ended' : 'Ended') + ' from ' + displayHour(r.ended_from) + '. The monitor should see the metric recover.'); refresh(); return r; })
       .catch(function (e) { if (btn) btn.disabled = false; report('Could not end it: ' + e.message, true); throw e; });
   }
   function act(body, label) {
@@ -806,7 +817,7 @@
   $('dd-go').onclick = function () { act({ kind: 'data_delay', source: $('dd-source').value, hours: 3, delay_hours: 2, when: 'now' }, 'Late data scheduled').catch(function () {}); };
   function handOver(yamlText) {
     return post('/api/metric', { yaml_text: yamlText }).then(function (r) {
-      report('Handed to the monitor: ' + r.saved + '. Waiting for its answer...');
+      report('Handed to the monitor as ' + str(r.saved).split(/[\\/]/).pop() + '. Waiting for its answer...');
       return new Promise(function (resolve, reject) {
         var tries = 0;
         var poll = function () {
@@ -830,8 +841,10 @@
   $('nm-dup').onclick = function () { handOver(DUP_YAML).catch(function () {}); };
 
   function benchOpen() { return !$('bench').hidden; }
-  function openBench() { $('bench').hidden = false; $('scrim').hidden = false; $('bench-btn').setAttribute('aria-expanded', 'true'); $('bench-close').focus(); }
-  function closeBench() { if (!benchOpen()) return; $('bench').hidden = true; $('scrim').hidden = true; $('bench-btn').setAttribute('aria-expanded', 'false'); }
+  // while the drawer is open the page behind it is inert, so Tab stays in the drawer (and the presenter's cue bar)
+  function setInert(on) { ['shell', 'masthead'].forEach(function (id) { var e = id === 'masthead' ? document.querySelector('.masthead') : $(id); if (e) e.inert = on; }); }
+  function openBench() { $('bench').hidden = false; $('scrim').hidden = false; setInert(true); $('bench-btn').setAttribute('aria-expanded', 'true'); $('bench-close').focus(); }
+  function closeBench() { if (!benchOpen()) return; $('bench').hidden = true; $('scrim').hidden = true; setInert(false); $('bench-btn').setAttribute('aria-expanded', 'false'); }
   $('bench-btn').onclick = function () { if (benchOpen()) closeBench(); else openBench(); };
   $('bench-close').onclick = function () { closeBench(); $('bench-btn').focus(); };
   $('scrim').onclick = closeBench;
@@ -858,7 +871,8 @@
     { label: 'Inject the fault', title: '1. Break payments', go: 'Inject payment failure: DE, Android',
       say: 'We break payments for Android users in Germany. Nobody tells the monitor: it has to find this in the data.',
       run: function () {
-        P.before = idsNow();
+        // a new run of the demo: forget what an earlier run found, resolved or filed
+        P.before = idsNow(); P.done = {}; P.after = {}; P.inc = null; P.injId = null; P.rolled = false; saveCue();
         return act(faultBody('payment_failure', function (p) { return { country: 'DE', platform: 'Android' }[p]; }), 'Payment failure injected').then(function (r) {
           P.waitFrom = lastState && lastState.last_hour; P.injId = null; done(0); setStep(1);
           return r;
@@ -883,8 +897,15 @@
       run: function () {
         var inj = list(lastState && lastState.injected).filter(function (i) { return i.active && i.kind === 'payment_failure'; })[0];
         if (!inj) return Promise.reject(new Error('No payment failure is running. Inject it in step 1 first.'));
-        if (!P.inc || !incidents.some(function (i) { return i.id === P.inc; })) { var cur = selected(); P.inc = cur && isLive(cur) ? cur.id : (worst(incidents) || {}).id || null; }
-        return endInjection(inj.id).then(function () { P.injId = inj.id; P.rolled = true; saveCue(); renderCue(); });
+        // the incident to watch: the one step 2 found while it is live, else the live payments incident, else the
+        // selected live one
+        var mine = incidents.filter(function (i) { return i.id === P.inc; })[0];
+        if (!mine || !isLive(mine)) {
+          var cur = selected();
+          P.inc = (worst(incidents.filter(function (i) { return touches(i, 'payments'); })) || (cur && isLive(cur) ? cur : null) || worst(incidents) || {}).id || null;
+        }
+        delete P.done[3];
+        return endInjection(inj.id, null, ['payment_failure', obj(inj.scope).country, obj(inj.scope).platform].filter(Boolean).join(' ')).then(function () { P.injId = inj.id; P.rolled = true; saveCue(); renderCue(); });
       },
       watch: function () {
         var i = incidents.filter(function (x) { return x.id === P.inc; })[0];
@@ -928,14 +949,23 @@
     P.view = first === cause ? 'cause' : 'chain';
     STEPS[2].go = P.view === 'chain' && cause ? 'Show the cause' : 'Show the chain';
     if (first) {
-      var sc = $('report-scroll'), y = first.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 16;
-      if (sc.scrollHeight > sc.clientHeight + 1) sc.scrollTo({ top: Math.max(0, y), behavior: still() ? 'auto' : 'smooth' });
+      var sc = $('report-scroll');
+      if (sc.scrollHeight > sc.clientHeight + 1) {
+        // the live report is rebuilt on every poll, which would cut a smooth scroll short: pin the section, and
+        // keep it in view across rebuilds until the presenter scrolls the report by hand
+        var pin = reportPin = { id: selInc, sel: first === cause ? '#sec-cause' : '#sec-chain' };
+        sc.scrollTo({ top: pinY(sc, first), behavior: still() ? 'auto' : 'smooth' });
+        // a smooth scroll can stall (a background tab, a busy frame): land on the section regardless
+        setTimeout(function () { var e = reportPin === pin && document.querySelector(pin.sel); if (e && Math.abs(pinY(sc, e) - sc.scrollTop) > 4) sc.scrollTop = pinY(sc, e); }, 900);
+      }
       else first.scrollIntoView({ behavior: still() ? 'auto' : 'smooth', block: 'center' });      // a narrow screen: the page scrolls
     }
     else P.msg = 'This incident has no chain or supported cause yet. Its report is still being written.';
   }
+  function pinY(sc, e) { return Math.max(0, e.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 16); }
+  ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach(function (ev) { $('report-scroll').addEventListener(ev, function () { reportPin = null; }, { passive: true }); });
   function done(k) { P.done[k] = true; saveCue(); }
-  function setStep(k) { P.step = Math.max(0, Math.min(STEPS.length - 1, k)); P.msg = ''; saveCue(); if (P.on) STEPS[P.step].cue(); renderCue(); }
+  function setStep(k) { P.step = Math.max(0, Math.min(STEPS.length - 1, k)); P.msg = ''; if (P.step !== 2) reportPin = null; saveCue(); if (P.on) STEPS[P.step].cue(); renderCue(); }
   var busy = false;
   function renderCue() {
     var ol = $('cue-steps'); ol.textContent = '';

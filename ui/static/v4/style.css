@@ -171,6 +171,7 @@ h1 { font: 650 19px/1.2 var(--display); letter-spacing: -.01em; }
 .inc { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 2px 10px; padding: 10px 14px 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
 .inc::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--st); }
 .inc:hover { background: var(--raised); }
+.inc:focus-visible { outline-offset: -3px; border-radius: 4px; }   /* inside the scrolling list: a ring outside would be cut */
 .inc.sel { background: var(--cue-bg); }
 .inc.sel::before { background: var(--cue); width: 4px; }
 .inc.quiet .inc-metric, .inc.quiet .chg { color: var(--muted); }
@@ -397,6 +398,7 @@ body.presenting .bench { bottom: var(--cue-h, 132px); }
 .bnote { font-size: 12px; color: var(--muted); font-weight: 400; }
 .bgroup > button.primary { justify-self: start; }
 .run { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--red-bg); }
+.run.innocent { background: var(--raised); }
 .run + .run { margin-top: 6px; }
 .run .what { font: 600 12.5px var(--mono); overflow-wrap: anywhere; }
 .run .since { font-size: 12px; color: var(--muted); grid-column: 1; }
