@@ -17,6 +17,7 @@ class Element {
   set textContent(value) { this.children = []; this.value = String(value); }
   get textContent() { return this.value + this.children.map(c => c.textContent).join(''); }
   appendChild(child) { this.children.push(child); return child; }
+  addEventListener(type, fn) { (this.listeners = this.listeners || {})[type] = fn; }
 }
 const elements = {};
 const document = {
