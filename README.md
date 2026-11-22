@@ -8,6 +8,9 @@ graph of how the business works, decides what to watch, notices meaningful chang
 investigates them along the graph, and reports what happened with evidence — without
 anyone asking questions.
 
+**Demo video (3 min):** [Google Drive](https://drive.google.com/file/d/1ADnWZdD1NAGRhRsetv04xTqLpWmxFqqJ/view?usp=sharing) ·
+**Slides:** [Google Slides](https://docs.google.com/presentation/d/1sueOgcyfAJC_uVvprgKThNIqJpHp910n/edit?usp=sharing)
+
 > All code in this repository is written during the official hacking window, which
 > opened on Saturday 21 Nov 2026 at 11:00 CET. The git history is the record.
 > Third-party libraries are listed at the end with credit.
