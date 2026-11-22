@@ -58,7 +58,9 @@ What is done with a definition, in this order; every step leaves a check with it
   monitoring  a ratio of two column metrics is registered as an atomic rate, the shape the monitor
               watches. The monitor builds its watch list and its columns once, at start; when it has
               a `rewatch()` it is called after every change of the graph and the message says
-              "watched from the next tick", otherwise "registered, not watched yet"
+              "watched from the next tick", otherwise "registered, not watched yet". Any other shape
+              stays in the graph as validated, and the message says "not watched: only ratios of two
+              columns are watched"
 
 Statuses: `validated` (in the graph, every check passed), `tentative` (in the graph, with a caveat the
 message names), `rejected` (not in the graph; the message says why).
@@ -106,6 +108,7 @@ PROBE_ROWS = 256          # a candidate formula is first tried on this many rows
 TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:00:00Z$")
 NOT_WATCHED = "registered, not watched yet"
 WATCHED = "watched from the next tick"
+OTHER_SHAPE = "not watched: only ratios of two columns are watched"
 
 
 class Rejected(Exception):
@@ -687,8 +690,10 @@ class Extension:
                 f"way to this definition, which has no caveat: its file is judged again")
         rate = next((w for w in watch_list(self.graph) if w.metric == name), None)
         if rate is None:
-            checks.append(_check("monitoring", "skip", "not a ratio of two column metrics: the hourly scan judges rates"))
-            watch = ""
+            checks.append(_check("monitoring", "skip", f"{OTHER_SHAPE}, and {spec.formula.text} is not one: the "
+                                                       f"metric is in the graph and validated, the hourly scan does not "
+                                                       f"judge it"))
+            watch = OTHER_SHAPE
         elif name in watching:
             checks.append(_check("monitoring", "pass", f"an atomic rate of two columns ({rate.numerator} / "
                                                        f"{rate.denominator}): {WATCHED}"))
@@ -1087,7 +1092,7 @@ class Extension:
         else:
             evidence = f"the SQL equals {f} on {stats['compared']} rows"
         if status == "validated":
-            lead = f"{name} added: validated on {reading.span} of data ({evidence})"
+            lead = f"{name} added to the graph and validated on {reading.span} of data ({evidence})"
         else:
             status_of = {c["check"]: c["status"] for c in checks}
             caveats = []
@@ -1104,7 +1109,7 @@ class Extension:
                 caveats.append("its values in the segments do not roll up to the formula on the totals")
             if any(c["status"] == "ambiguous" for c in found):
                 caveats.append("its place in the graph is ambiguous")
-            lead = f"{name} added as tentative: {'; '.join(caveats)} (checked on {reading.span} of data: {evidence})"
+            lead = f"{name} added to the graph as tentative: {'; '.join(caveats)} (checked on {reading.span} of data: {evidence})"
         if applied is not None:
             place = f"placed as {applied['role']} of {applied['parent']} ({applied['identity']})"
         elif any(c["status"] == "ambiguous" for c in found):
