@@ -87,3 +87,21 @@ false alarm was a one-hour jump in ad click-through in Poland on the web that cl
 4. **Demo** (60 s): a screenshot of the console with an incident and the lit path.
 5. **Results** (60 s): the table from `docs/results.md`; say the caveat on the same slide.
 6. **What failed and what next** (45 s): four unconfirmed causes in 240 faults (all stockouts); one false alarm; two faults at the same time are not tested; new metrics with constants in the formula; low-traffic hours.
+
+## Recording the video (3:00 at most)
+
+The rules ask for the pitch, how the solution works and a live demo, with a team member speaking to camera. One way that
+needs nothing beyond Windows 11:
+
+1. **Prepare** (10 minutes): a clean start as in "Before you start"; the console in a browser window of 1280 x 800 (the
+   projector size the page is tuned for), light theme (`?theme=light`), zoom 100 %; notifications off; the DEMO bar folded.
+   Let the clock run a few data hours into the day before you inject: night hours have small counts.
+2. **Camera parts**: open with 15 s to camera (who you are, the problem in one sentence) and close with 15 s (the result and
+   the one-line close). The Camera app records them.
+3. **Screen part**: Xbox Game Bar (Win+Alt+R) records the browser window. Follow the 3-minute script from 0:25 to 2:40 and
+   say it over the screen as you click. The timings above say how long each step takes to show.
+4. **Cut** in Clipchamp (built into Windows 11): camera opening, screen part, the results slide (the "Measured" table of
+   the README or `docs/results.md`), camera close. Keep it under 3:00; export at 1080p.
+5. **Upload** to YouTube as Unlisted (or Google Drive, anyone with the link can view). Open the link in a private window to
+   check that it plays for someone who is not signed in. Put the link in the form and in the README.
+
