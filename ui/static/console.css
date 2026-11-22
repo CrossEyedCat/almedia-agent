@@ -92,7 +92,7 @@ button:disabled:hover { border-color: var(--line); }
 .card-head h2, .card > h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .empty { padding: 16px; color: var(--muted); }
 .kv { display: grid; grid-template-columns: minmax(104px, max-content) minmax(0, 1fr); gap: 4px 16px; font-size: 13px; }
-.kv span:nth-child(odd) { color: var(--muted); }
-.kv span:nth-child(even) { overflow-wrap: anywhere; }
+.kv > span:nth-child(odd) { color: var(--muted); }      /* the label; a value's own spans (mono) keep the ink */
+.kv > span:nth-child(even) { overflow-wrap: anywhere; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

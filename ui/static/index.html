@@ -29,8 +29,13 @@
 .top:has(#exbadge:not(:empty)) .clock-note { display: none; }
 #notice { font-size: 13px; color: var(--hot); }
 /* domain selector: the main control, a compact segmented control */
-.domain-row { display: flex; align-items: center; gap: 16px; padding: 0 0 8px; min-width: 0; }
-#domains { display: flex; gap: 2px; padding: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; max-width: 100%; scrollbar-width: thin; }
+.domain-row { display: flex; align-items: center; gap: 16px; padding: 0 0 8px; min-width: 0; position: relative; }
+/* more chips to the right (a phone): a solid end cap with an arrow over the row's right end, flat, never a fade */
+.domain-row.more::after { content: "\203A"; position: absolute; top: 1px; right: 1px; bottom: 9px; width: 32px; display: grid; place-items: center;
+  font: 600 20px/1 var(--ui); color: var(--ink); background: var(--bg); border-left: 1px solid var(--line); border-radius: 0 7px 7px 0; pointer-events: none; }
+#domains { display: flex; gap: 2px; padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; max-width: 100%; scrollbar-width: thin; }
+/* the row scrolls (overflow clips at its padding): a chip's focus ring sits on its edge, inside the 3px padding */
+.chip:focus-visible { outline-offset: 0; }
 .chip { display: inline-flex; gap: 6px; align-items: center; border: 0; background: transparent; color: var(--muted); border-radius: 6px; padding: 2px 12px; min-height: 28px; white-space: nowrap; }
 .chip:hover { color: var(--ink); background: var(--block); }
 .chip.on, .chip.on:hover { background: var(--sel-bg); color: var(--sel-fg); }
@@ -92,11 +97,14 @@ svg text { font-family: var(--mono); }
 .node.root.h-open rect { fill: var(--ink); stroke: var(--hot); stroke-width: 3; }
 .node.root.h-ongoing rect { fill: var(--ink); stroke: var(--amber); stroke-width: 3; }
 .node.root.h-resolved rect { fill: var(--ink); stroke: var(--ok); stroke-width: 3; }
-.node.picked rect, .node:focus-visible rect { stroke: var(--accent); stroke-width: 2.5; }
+#g .node.picked rect, #g .node:focus-visible rect { stroke: var(--accent); stroke-width: 2.5; }      /* over status and trace colours */
 .edge { fill: none; stroke: var(--edge); stroke-width: 1.25; }
 .edge.may { stroke: var(--accent); stroke-dasharray: 4 3; opacity: .8; }
-.sign { fill: var(--accent); font: 600 13px var(--mono); text-anchor: middle; }
-.dim .node, .dim .edge, .dim .sign { opacity: .4; } .dim .node.on, .dim .edge.on { opacity: 1; }
+/* the direction of a possible cause: a small badge on the middle of its dashed line, never fainter than the line */
+.sign circle { fill: var(--block); stroke: var(--accent); stroke-width: 1.25; }
+.sign text { fill: var(--accent); font: 700 15px var(--mono); text-anchor: middle; }
+.dim .node, .dim .edge { opacity: .4; } .dim .node.on, .dim .edge.on, .dim .node:focus-visible { opacity: 1; }
+.dim .sign { opacity: .75; }
 .dim .edge.on { stroke: var(--st, var(--hot)); stroke-width: 2.25; }
 .dim .node.on rect { stroke: var(--st, var(--hot)); fill: var(--st-bg, var(--hot-bg)); stroke-width: 1.75; }
 .dim .node.root.on rect { fill: var(--st, var(--hot)); }
@@ -148,7 +156,10 @@ svg text { font-family: var(--mono); }
 .detail .brief-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
 .row2 { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; font-size: 13px; }
 .contrib + .contrib { margin-top: 12px; }
-.bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin: 4px 0; } .bar i { display: block; height: 100%; background: var(--st, var(--hot)); }
+.share-bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin: 4px 0; } .share-bar i { display: block; height: 100%; background: var(--st, var(--hot)); }
+/* money and counts: one right-aligned column; the page pads after the point so the decimals line up */
+.kv.nums { grid-template-columns: minmax(104px, max-content) max-content; }
+.kv.nums > span:nth-child(even) { text-align: right; white-space: pre; }
 .small { font-size: 12px; }
 .loc { display: grid; grid-template-columns: minmax(0, 1fr) 56px 96px; gap: 12px; padding: 4px 0; font-size: 12px; border-bottom: 1px solid var(--line); align-items: baseline; }
 .loc > span:nth-child(n+2) { text-align: right; }
@@ -169,7 +180,7 @@ svg text { font-family: var(--mono); }
 .evidence li + li, .uncertain li + li { margin-top: 2px; }
 ol.trail { list-style: none; margin: 0; padding: 0; }
 ol.trail li { position: relative; padding: 0 0 12px 24px; }
-ol.trail li::before { content: ""; position: absolute; left: 4px; top: 14px; bottom: -5px; width: 1px; background: var(--line); }
+ol.trail li::before { content: ""; position: absolute; left: 4px; top: 14px; bottom: -5px; width: 1px; background: var(--edge); }      /* --edge: at least 1.8:1 on the card in both themes */
 ol.trail li:last-child { padding-bottom: 0; }
 ol.trail li:last-child::before { display: none; }
 ol.trail li::after { content: ""; position: absolute; left: 0; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--block); border: 1.5px solid var(--edge); }
@@ -280,15 +291,15 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
   }
   function toast(msg) { $('toast').textContent = msg; }
   function num(n) { return typeof n === 'number' && isFinite(n) ? n : null; }
-  function fmt(n, d) { n = num(Number(n)); return n == null ? '-' : n.toLocaleString('en', { maximumFractionDigits: d == null ? 1 : d }); }
+  function fmt(n, d) { n = num(Number(n)); return n == null ? '-' : signed(n.toLocaleString('en', { maximumFractionDigits: d == null ? 1 : d })); }
   // a readout figure: whole numbers from 100 up, two decimals from 1, three significant digits below
   function short(n) {
     n = num(n); if (n == null) return '–';
     var a = Math.abs(n);
-    return a >= 100 ? n.toLocaleString('en', { maximumFractionDigits: 0 }) : a >= 1 ? n.toLocaleString('en', { maximumFractionDigits: 2 })
-      : n.toLocaleString('en', { maximumSignificantDigits: 3 });
+    return signed(a >= 100 ? n.toLocaleString('en', { maximumFractionDigits: 0 }) : a >= 1 ? n.toLocaleString('en', { maximumFractionDigits: 2 })
+      : n.toLocaleString('en', { maximumSignificantDigits: 3 }));
   }
-  function signed(s) { return s.charAt(0) === '-' ? '−' + s.slice(1) : s; }      // a true minus sign
+  function signed(s) { return s.charAt(0) === '-' ? '−' + s.slice(1) : s; }      // every negative number shown gets a true minus sign
   function pct(n) { n = num(n); return n == null ? '–' : (n > 0 ? '+' : '') + signed(fmt(n)) + '%'; }
   // is this change good or bad for the business? by the metric's own direction (up or down is good)
   function tone(metric, delta) {
@@ -415,7 +426,8 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     list(graph && graph.edges).filter(function (e) { return e.kind === 'may_affect' && pos[e.source] && pos[e.target]; }).forEach(function (e) {
       var a = pos[e.source], b = pos[e.target], mx = (a.x + b.x) / 2 + 40, my = (a.y + b.y) / 2;
       svg('path', { d: 'M' + (a.x + a.hw) + ',' + a.y + ' Q' + (mx + 40) + ',' + my + ' ' + (b.x + b.hw) + ',' + b.y, 'class': 'edge may' }, ge);
-      var s = svg('text', { x: mx + 28, y: my + 4, 'class': 'sign' }, ge); s.textContent = e.sign > 0 ? '+' : e.sign < 0 ? '−' : '?';
+      var sg = svg('g', { 'class': 'sign', transform: 'translate(' + (mx + (a.hw + b.hw) / 4) + ',' + my + ')' }, ge);      // the curve's middle
+      svg('circle', { r: 9 }, sg); var s = svg('text', { dy: '0.35em' }, sg); s.textContent = e.sign > 0 ? '+' : e.sign < 0 ? '−' : '?';
     });
     renderExtra(shown);
     fitGraph();
@@ -492,7 +504,7 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     if (skipped) f.appendChild(el('div', 'empty', [skipped + ' file' + (skipped > 1 ? 's' : '') + ' in the incidents folder ignored (not an incident, or still being written).']));
   }
   function section(title, kids, cls) { var d = el('div', cls || null, [el('h3', null, [title])]); kids.forEach(function (k) { d.appendChild(k); }); return d; }
-  function kv(pairs) { var k = el('div', 'kv'); pairs.forEach(function (p) { k.appendChild(el('span', null, [p[0]])); k.appendChild(el('span', null, [p[1]])); }); return k; }
+  function kv(pairs, cls) { var k = el('div', 'kv' + (cls ? ' ' + cls : '')); pairs.forEach(function (p) { k.appendChild(el('span', null, [p[0]])); k.appendChild(el('span', null, [p[1]])); }); return k; }
   function mono(s) { return el('span', 'mono', [str(s)]); }
 
   // the typed links of a metric, read from the graph export
@@ -547,10 +559,12 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     // four figures first: what was seen, what was expected, the change, and what it cost in euros
     var eur = num(imp.contribution_eur) != null ? 'contribution_eur' : Object.keys(imp).filter(function (k) { return /_eur$/.test(k) && num(imp[k]) != null; })[0];
     var effect = eur ? imp[eur] : null;
-    d.appendChild(el('div', 'readout', [
-      cell('Observed', signed(short(ch.observed))), cell('Expected', signed(short(ch.expected))),
+    // a record with none of the four (a pending one: its data has not arrived) gets one quiet line, not four dashes
+    d.appendChild([ch.observed, ch.expected, ch.delta_pct, effect].some(function (v) { return num(v) != null; }) ? el('div', 'readout', [
+      cell('Observed', short(ch.observed)), cell('Expected', short(ch.expected)),
       cell('Change', pct(ch.delta_pct), 'chg ' + tone(i.metric, ch.delta_pct)),
-      cell('Effect, EUR', effect == null ? '–' : (effect > 0 ? '+' : '') + signed(short(effect)), 'chg ' + (effect > 0 ? 'good' : effect < 0 ? 'bad' : ''))]));
+      cell('Effect, EUR', effect == null ? '–' : (effect > 0 ? '+' : '') + short(effect), 'chg ' + (effect > 0 ? 'good' : effect < 0 ? 'bad' : ''))])
+      : el('p', 'muted', [status(i) === 'pending' ? 'No figures yet: the data for these hours has not arrived.' : 'No figures in this report.']));
     // the narration (brain/narrate.py), only when a model wrote it and every number in it was checked
     var story = obj(i.narrative);
     if (story.source === 'model' && str(story.text).trim()) {
@@ -559,16 +573,18 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
           + '; every number in it was checked against the evidence.'])], 'brief-sec'));
     }
     var rows = [['Metric', mono(i.metric)], ['Segment', segText(i.segment)],
-                ['Change', num(ch.delta_pct) != null ? fmt(ch.delta_pct) + '%' + (num(ch.z) != null ? ' (z ' + fmt(ch.z) + ')' : '') : '-']];
+                ['Change', num(ch.delta_pct) != null ? pct(ch.delta_pct) + (num(ch.z) != null ? ' (z ' + fmt(ch.z) + ')' : '') : '-']];
     if (num(ch.delta) != null) rows.push(['Difference', fmt(ch.delta)]);
     if (w.start || w.end) rows.push(['Window', when(w.start) + ' to ' + when(w.end) + ' UTC']);
     d.appendChild(section('What changed', [kv(rows)]));
-    var ik = Object.keys(imp).map(function (k) { var v = Number(imp[k]); return [mono(k), mono(fmt(v, Number.isInteger(v) ? 0 : 2))]; });
-    if (ik.length) d.appendChild(section('Business impact', [kv(ik)]));
+    // right-aligned in one column, padded after the point so the decimals line up
+    var ik = Object.keys(imp).map(function (k) { var v = Number(imp[k]); return [k, fmt(v, Number.isInteger(v) ? 0 : 2)]; });
+    var dec = function (s) { var p = s.indexOf('.'); return p < 0 ? 0 : s.length - p; }, D = Math.max.apply(null, ik.map(function (p) { return dec(p[1]); }).concat(0));
+    if (ik.length) d.appendChild(section('Business impact', [kv(ik.map(function (p) { return [mono(p[0]), mono(p[1] + ' '.repeat(D - dec(p[1])))]; }), 'nums')]));
     var cs = list(i.contributions).map(function (c) {
       c = obj(c);
       var share = (num(c.share_of_delta) || 0) * 100;
-      var bar = el('div', 'bar'), b = el('i'); b.style.width = Math.max(0, Math.min(100, share)) + '%'; bar.appendChild(b);
+      var bar = el('div', 'share-bar'), b = el('i'); b.style.width = Math.max(0, Math.min(100, share)) + '%'; bar.appendChild(b);
       return el('div', 'contrib', [el('div', 'row2', [mono(c.node), el('span', null, [fmt(share, 0) + '% of the change'])]), bar,
         el('div', 'small muted mono', [short(c.observed) + ' against ' + short(c.expected) + ' expected'])]);
     });
@@ -824,9 +840,40 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     s.setProperty('--top-h', document.querySelector('.sticky-top').offsetHeight + 'px');
     if (b && b.offsetHeight) s.setProperty('--bench-h', (b.offsetHeight + 2) + 'px');
     if (drawn) fitGraph();
+    capChips();
   }
   setTop(); window.addEventListener('resize', setTop); if (document.fonts && document.fonts.ready) document.fonts.ready.then(setTop);
   if (window.ResizeObserver) new ResizeObserver(function () { setTop(); }).observe(document.querySelector('.sticky-top'));
+
+  // On a narrow screen the domain chips scroll sideways: while more of them lie to the right, the row ends in a solid
+  // cap with an arrow (.more on .domain-row). A newly chosen domain's chip is scrolled clear of that cap.
+  function capChips() { var n = $('domains'); n.parentNode.classList.toggle('more', n.scrollLeft + n.clientWidth < n.scrollWidth - 1); }
+  var chipDom = 'all';
+  function moreChips() {
+    var n = $('domains'), on = n.querySelector('.chip.on');
+    if (on && dom !== chipDom) {
+      chipDom = dom;
+      var a = on.offsetLeft - n.offsetLeft - n.clientLeft, b = a + on.offsetWidth - n.clientWidth + 32;
+      if (n.scrollLeft > a) n.scrollLeft = a - 4; else if (n.scrollLeft < b) n.scrollLeft = b;
+    }
+    capChips();
+  }
+  $('domains').addEventListener('scroll', capChips);
+  var drawChips = renderChips;
+  renderChips = function () { drawChips(); moreChips(); };
+  // The selected incident's row is scrolled into view inside the feed, never the page: at load with ?incident=, and
+  // when an incident is picked elsewhere (a domain chip, a metric's details). A poll that keeps the selection leaves
+  // the feed where the reader put it.
+  var feedSel = null, drawFeed = renderFeed;
+  renderFeed = function () {
+    drawFeed();
+    var f = $('feed'), r = f.querySelector('.inc.sel');
+    if (!r) { feedSel = null; return; }
+    if (selInc === feedSel) return;
+    feedSel = selInc;
+    var fb = f.getBoundingClientRect(), rb = r.getBoundingClientRect();
+    if (rb.top < fb.top) f.scrollTop += rb.top - fb.top; else if (rb.bottom > fb.bottom) f.scrollTop += rb.bottom - fb.bottom;
+  };
 
   // ?incident=inc-0001 opens that report at load (for a demo or a screenshot); otherwise the first in scope opens
   var asked = new URLSearchParams(location.search).get('incident');
