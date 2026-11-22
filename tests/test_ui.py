@@ -379,10 +379,12 @@ def test_page_faults_outlast_the_demo_script_and_the_ad_fault_keeps_its_shape(cl
     The ad budget fault keeps 12 hours, because its shape (boost for hours // 3, then nothing) depends on it."""
     import re
     html = client.get("/").text
-    hours = {kind: int(h) for kind, h in re.findall(r"\['(\w+)', '[^']+', \[[^\]]*\], (\d+)\]", html)}
-    assert set(hours) == {"payment_failure", "stockout_surge", "search_regression", "ad_budget_exhausted"}
+    hours = {kind: int(h) for kind, h in re.findall(r"\['(\w+)', '[^']+', \[[^\]]*\], (\d+), (?:[\d.]+|null)\]", html)}
+    assert set(hours) == {"payment_failure", "stockout_surge", "search_regression", "ad_budget_exhausted",
+                          "traffic_drop", "feed_unavailable", "discount_push"}
     seconds_per_hour, click_to_close = 2, 130
-    for kind in ("payment_failure", "stockout_surge", "search_regression"):
+    for kind in ("payment_failure", "stockout_surge", "search_regression", "traffic_drop", "feed_unavailable",
+                 "discount_push"):
         assert hours[kind] * seconds_per_hour > click_to_close, kind
     assert hours["ad_budget_exhausted"] == 12
     assert "hours: hours, when: 'now'" in html      # the button sends the value of its own fault

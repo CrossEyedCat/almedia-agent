@@ -62,7 +62,8 @@ DIURNAL = _diurnal()  # indexed by local hour
 @dataclass(frozen=True)
 class Injection:
     """A fault or an innocent event, replayable from the ground_truth table."""
-    kind: str                      # payment_failure | stockout_surge | search_regression | ad_budget_exhausted | promo | data_delay
+    kind: str                      # payment_failure | stockout_surge | search_regression | ad_budget_exhausted | promo |
+                                   # data_delay | traffic_drop | feed_unavailable | mix_shift | discount_push
     start: pd.Timestamp
     end: pd.Timestamp | None       # None = until the end of the simulation
     params: dict = field(default_factory=dict)
@@ -158,6 +159,26 @@ def generate_hour(seg: Segments, ts: pd.Timestamp, idx: int, seed: int, injectio
             traffic_mult[m] *= 1.0 + float(inj.params.get("traffic_lift", 0.4))
             conv_mult[m] *= 1.0 + float(inj.params.get("conversion_lift", 0.2))
             disc_extra[m] += float(inj.params.get("extra_discount", 0.03))
+        elif inj.kind == "traffic_drop":
+            # an outage, a tracking loss or an app-store problem: fewer sessions arrive, every step rate stays the same
+            traffic_mult[m] *= 1.0 - float(inj.params.get("severity", 0.5))
+        elif inj.kind == "feed_unavailable":
+            # the recommendations model shows attractive but unavailable products (its params carry the channel):
+            # more feed clicks land on out-of-stock listings
+            stock_mult[m] *= float(inj.params.get("multiplier", 12.0))
+            feed_boost[m] *= 1.0 + float(inj.params.get("feed_ctr_lift", 0.25))
+        elif inj.kind == "mix_shift":
+            # traffic moves toward one category (its share of sessions becomes `share`), the total stays the same,
+            # and every per-category rate is unchanged: an innocent change of the mix
+            share, own = float(inj.params.get("share", 0.5)), CATEGORY_W[inj.params["category"]]
+            target = seg.category == inj.params["category"]
+            traffic_mult[target] *= share / own
+            traffic_mult[~target] *= (1.0 - share) / (1.0 - own)
+        elif inj.kind == "discount_push":
+            # the recommendations ranking pushes discounted products (its params carry the channel): the
+            # platform-funded discount per euro rises by `lift`, more carts convert, contribution falls
+            disc_extra[m] += float(inj.params.get("lift", 0.6)) * seg.disc[m]
+            conv_mult[m] *= 1.0 + float(inj.params.get("conversion_lift", 0.15))
 
     mean_sessions = SCALE * seg.share * DIURNAL[local.hour] * weekend * trend * shock * traffic_mult
     sessions = poisson(0, mean_sessions)

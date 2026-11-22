@@ -57,11 +57,11 @@ Never point the live UI at eval_incidents. Missing or empty scoring output is an
 | 0:20 | "It knows how the business works: orders are sessions times a chain of step rates, and payment success is one of them. Each line has a meaning." | Point at the tree; formula lines are solid, possible causes dashed with a sign; a click on a box lists its breakdown and context links | Tree from contribution down |
 | 0:45 | "Fault: a payment release breaks Android payments in Germany." | Choose **Payment failure** (DE, Android) in the DEMO bar, click **Inject fault** | Toast "Payment failure injected from ..." |
 | 1:00 | "It notices, follows the graph, and tells us where and why." | Wait for the incident (about 5 to 6 s at `--speed 2`) | Incident appears; path orders to payment success lit in red |
-| 1:20 | Read the report: the actual impact in euros, measured contribution, affected country/platform and supported cause; what is still uncertain | Click the incident | Impact, hypotheses with evidence, trail; with `--narrate`, "In brief" above them a few seconds later |
+| 1:20 | Read the report: traffic and the other steps normal, payment success down in DE x Android; the impact in euros; the supported cause and the rejected ones; what is still uncertain | Click the incident | The top-down check line (sessions ... order_rate, each normal or moved), impact, hypotheses with evidence, trail; a severity badge; with `--narrate`, "In brief" above them a few seconds later |
 | 1:35 | "Someone rolls the release back. The incident should close by itself." | Pick the fault in **In progress**, click **End it (rollback)** | Toast "Ended from ..."; after a few normal hours the incident turns resolved (the rollback row is under Data, table releases) |
-| 1:45 | "Not everything unusual is a problem: a planned French promo lifts orders." | Click **Promo (12 h)** (FR) | No new incident; the calendar explains it |
+| 1:45 | "Not everything unusual is a problem: a planned French promo lifts orders." | Click **Promo (12 h)** (FR) | No new incident; the calendar explains it; the record says the rise has the promo's direction and size |
 | 2:00 | "If data arrives late, it waits instead of crying wolf." | Click **Arrives 2 h late** (payments) | No incident for those hours |
-| 2:15 | "A new metric arrives as a definition and a query. The system checks the query against the formula, finds the metric's place in the graph and starts watching it." | Click **Add refund_rate** | Message "refund_rate added: validated on about 30 days of data ... placed as a factor of refunds ... watched from the next tick" (2 to 10 s: it validates the definition on all the data so far); a new tree `refunds` = `orders` x `refund_rate` in the graph |
+| 2:15 | "A new metric arrives as a query only. The agent finds the formula itself, places the metric in the graph, takes the context of what it is built from and starts watching it. A duplicate is refused." | Click **Add refund_rate**, then **Add a duplicate metric** | Toast naming the formula found (refunds / orders, the only one of the candidates) and "watched from the next tick" (2 to 10 s: it validates the query on all the data so far); a new tree `refunds` = `orders` x `refund_rate`; the checks listed on the metric's box; the duplicate answered as an alias of payment_success_rate |
 | 2:40 | "We scored it on 240 injected faults and 160 innocent events in twenty runs, ten of them never seen before: detection, place, cause, false alarms." | Show `docs/results.md` | The table with the holdout line; numbers from `python -m scripts.summarize_evaluation`, not hand-picked |
 | 2:55 | One-line close: "It watches the business, not the servers." | | |
 
@@ -82,8 +82,12 @@ Never point the live UI at eval_incidents. Missing or empty scoring output is an
 | Stockouts | More product views meet an unavailable listing in one category; add-to-cart rate falls, feed clicks rise | orders, add-to-cart rate, the category, stockout rate (no release) |
 | Search regression | Clicks per search fall in one country; a search release is on record | orders, views per session, search clicks per search, the country, the release |
 | Ad budget gone early | Sponsored impressions per session jump, then collapse after a few hours; traffic is unchanged; a pacing release is on record | ad spend, ad load (not sessions), the country |
+| Traffic drop | Sessions fall by half for one country and platform, every rate unchanged; no release | sessions (a volume), the place, traffic named as the moved factor, no cause confirmed |
+| Feed shows unavailable | Stock-outs and feed clicks rise in the recommendations channel; a recommendations model release is on record | stockout rate in the recommendations channel, the release |
+| Discount push | The discount rate rises in the recommendations channel, orders rise, contribution falls; a recommendations ranking release is on record | discount rate, the channel, the release, the euro split |
+| Mix shift (innocent) | Traffic moves toward one category, every rate in it unchanged; no calendar entry | no alert: an explained record whose reason is the mix |
 
-The scoring script (`python -m sim.score generate`) mixes all four with promos and late data.
+The scoring script (`python -m sim.score generate`) mixes the first four with promos and late data; the other four are measured one case each by `python scripts/stress_cases.py` (`docs/stress.md`).
 
 ## Things to rehearse
 

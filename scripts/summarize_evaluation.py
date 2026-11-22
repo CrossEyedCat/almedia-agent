@@ -61,13 +61,14 @@ PLAIN = (
 STOCKOUTS = (' Of its {m} unconfirmed {causes} {where} at z {z:g}, {n} {are} in a category, where the rule names whatever '
              'release falls in the window')
 FIRST = (
-    ' The first version gave a history that never varied a spread of 1e-6 and had been run on the holdout: it found '
+    ' The first version gave a history that never varied a spread of 1e-6 and had been run on the {which}: it found '
     '{detected}/{faults} at z {z:g}{now}; it named the right cause for {correct}, raised {false_alarms} false alarms '
     '({never_varied} of them from never-varied histories) and stayed silent through {silent}/{innocents} innocent events. '
     'Its floor was removed after a review of those alarms, and the threshold was then picked on the built-on seeds only.'
 )
 STOCKOUT = 'stockout_surge'   # its place is a category, which names no country: the cause rule takes any release there
-# The first version of scripts/baseline_ranking.py (spread floor 1e-6, z 12) on the ten holdout runs, scored by sim/score.py
+# The first version of scripts/baseline_ranking.py (spread floor 1e-6, z 12) on the ten runs of the first holdout (seeds 101
+# to 110), scored by sim/score.py
 # from its own incident files before it was replaced; never_varied: its false alarms whose spread was the floor.
 FIRST_VERSION = dict(z=12.0, faults=120, detected=94, correct=73, false_alarms=396, never_varied=323, innocents=80,
                      silent=33)
@@ -283,10 +284,14 @@ def _against(reports: list[dict], holdout: set, warmup_hours: float, baseline: d
     if first:
         same = [runs for pz, runs in points if pz == first['z']]       # this version at the first version's threshold
         now = ''
-        if has_holdout and same:
+        # its numbers are from the first holdout (seeds 101 to 110); compare only when this page's holdout is that one
+        first_holdout = set(range(101, 111))
+        on_first = has_holdout and set(holdout) <= first_holdout
+        if on_first and same:
             t = tally(fresh(same[0]))
             now = f", this version {t['detected']}/{t['faults']}"
-        paragraph += FIRST.format(**first, now=now)
+        which = 'holdout' if on_first or not has_holdout else 'first holdout (seeds 101 to 110, not this page\'s holdout)'
+        paragraph += FIRST.format(**first, now=now, which=which)
     lines += ['', paragraph]
     return lines
 

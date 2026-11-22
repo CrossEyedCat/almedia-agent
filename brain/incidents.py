@@ -7,13 +7,20 @@ contains the cell, and on the metrics downstream of the one that moved. The book
 - alerts on different metrics whose places are compatible form one incident, led by the strongest;
 - an incident that is still open and compatible is updated in place: same file, same id, same
   first_seen; its place is refined when stronger evidence points to a narrower or other series;
+- one fault seen in sibling series (a category's cell in every country) is one incident: a group
+  also joins an open incident through the place the investigation localized, a sibling series
+  joined before, or the same supported cause (Book._match, Book._duplicate_of);
 - alerts the calendar covers are written with status `explained`, hours held back for late data
   with status `pending`: the same file shape, no alert. A pending record is removed when the data
-  is in and the hours have been judged.
+  is in and the hours have been judged;
+- a change the investigation finds innocent (body["innocent"]: a mix shift, a planned event that
+  fits) is written as an explained record too, and is not live (Book._explain).
 
 Files (the page and the scoring harness read them, see docs/contracts and issues #4, #7, #8):
   <folder>/inc-NNNN.json       one incident, rewritten whole, never NaN, strings where strings are due
-  <folder>/explained-*.json    a planned event that explains a deviation
+                               (status `explained` when an open incident was later found innocent)
+  <folder>/explained-*.json    a planned event, or an innocent change the investigation found, that
+                               explains a deviation
   <folder>/pending-*.json      hours waiting for late data
 """
 from __future__ import annotations
@@ -37,6 +44,43 @@ from brain.monitor import Alert, Monitor, Tick, compatible, leading, nested
 
 RESOLVE_AFTER_HOURS = 3      # normal, judged hours before an incident is closed
 HEALTH_MIN_SURPRISE = 2.0    # "back to normal" needs data that would show the fault, and does not show it
+
+HIGH_EUR = 400.0
+"""Severity `high`: the incident's euro effect so far (the largest absolute value among the impact keys that end
+in `_eur`) reaches this. A gain counts by its size too: an ad overspend books as revenue. On the built-on
+evaluation seeds (120 incidents) the effect has median 151 EUR, 75th percentile 266, 90th 391: about the top
+tenth is high."""
+MEDIUM_EUR = 100.0
+"""Severity `medium` from this euro effect (about the 30th percentile of the same incidents); below it `low`."""
+LONG_HOURS = 12
+"""An incident running this many hours (onset to newest bad hour) moves up one level, to at most `high`: a
+problem that lasts costs attention even when its euro effect is small or cannot be computed. The evaluation's
+faults run 4 to 12 hours."""
+SEVERITIES = ("high", "medium", "low")
+FEED_STATUS = {"open": 0, "ongoing": 0, "resolved": 1, "explained": 2, "pending": 3}
+
+
+def severity(impact: dict | None, hours: float) -> str:
+    """`high`, `medium` or `low` from the euro effect and the hours (see HIGH_EUR, MEDIUM_EUR, LONG_HOURS)."""
+    eur = [abs(v) for k, v in (impact or {}).items()
+           if str(k).endswith("_eur") and isinstance(v, (int, float)) and math.isfinite(v)]
+    size = max(eur, default=0.0)
+    level = 0 if size >= HIGH_EUR else 1 if size >= MEDIUM_EUR else 2
+    if hours >= LONG_HOURS:
+        level = max(level - 1, 0)
+    return SEVERITIES[level]
+
+
+def feed_rank(record: dict) -> tuple:
+    """Sort key of the incident feed: live first (open, ongoing), then resolved, explained, pending; within a
+    status the severe ones first, then the newest."""
+    try:
+        newest_first = -pd.Timestamp(record.get("last_seen")).value
+    except (TypeError, ValueError):
+        newest_first = 0
+    return (FEED_STATUS.get(record.get("status"), 4),
+            SEVERITIES.index(record["severity"]) if record.get("severity") in SEVERITIES else len(SEVERITIES),
+            newest_first)
 
 
 def clean(value):
@@ -80,7 +124,7 @@ def earliest_onset(current: pd.Timestamp, alerts: list[Alert]) -> pd.Timestamp:
     return min([current] + [a.onset for a in alerts if a.trigger != "release"])
 
 
-@dataclass
+@dataclass(eq=False)    # one incident is one object: lists of them are searched by identity
 class Incident:
     id: str
     first_seen: pd.Timestamp
@@ -95,6 +139,17 @@ class Incident:
     frozen: dict = field(default_factory=dict)      # (metric, place) -> expected rate at the first report of the cost
     narrative: dict | None = None                   # the newest narration (brain/narrate.py), written into the file
     body: dict = field(default_factory=dict)
+    siblings: list = field(default_factory=list)    # (metric, series) of the same fault outside its own series,
+                                                    # joined through the localized place or the cause (Book._match)
+    recurrence: Incident | None = None              # the resolved incident this one repeats (Book._recurrence)
+
+    def lead(self) -> Alert:
+        """The strongest alert: the metric the incident is about."""
+        return max(self.metrics.values(), key=lambda a: a.score)
+
+    def places(self) -> list[tuple[str, dict]]:
+        """(metric, series) pairs the incident holds: its own series for each metric, and the siblings."""
+        return [(m, self.segment) for m in self.metrics] + [s for s in self.siblings if s[1] != self.segment]
 
 
 class Book:
@@ -111,7 +166,8 @@ class Book:
                     (list(old_notes.glob("*.json")) if old_notes.exists() else []):
                 p.unlink(missing_ok=True)
         self.incidents: list[Incident] = []
-        taken = [int(p.stem.split("-")[-1]) for p in self.folder.glob("inc-*.json") if p.stem.split("-")[-1].isdigit()]
+        self.innocent: list[Incident] = []   # groups the investigation found innocent: explained records, not live
+        taken =[int(p.stem.split("-")[-1]) for p in self.folder.glob("inc-*.json") if p.stem.split("-")[-1].isdigit()]
         self._next = max(taken, default=0) + 1
         self._first_seen: dict[str, pd.Timestamp] = {}   # explained / pending record -> hour it was first written
         self._pending_id: str | None = None
@@ -125,7 +181,7 @@ class Book:
         # A place that already has an open incident on a metric is known: the series that merely
         # contain it are its dilution, not news. Without this a second fault of the same kind elsewhere
         # would be read off the pooled series ("iOS everywhere") instead of its own cell.
-        held = [(m, inc.segment) for inc in self.incidents if inc.status != "resolved" for m in inc.metrics]
+        held = [p for inc in self.incidents if inc.status != "resolved" for p in inc.places()]
         fresh = [a for a in tick.alerts
                  if not any(m == a.metric and a.segment.items() < seg.items() for m, seg in held)]
         lead = leading(fresh)
@@ -144,33 +200,46 @@ class Book:
             elif not any(x.metric == a.metric for x in home):
                 home.append(a)
 
-        written, touched = [], set()
+        written: dict[str, dict] = {}
+        touched, born = set(), set()
+        # innocent groups still running: their alerts join them instead of opening an incident
+        recent = [i for i in self.innocent if tick.newest - i.last_seen <= RESOLVE_AFTER_HOURS * HOUR]
         for g in groups:
-            inc = self._match(g)
+            inc, sibling = self._match(g, self.incidents)
             if inc is None:
+                inc, sibling = self._match(g, recent)
+            new = inc is None
+            if new:   # numbered only once it is kept: a duplicate or an innocent change spends no number
                 inc = Incident(id=f"inc-{self._next:04d}", first_seen=tick.newest, last_seen=g[0].last_bad,
                                onset=min(a.onset for a in g), segment=dict(g[0].segment))
-                self._next += 1
-                self.incidents.append(inc)
-            elif inc.status == "open":
+            elif inc.status == "open" and inc.id not in born:
                 inc.status = "ongoing"
+            self._absorb(inc, g, sibling, inc.id in touched)
+            if not self._report(inc, tick):
+                if new:
+                    self._keep(inc, born)
+                continue
+            if new:
+                home = self._duplicate_of(inc, self.incidents) or self._duplicate_of(inc, recent)
+                if home is not None:
+                    inc = home
+                    if inc.status == "open" and inc.id not in born:
+                        inc.status = "ongoing"
+                    self._absorb(inc, g, True, inc.id in touched)
+                    if not self._report(inc, tick):
+                        continue
+                elif not inc.body.get("innocent"):
+                    self._keep(inc, born)
+            if inc.body.get("innocent"):
+                self._explain(inc, recent)
+                touched.add(inc.id)
+                continue
+            if any(i is inc for i in self.innocent):
+                self._revive(inc, born)
             touched.add(inc.id)
-            if g[0].score > inc.best_score:
-                inc.best_score, inc.segment = g[0].score, dict(g[0].segment)
-            inc.last_seen = max([inc.last_seen] + [a.last_bad for a in g])
-            inc.onset = earliest_onset(inc.onset, g)
-            for a in g:
-                inc.metrics[a.metric] = a
-            try:
-                inc.body = self._render(inc, tick)
-            except Exception:     # one incident's report must not stop the others or the monitor
-                traceback.print_exc()
-                print(f"report for {inc.id} failed; its file keeps the previous state", file=sys.stderr, flush=True)
-                if not inc.body:
-                    continue
-                inc.body = dict(inc.body, status=inc.status, last_seen=iso_hour(inc.last_seen))
+            self._decorate(inc)
             self._write(inc)
-            written.append(inc.body)
+            written[inc.id] = inc.body
 
         for inc in self.incidents:
             if inc.id in touched or inc.status == "resolved":
@@ -182,12 +251,147 @@ class Book:
                                 report=inc.body.get("report", "") + f" Back to normal since {self._when(inc.last_seen + HOUR)}"
                                        f" ({RESOLVE_AFTER_HOURS} normal hours in a row).")
                 self._write(inc)
-                written.append(inc.body)
+                written[inc.id] = inc.body
 
-        self.monitor.open_episodes = [(m, a.segment, inc.onset) for inc in self.incidents
-                                      if inc.status != "resolved" for m, a in inc.metrics.items()]
+        self.monitor.open_episodes = [(m, s, inc.onset) for inc in self.incidents if inc.status != "resolved"
+                                      for m, s in [(m, a.segment) for m, a in inc.metrics.items()] + inc.siblings]
         self._write_notes(tick, explained)
-        return written
+        return list(written.values())
+
+    def feed(self) -> list[dict]:
+        """The incidents' newest bodies in the order of the feed (feed_rank): live ones first, the severe on top."""
+        return sorted((i.body for i in self.incidents + self.innocent if i.body), key=feed_rank)
+
+    def _keep(self, inc: Incident, born: set) -> None:
+        inc.id = f"inc-{self._next:04d}"
+        self._next += 1
+        inc.recurrence = self._recurrence(inc)
+        self.incidents.append(inc)
+        born.add(inc.id)
+
+    def _recurrence(self, inc: Incident) -> Incident | None:
+        """The newest resolved incident with the same lead metric in a nested place (its series or the place
+        the investigation localized): the problem is back, and the new incident says so."""
+        if not inc.metrics:
+            return None
+        lead = inc.lead().metric
+
+        def where(i: Incident) -> list[dict]:
+            return [i.segment] + ([i.body["segment"]] if isinstance(i.body.get("segment"), dict) else [])
+        found = None
+        for old in self.incidents:
+            if old is inc or old.status != "resolved" or old.resolved_at is None or not old.metrics \
+                    or old.lead().metric != lead:
+                continue
+            # the whole market is a place of its own here, not one that holds every other
+            if any(nested(a, b) and bool(a) == bool(b) for a in where(inc) for b in where(old)):
+                if found is None or old.resolved_at > found.resolved_at:
+                    found = old
+        return found
+
+    def _decorate(self, inc: Incident) -> None:
+        """What the book adds to the investigator's body: the severity, and the link to the incident it repeats."""
+        hours = (inc.last_seen - inc.onset) / HOUR + 1
+        inc.body = dict(inc.body, severity=severity(inc.body.get("impact"), hours))
+        old = inc.recurrence
+        if old is not None:
+            line = f"It is back: same metric and place as {old.id}, resolved {self._when(old.resolved_at)}."
+            report = str(inc.body.get("report", ""))
+            inc.body = dict(inc.body, recurrence_of=old.id,
+                            report=report if line in report else f"{report} {line}".strip())
+
+    # ------------------------------------------------- innocent changes the investigation found
+    def _explain(self, inc: Incident, recent: list) -> None:
+        """The investigation found the change innocent (body["innocent"]: a mix shift that explains it, a planned
+        event that fits in direction and size). It is written as an explained record, like the calendar's, and
+        is not live. An incident that was open for the group turns explained in its own file (no duplicate
+        beside it); a new group gets an explained-<kind>-... record and spends no incident number."""
+        live = any(i is inc for i in self.incidents)
+        if live:
+            self.incidents = [i for i in self.incidents if i is not inc]
+        if not any(i is inc for i in self.innocent):
+            if not live:
+                kind = str(inc.body["innocent"].get("kind") or "innocent")
+                place = "-".join(str(v) for v in ordered(inc.segment).values()) or "all"
+                inc.id = f"explained-{kind}-{inc.lead().metric}-{place}-{iso_hour(inc.onset)}".replace(":", "")
+            self.innocent.append(inc)
+            recent.append(inc)
+        inc.status = "explained"
+        inc.body = self._explained_record(inc)
+        write_json(self.folder / f"{inc.id}.json", inc.body)
+
+    @staticmethod
+    def _explained_record(inc: Incident) -> dict:
+        """The incident's body as an explained record: the innocent explanation leads, supported, with its reason."""
+        body = inc.body
+        kind = str(body["innocent"].get("kind") or "innocent")
+        reason = str(body["innocent"].get("reason") or f"the investigation found the change innocent ({kind})")
+
+        def names_it(h: dict) -> bool:
+            if kind == "calendar":
+                return h.get("kind") == "calendar"
+            return kind == "mix" and str(h.get("cause", "")).startswith("a shift in the mix")
+        others = [dict(h) for h in body.get("hypotheses") or []]
+        mine = next((h for h in others if names_it(h)), None)
+        if mine is None:
+            mine = {"cause": {"calendar": "a planned event that fits the change in direction and size",
+                              "mix": "a shift in the mix of segments, with unchanged rates"}.get(kind, f"an innocent change ({kind})"),
+                    "kind": "calendar" if kind == "calendar" else "metric", "score": 1.0, "evidence": []}
+        else:
+            others.remove(mine)
+        mine.update(status="supported", evidence=[reason] + [e for e in mine.get("evidence", []) if e != reason])
+        out = {k: v for k, v in body.items() if k not in ("severity", "recurrence_of")}
+        return dict(out, id=inc.id, status="explained", first_seen=iso_hour(inc.first_seen),
+                    last_seen=iso_hour(inc.last_seen), innocent={"kind": kind, "reason": reason},
+                    hypotheses=[mine] + others,
+                    trail=list(body.get("trail") or []) + [{"action": "check", "target": kind, "result": f"innocent: {reason}"}],
+                    report=f"{reason} Explained: no alert.")
+
+    def _revive(self, inc: Incident, born: set) -> None:
+        """An explained group whose newest investigation no longer finds it innocent is live again."""
+        self.innocent = [i for i in self.innocent if i is not inc]
+        if inc.id.startswith("inc-"):
+            inc.status = "ongoing"
+            self.incidents.append(inc)
+        else:
+            (self.folder / f"{inc.id}.json").unlink(missing_ok=True)   # the incident's file replaces the record
+            inc.status = "open"
+            self._keep(inc, born)
+        inc.body = dict(inc.body, id=inc.id, status=inc.status)
+
+    def _absorb(self, inc: Incident, group: list[Alert], sibling: bool, again: bool) -> None:
+        """Fold a group of alerts into the incident. `again`: the incident already took alerts on this tick,
+        so of two alerts on one metric (sibling series) the stronger stays. `sibling`: the group joined through
+        the localized place or the cause, not the incident's own series; its series are remembered, so the next
+        tick matches them directly and their hours stay out of the baselines while the incident is open."""
+        top = group[0]
+        if top.score > inc.best_score:
+            if sibling and not nested(top.segment, inc.segment):
+                for m, a in inc.metrics.items():
+                    if a.segment == inc.segment and (m, inc.segment) not in inc.siblings:
+                        inc.siblings.append((m, dict(inc.segment)))
+            inc.best_score, inc.segment = top.score, dict(top.segment)
+        inc.last_seen = max([inc.last_seen] + [a.last_bad for a in group])
+        inc.onset = earliest_onset(inc.onset, group)
+        for a in group:
+            if sibling and (a.metric, a.segment) not in inc.siblings:
+                inc.siblings.append((a.metric, dict(a.segment)))
+            old = inc.metrics.get(a.metric)
+            if again and old is not None and old.score >= a.score:
+                continue
+            inc.metrics[a.metric] = a
+
+    def _report(self, inc: Incident, tick: Tick) -> bool:
+        """Render the incident's body; False when there is nothing to write."""
+        try:
+            inc.body = self._render(inc, tick)
+        except Exception:     # one incident's report must not stop the others or the monitor
+            traceback.print_exc()
+            print(f"report for {inc.id} failed; its file keeps the previous state", file=sys.stderr, flush=True)
+            if not inc.body:
+                return False
+            inc.body = dict(inc.body, status=inc.status, last_seen=iso_hour(inc.last_seen))
+        return True
 
     def _write(self, inc: Incident) -> None:
         """Write the incident's file, with its newest narration, and ask for a narration of this state."""
@@ -212,12 +416,58 @@ class Book:
             inc.body = dict(inc.body, narrative=inc.narrative)
             write_json(self.folder / f"{inc.id}.json", inc.body)
 
-    def _match(self, group: list[Alert]) -> Incident | None:
+    def _match(self, group: list[Alert], pool: list[Incident]) -> tuple[Incident | None, bool]:
+        """The open incident a group of alerts belongs to, and whether it joins as a sibling series.
+
+        First the incident's own series: the same metric in a nested place. Then the same fault seen in a
+        sibling series (one fault in a category shows in the category's cell of every country, and a cell
+        can be steadier, so stronger, than the series that holds them all): a series joined before, or the
+        place the investigation localized (body["segment"]) when it nests with the group's place and the
+        graph relates the lead metrics. An empty place (the whole market) holds everything and joins nothing."""
         metrics = {a.metric for a in group}
-        for inc in self.incidents:
-            if inc.status != "resolved" and nested(inc.segment, group[0].segment) and metrics & set(inc.metrics):
+        seg, lead = group[0].segment, group[0].metric
+        live = [i for i in pool if i.status != "resolved" and i.metrics]
+        gap = self.monitor.config.episode_gap_hours * HOUR
+        for inc in live:
+            if nested(inc.segment, seg) and metrics & set(inc.metrics):
+                return inc, False
+        # a crossing series of the same metric that began within the same episode: one fault seen diluted in a series
+        # that cuts across its place (a payment fault in DE x Android shows in the fashion series too, and that one can
+        # fire first). It joins, and the stronger alert's place becomes the incident's (Book.update refines it).
+        onset = min(a.onset for a in group)
+        for inc in live:
+            if compatible(inc.segment, seg) and metrics & set(inc.metrics) and abs(inc.onset - onset) <= gap:
+                return inc, False
+        for inc in live:
+            if any(m in metrics and s and nested(s, seg) for m, s in inc.siblings):
+                return inc, True
+            place = inc.body.get("segment")
+            if place and nested(place, seg) and self._related(lead, inc.lead().metric):
+                return inc, True
+        return None, False
+
+    def _duplicate_of(self, new: Incident, pool: list[Incident]) -> Incident | None:
+        """An open incident that a new one repeats, judged on the new one's investigation: its localized place
+        nests with a place of an open incident whose lead metric the graph relates to its own, or both lead to
+        the same supported cause (the same release, the same metric in the same place)."""
+        place = new.body.get("segment") or {}
+        cause = self._supported_cause(new)
+        lead = new.lead().metric
+        for inc in pool:
+            if inc is new or inc.status == "resolved" or not inc.body or not inc.metrics \
+                    or not self._related(lead, inc.lead().metric):
+                continue
+            theirs = [s for _, s in inc.places()] + [inc.body.get("segment") or {}]
+            if place and any(s and nested(place, s) for s in theirs):
+                return inc
+            if cause is not None and cause == self._supported_cause(inc):
                 return inc
         return None
+
+    @staticmethod
+    def _supported_cause(inc: Incident) -> str | None:
+        hyps = inc.body.get("hypotheses") or []
+        return hyps[0].get("cause") if hyps and hyps[0].get("status") == "supported" else None
 
     def _origins(self, metric: str) -> set[str]:
         """The metric and, for a rate, its numerator: cause links are declared on either."""
@@ -240,11 +490,17 @@ class Book:
         own = [a for a in inc.metrics.values() if a.segment == inc.segment] or list(inc.metrics.values())
         top = max(own, key=lambda a: a.score)
         # the faulty rate to look for: the episode's, unless the rate rose and then fell by amounts that
-        # cancel over the episode (then its newest bad hours say what "still faulty" would look like)
-        faulty = top.episode_observed
+        # cancel over the episode (then its newest bad hours say what "still faulty" would look like). A volume
+        # follows the hour of the day, so its episode average is not comparable with the expected count of the
+        # newest hours: for a count, the newest bad hours' share of their own expected count is the fault
+        faulty = top.observed if top.kind == "volume" else top.episode_observed
         if top.expected and abs(faulty / top.expected - 1) < self.monitor.config.min_effect:
             faulty = top.observed
-        w = self.monitor.window(top.metric, top.segment, inc.last_seen + HOUR, tick.newest + HOUR, as_rate=faulty)
+        if top.kind == "volume":   # a count follows the hour of the day: ask for the faulty share of the expected count
+            w = self.monitor.window(top.metric, top.segment, inc.last_seen + HOUR, tick.newest + HOUR,
+                                    as_ratio=faulty / top.expected if top.expected else None)
+        else:
+            w = self.monitor.window(top.metric, top.segment, inc.last_seen + HOUR, tick.newest + HOUR, as_rate=faulty)
         if w is None or w["telling"] < HEALTH_MIN_SURPRISE:
             return False
         same_way = (w["observed"] < w["expected"]) == (faulty < top.expected)

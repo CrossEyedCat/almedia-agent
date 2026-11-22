@@ -7,7 +7,7 @@ PAGE = Path(__file__).resolve().parents[1] / 'ui/static/index.html'
 
 
 def run_ui(check):
-    script = PAGE.read_text().rsplit('<script>', 1)[1].split('</script>')[0]
+    script = PAGE.read_text(encoding='utf-8').rsplit('<script>', 1)[1].split('</script>')[0]
     # Keep the real functions and state, omitting control wiring and startup I/O.
     script = script.split('  // ------------------------------------------------------------- controls')[0]
     harness = r"""
@@ -17,6 +17,7 @@ class Element {
   set textContent(value) { this.children = []; this.value = String(value); }
   get textContent() { return this.value + this.children.map(c => c.textContent).join(''); }
   appendChild(child) { this.children.push(child); return child; }
+  addEventListener(type, fn) { (this.listeners = this.listeners || {})[type] = fn; }
 }
 const elements = {};
 const document = {
@@ -25,8 +26,9 @@ const document = {
   createTextNode: value => { const e = new Element(); e.textContent = value; return e; }
 };
 """
-    result = subprocess.run(['node', '-e', harness + script + '\n' + check + '\n})();'],
-                            capture_output=True, text=True, timeout=15)
+    # the program goes in on stdin, not on the command line, which Windows limits to 32k characters
+    result = subprocess.run(['node', '-'], input=harness + script + '\n' + check + '\n})();',
+                            capture_output=True, text=True, encoding='utf-8', timeout=15)
     assert result.returncode == 0, result.stdout + result.stderr
 
 

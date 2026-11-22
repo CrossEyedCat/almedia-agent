@@ -17,7 +17,9 @@ SOURCES = ("traffic", "search", "recommendations", "orders", "payments", "ads", 
 TS_FORMAT = "%Y-%m-%dT%H:00:00Z"
 
 
-def make_frame(days: int = 7, start: str = "2026-11-01T00:00:00Z", seed: int = 0) -> pd.DataFrame:
+def make_frame(days: int = 7, start: str = "2026-11-01T00:00:00Z", seed: int = 0, scale: float = 1.0,
+               payment_success: float = 0.93) -> pd.DataFrame:
+    """scale multiplies the traffic (and so every count); payment_success is the success rate of an attempt."""
     rng = np.random.default_rng(seed)
     hours = pd.date_range(start, periods=days * 24, freq="h", tz="UTC")
     grid = pd.DataFrame(list(itertools.product(hours, COUNTRIES, PLATFORMS, CATEGORIES, CHANNELS)),
@@ -26,14 +28,14 @@ def make_frame(days: int = 7, start: str = "2026-11-01T00:00:00Z", seed: int = 0
     hour = grid["ts"].dt.hour.to_numpy()
     weekend = grid["ts"].dt.day_of_week.to_numpy() >= 5
     diurnal = 0.35 + 0.65 * np.clip(np.sin((hour - 6) / 24 * 2 * np.pi), 0, None)
-    level = 40 * diurnal * np.where(weekend, 1.15, 1.0)
+    level = 40 * scale * diurnal * np.where(weekend, 1.15, 1.0)
 
     sessions = rng.poisson(level)
     product_views = rng.poisson(sessions * 1.8)
     add_to_cart = rng.binomial(product_views, 0.08)
     checkouts = rng.binomial(add_to_cart, 0.5)
     payment_attempts = checkouts + rng.binomial(checkouts, 0.05)
-    payment_successes = rng.binomial(payment_attempts, 0.93)
+    payment_successes = rng.binomial(payment_attempts, payment_success)
     orders = rng.binomial(payment_successes, 0.995)
     gmv = np.round(orders * rng.lognormal(np.log(45), 0.3, n), 2)
     searches = rng.poisson(sessions * 0.9)
@@ -57,14 +59,14 @@ def make_frame(days: int = 7, start: str = "2026-11-01T00:00:00Z", seed: int = 0
 
 
 def make_fixture_db(path: str | Path, days: int = 7, seed: int = 0, mutate=None,
-                    releases: list[tuple] = ()) -> Path:
+                    releases: list[tuple] = (), **frame) -> Path:
     """mutate(df) -> df changes the facts before they are written (for contract-breaking tests);
-    releases are (ts, system, country, platform, description) rows."""
+    releases are (ts, system, country, platform, description) rows; frame goes to make_frame."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         path.unlink()
-    facts = make_frame(days=days, seed=seed)
+    facts = make_frame(days=days, seed=seed, **frame)
     hours = sorted(facts["ts"].unique())
     if mutate is not None:
         facts = mutate(facts)

@@ -42,7 +42,8 @@ metrics:
     formula: discounts / gmv
     atomic: true
     bounds: [0, 1]
-    systems: [pricing]
+    # recommendations: a ranking that pushes discounted products raises the discount share of what is sold
+    systems: [pricing, recommendations]
     direction: down
     may_affect:
       - metric: add_to_cart_rate

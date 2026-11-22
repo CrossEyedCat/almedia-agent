@@ -22,22 +22,35 @@ likely caused it, says what it costs and what is still uncertain, keeps one inci
 the problem is gone, and takes in a new metric while it runs. Nobody asks it a question. All data is simulated.
 
 **Measured** ([`docs/results.md`](docs/results.md)): twenty 49-day runs of our simulator, each with 12 injected faults of
-four kinds, 8 innocent changes and a routine deployment every day. Ten of the runs are a holdout the system had never been
-run on; the table shows those ten.
+four kinds, 8 innocent changes and a routine deployment every day. Ten of the runs (seeds 111 to 120) are a holdout
+generated on Sunday morning after the last change to the brain; the table shows those ten.
 
 | On the 10 holdout runs | Faults found | In the right place | Cause confirmed | False alarms | Innocent changes left alone |
 |---|---:|---:|---:|---:|---:|
-| This system | 120 / 120 | 120 / 120 | 118 / 120 | 1 in 457 watched days | 80 / 80 |
-| Plain ranking, strict threshold | 49 / 120 | 49 / 49 | 31 / 49 | 0 | 80 / 80 |
-| Plain ranking, sensitive threshold | 92 / 120 | 92 / 92 | 74 / 92 | 71 | 40 / 80 |
+| This system | 120 / 120 | 120 / 120 | 116 / 120 | 0 in 457 watched days | 80 / 80 |
+| Plain ranking, strict threshold | 47 / 120 | 46 / 47 | 34 / 47 | 1 | 79 / 80 |
+| Plain ranking, sensitive threshold | 91 / 120 | 87 / 91 | 72 / 91 | 83 | 39 / 80 |
 
-Place and cause are counted among the faults each monitor found: the strict ranking names the right cause for 31 of the
-49 it found, 31 of all 120. False alarms are counts on the same ten runs; for this system that is 1 in 457 watched days.
+Place and cause are counted among the faults each monitor found: the strict ranking names the right cause for 34 of the
+47 it found, 34 of all 120. False alarms are counts on the same ten runs. On the ten runs the brain was built on it also
+finds 120 of 120 with 118 causes and no false alarm. Seeds 101 to 110, the holdout of the first version, were replayed by
+this version too: 120 of 120, 118 causes, 1 false alarm; they are no longer independent, so the page does not count them as
+a holdout. Honest caveats on the new holdout: it was generated after commit `e220dfc` and scored there; the integration
+commit `b9cbe9b` had been replayed on it once before, unread. The page is from `b7b856c`, which adds two fixes made after
+that score was seen, neither tuned on it: an incident on visits no longer closes while the drop runs on (found by a code
+review) and failures doubling in a share near 1 are now reported (a stress case). The holdout numbers are the same at
+both commits, apart from one more repeated incident on seed 112.
+
+**Stress cases** ([`docs/stress.md`](docs/stress.md)): what those runs do not test, one seeded case each: a traffic drop
+with unchanged rates, a fault during a promo, an unannounced mix shift, the two recommendations faults, a fault with no
+release or a late one, a fault that comes back, a fault during late data and a small payment fault (failures 6 % to
+14 %, only an 8.5 % fall of payment success) pass: 10 of 11. One fails: stock-outs in one category in two countries are
+named as one incident at the whole category.
 
 The plain ranking is the honest baseline: each hour it reports the most anomalous rate and cell against the same hour of
 the previous three weeks, with no calendar, no pooled windows and no investigation. The strict threshold (z 50) was
-picked on the other ten runs by a fixed rule; the sensitive one (z 12) is the first version's threshold, fixed before
-this version ran on the holdout. These are engineering checks on our own simulator, not results on real traffic; the
+picked on the other ten runs by a fixed rule; the sensitive one (z 12) is the first version's threshold, fixed long
+before this holdout existed. These are engineering checks on our own simulator, not results on real traffic; the
 results page lists every miss, the false alarm and one report that leaves a harmless deployment supported next to the
 real cause.
 
@@ -52,18 +65,23 @@ and [`docs/system-overview.html`](docs/system-overview.html) the pictures):
 2. **A monitor** ([`brain/monitor.py`](brain/monitor.py)): every hour it judges each of the 15 atomic rates (funnel
    steps, money, ads, search, feed and stock-outs) in seven cuts of the market (48 series each, 720 in all) against its
    own history, with an exact binomial test where the rate is a share and a spread test where it is not, over one and
-   three hours; it waits for late data instead of judging incomplete hours, and a planned promo explains the change it
-   causes.
+   three hours; it also watches visits and orders as counts against the same hour of earlier weeks, so orders falling
+   with every rate unchanged is caught; it waits for late data instead of judging incomplete hours, and a planned promo
+   explains only a change that has the promo's direction and size.
 3. **An investigator** ([`brain/investigate.py`](brain/investigate.py)): separates the cause from its symptoms along the
    graph, finds the place by scoring up to 479 places (every combination of dimension values that has counts, from one
    country or one platform down to one finest cell), splits the outcome's change over its factors (LMDI) and puts a euro
-   figure on it, and tests every recent release, the calendar, late data and a mix shift as explanations, keeping the
-   rejected ones with the reason. Every step goes into the incident's trail.
-4. **Incidents** ([`brain/incidents.py`](brain/incidents.py)): one file per problem, updated in place, resolved only when
-   the data would show the fault and does not. The console ([`ui/`](ui)) draws the graph, the incidents and the reports.
+   figure on it, checks every step of the order chain in that place top-down (traffic, add to cart, checkout, payment...)
+   and says which one moved, and tests every recent release, the calendar, late data and a mix shift as explanations,
+   keeping the rejected ones with the reason; a mix shift that explains the change is innocent and raises no alert.
+   Every step goes into the incident's trail.
+4. **Incidents** ([`brain/incidents.py`](brain/incidents.py)): one file per problem, also when the fault shows in sibling
+   or crossing series, updated in place, resolved only when the data would show the fault and does not; a fault that comes
+   back is linked to the resolved one, and each incident has a severity from its euro effect. The console ([`ui/`](ui)) draws the graph, the incidents and the reports.
 5. **New metrics** ([`brain/extension.py`](brain/extension.py)): a definition and its SQL dropped into a folder are run
    in a sandbox, checked against its formula (the given one, or one found by search when the definition has none),
-   placed in the graph and watched from the next hour, without a language model.
+   placed in the graph, given the release, calendar and freshness context of what it is built from, and watched from the
+   next hour, without a language model. A duplicate of an existing metric is refused as an alias.
 6. **A language model**, only where it helps a reader: with `--narrate` (an API key in `.env`; the scoring and all
    results run without it) it writes a short summary of each incident from the incident's own evidence; every number in
    it is checked against that evidence, and the template report stays. Seen live on Sunday morning: the console showed
@@ -86,10 +104,10 @@ and start the console with `GRAPH_JSON=data/graph.json .venv/bin/python -m uvico
 
 **Check it yourself**: `python -m pytest` (the whole suite); `python -m scripts.live_check --run runs/check` (the real
 processes for a simulated day and a half with every kind of event and nobody watching; it exits with an error if any check
-fails); and, to rebuild `docs/results.md`: for each seed N in 4 8 9 10 11 12 13 22 71 80 101 102 103 104 105 106 107
-108 109 110, `python -m sim.score generate --seed N --db runs/seedN.db` then
+fails); `python scripts/stress_cases.py` (the stress page); and, to rebuild `docs/results.md`: for each seed N in 4 8 9
+10 11 12 13 22 71 80 111 112 113 114 115 116 117 118 119 120, `python -m sim.score generate --seed N --db runs/seedN.db` then
 `python -m brain.run --replay --db runs/seedN.db --incidents runs/seedN-incidents --fresh`; then
-`python -m scripts.summarize_evaluation --runs runs --seeds 4,8,9,10,11,12,13,22,71,80,101,102,103,104,105,106,107,108,109,110 --holdout 101,102,103,104,105,106,107,108,109,110 --commit <the brain commit you ran> --warmup-hours 80 --baseline --baseline-z 50`.
+`python -m scripts.summarize_evaluation --runs runs --seeds 4,8,9,10,11,12,13,22,71,80,111,112,113,114,115,116,117,118,119,120 --holdout 111,112,113,114,115,116,117,118,119,120 --commit <the brain commit you ran> --warmup-hours 80 --baseline --baseline-z 50`.
 The section "Against a plain ranking" also needs `python -m scripts.baseline_ranking --db runs/seedN.db --out <folder> --z <Z>` run
 into `seedN-baseline` (z 50, every seed), `seedN-baseline-z12-all` (z 12, every seed) and the sweep folders `seedN-baseline-z<Z>`
 (built-on seeds only); without `--baseline` the page is written without that section. The docstring of
@@ -119,8 +137,10 @@ A small marketplace, enough to show the complete loop:
 - **Time:** hourly data on a simulated clock; 4 weeks of history backfilled, then the clock runs live (fast-forward for the demo).
 - **Domains:** traffic, search, "For You" feed, cart, checkout, payment, orders, revenue, ads, inventory.
 
-Scenarios of the demo (all six are built; S4 is the new metric, the other five are injected by the simulator and scored
-in `docs/results.md`):
+Scenarios of the demo (all are built). S4 is the new metric; S1, S2, S3, S5 and S6 are the kinds scored on twenty runs
+in `docs/results.md`; S7 to S10 are measured one case each in `docs/stress.md`, with a small payment fault, a fault
+during a promo, a missing or late release, a fault in two sibling places, a fault that comes back and a fault during
+late data:
 
 | # | Kind | Scenario | What the system should do |
 |---|---|---|---|
@@ -128,8 +148,12 @@ in `docs/results.md`):
 | S2 | Innocent change | Planned promo in France: traffic and orders up | finds the event in the promo calendar, explains it, does **not** alert |
 | S3 | Data completeness | The payments source arrives 2 h late | holds judgement on the incomplete hours instead of raising a false alarm |
 | S4 | New metric | `refund_rate` is added live as definition + SQL | agent places it in the graph, validates the formula and dimensions, starts monitoring it |
-| S5 | Fault | "For You" shifts exposure to attractive but **out-of-stock** products: feed clicks up, purchases down | follows feed → product exposure → availability; separates the symptom (conversion) from the first cause (inventory filtering) |
-| S6 | Fault | An advertiser's daily budget is spent by 10:00 | spend pacing → impressions, clicks, prices → pacing controller vs traffic surge |
+| S5 | Fault | Popular products of a category run **out of stock**: feed clicks up, add-to-cart down | names the category's stock-out rate as the first cause the data can show, add-to-cart as its symptom; says that supplier deliveries and purchase orders are not in the data |
+| S6 | Fault | An advertiser's daily budget is spent early (the pacing controller ignores its schedule) | sponsored impressions per session jump, then fall; sessions checked, so not a traffic surge; names the pacing release and says the spend ran ahead of schedule and the budget ran out |
+| S7 | Fault | Visits fall by half for **Android in Germany**, every rate unchanged (an app store or tracking problem) | caught as a volume against the same hour of the week; the chain check shows traffic moved and the rates did not; no cause confirmed, with what is left to check |
+| S8 | Innocent change | Traffic moves toward one category, no calendar entry | market-wide rates move; the mix test explains them; written as explained, **no** alert |
+| S9 | Fault | "For You" shows unavailable products after a recommendations model rollout | stock-outs and feed clicks rise in the recommendations channel; names the recommendations release |
+| S10 | Fault | Recommendations push discounted products: orders up, contribution down | the discount rate rises in the recommendations channel; names the recommendations ranking release; the euro split shows where the money went |
 
 ## 3. Architecture
 
@@ -219,7 +243,7 @@ A picture of the brain - the data path, the graph as loaded from the code, the l
 
 ### 3.3 Extension agent (M4)
 
-Built in `brain/extension.py`; no language model is used. The live monitor looks into `$INCOMING_METRICS_DIR` on every poll, takes a `<name>.yaml` once it reads the same on two looks in a row, and answers with `<name>.result.json`: a status, a message, and every check with its numbers. On the 28-day demo data the console's `refund_rate` is answered within about 2 to 10 seconds (it validates the definition on all the data so far).
+Built in `brain/extension.py`; no language model is used. The live monitor looks into `$INCOMING_METRICS_DIR` on every poll, takes a `<name>.yaml` once it reads the same on two looks in a row, and answers with `<name>.result.json`: a status, a message, and every check with its numbers. On the 28-day demo data the console's `refund_rate` is answered within about 2 to 10 seconds (it validates the definition on all the data so far). The console's **Add refund_rate** sends the query alone, so the agent finds the formula itself; **Add a duplicate metric** sends a query that equals an existing rate under another name, which the agent refuses as an alias.
 
 1. **Read the definition.** A new lower_snake_case name with a formula, a query or both. The formula may use only metrics the graph has (a near miss gets a suggestion). A definition may set the tolerance of its own comparison only above 0 and up to 1e-4 (the default is 1e-6); anything looser is rejected.
 2. **Run the SQL** inside the contract tables with a 3 s time limit and a 500,000-row limit, and read its grain from the result columns.
@@ -227,35 +251,39 @@ Built in `brain/extension.py`; no language model is used. The live monitor looks
 4. **Check what the SQL really defines.** Row by row against the formula at the query's grain. Row sets in both directions: rows the facts lack reject the definition, rows the query lacks make it a filtered metric (`tentative`). Split test: the query is run again on a private in-memory copy of the last 24 hours with every fact row split in two; a function of sums returns the same values, an average or a count of rows does not (`tentative`).
 5. **Recognise aliases.** Each definition has a numeric signature (its value on random column values, `brain/signature.py`). A definition with the signature of an existing metric is reported as an alias and not added. One exception: when that metric is a tentative contribution and the new definition has no caveat, the new one takes its place and the tentative one's file is answered as the alias.
 6. **Find its place.** Identities that hold for any data and link the new metric to two existing ones (`x = y * m`, `x = y + m`, differences) are found by signature. A product or a sum whose whole has no decomposition yet and lies outside the outcome tree is applied, when it is the only such place and the new metric has no caveat. Two such places are `ambiguous`: none is applied and the status is `tentative`. A place inside the outcome tree, or any place of a metric that is itself tentative, is proposed and left to a person. The alternatives stay in the result with the reason.
-7. **Re-validate and watch.** `brain/validate.py` runs on the whole graph with the metric in it, the graph export is written again, and a ratio of two columns joins the monitor's watch list from the next tick (`Monitor.rewatch`).
+7. **Take its context.** The metric takes the release systems, the calendar link and the sources of the metrics its formula is built from (and of the watched rates it equals the product of for any data), so a release of those systems is tested as its cause, a promo can explain it, and late data holds it. The answer names what was inherited, or that there was nothing to inherit.
+8. **Re-validate and watch.** `brain/validate.py` runs on the whole graph with the metric in it, the graph export is written again, and a ratio of two columns joins the monitor's watch list from the next tick (`Monitor.rewatch`). Any other shape is added and validated but not watched, and the answer says so in one sentence.
 
 Statuses: `validated`, `tentative` (in the graph, with the caveat named in the message), `rejected` (not in the graph, with the reason). A changed file replaces what it defined before; a text that is rejected withdraws the metric.
 
-**Not built.** Formulas with constants or with more than two metrics in the search. Proposing cause links for a new metric: a definition may declare `may_affect` links itself, and they stay `assumed`.
+**Not built.** Formulas with constants or with more than two metrics in the search. Watching a new metric that is not a ratio of two columns. Proposing cause links for a new metric: a definition may declare `may_affect` links itself, and they stay `assumed`.
 
 ### 3.4 Monitoring (M2)
 
 Built in `brain/clock.py`, `brain/stats.py`, `brain/monitor.py`, `brain/impact.py`, `brain/incidents.py`; run with `python -m brain.run`.
 
 - **Clock and completeness.** `clock = MAX(facts_hourly.ts) + 1 h`; a source's hour has arrived when `arrived_at <= clock + 10 min` (`docs/contracts/`). An hour of a metric is judged only when every source the metric depends on has arrived; until then it is *pending*: neither healthy nor an alert. `--replay` walks a finished database with the same rule and never reads a row from the future.
-- **What to watch.** Every atomic rate of the graph (15 today), on the formula tree or not, in seven cuts: total, each dimension, country × platform and country × category (48 series per rate, 720 in all). Outcomes are not judged directly, because a fault in one cell is diluted in them (3.8); they are used for the impact.
+- **What to watch.** Every atomic rate of the graph (15 today), on the formula tree or not, in seven cuts: total, each dimension, country × platform and country × category (48 series per rate, 720 in all), and two volumes, sessions and orders (below). The money outcomes are not judged directly, because a fault in one cell is diluted in them (3.8); they are used for the impact.
 - **Expected rate.** Pooled numerator over pooled denominator of the series' own visible history (up to three weeks; three days are enough to start), without the hours being judged, hours already flagged, hours of calendar events and held hours. A fault that lasts therefore does not become the new normal. The simulator's rates have no daily pattern; real data would need an hour-of-week factor here.
-- **Detection.** The test is chosen per metric from its own history. If numerator and denominator count events and the hour-to-hour spread is binomial: the exact two-sided binomial tail, p below 1e-7. The same on the surplus for a ratio that never falls below 1 (payment attempts per checkout). Otherwise (money, impressions per session): the residual against its historical spread, beyond 6 spreads and beyond anything clean history showed. Each hour is judged alone and summed with the two before it, and the rate must have moved by at least 10 %. The last 8 hours are re-read and re-judged on every tick, because an injection can rewrite them.
+- **Volumes.** Sessions and orders as counts in the whole market, per country, per platform and per country × platform, against the mean of the same hour of the week over the previous three weeks (weeks under a calendar event, flagged or inside an open incident are left out), with a negative-binomial spread fitted per series from week-to-week differences: p below 1e-7 and at least 20 %. This is what catches orders or visits falling while every rate stays the same. An orders alert is dropped when sessions or a rate in a compatible place moved in the same episode, so a traffic drop or a payment fault is one alert, not two.
+- **Detection.** The test is chosen per metric from its own history. If numerator and denominator count events and the hour-to-hour spread is binomial: the exact two-sided binomial tail, p below 1e-7. The same on the surplus for a ratio that never falls below 1 (payment attempts per checkout). Otherwise (money, impressions per session): the residual against its historical spread, beyond 6 spreads and beyond anything clean history showed. Each hour is judged alone and summed with the two before it, and the rate must have moved by at least 10 %; for a share expected above one half (payment success, about 0.94) it is also enough that the share that fails moved by half of itself, so failures doubling from 6 % to 14 % is not hidden by the 10 % floor. Half, not 10 %, because the failure rate of a single series differs from the market's by up to a third through the mix alone. The last 8 hours are re-read and re-judged on every tick, because an injection can rewrite them. An hour of a summed window counts as bad only when it is unusual on its own, so an episode ends at its last faulty hour and the rate reported is the rate during the fault.
 - **One fault, one incident.** A fault in one cell also shows, diluted, in every series that contains the cell: per metric the strongest series wins, alerts on other metrics in a compatible place join it, and an open incident is updated in place (same file, same `first_seen`), its place refined when stronger evidence arrives. Alerts join one incident only when one place lies inside the other and the graph relates the metrics, so faults that merely overlap stay apart. It is resolved when, three hours after the last bad hour, there is enough data that the faulty rate would show and it does not.
 - **After a release.** The scan asks thousands of questions an hour and needs overwhelming evidence for each. A release asks one: did the metrics linked to its system change, in its scope, since it went out? That is tested on the sum since the release (exact tests only, p below 1e-4, one episode per release and metric), which finds a fault in a small cell at night that the scan cannot.
-- **Planned events and late data.** A calendar event that overlaps a deviation in time and scope explains it for the metrics the graph links to the calendar (traffic, pricing, promotions): written as a record with status `explained`, no alert; its hours stay out of later baselines. Hours held for late data are written with status `pending` and removed when the data is in.
+- **Planned events and late data.** A calendar event that overlaps a deviation in time and scope explains it only when the change goes the way the event predicts (a promo raises sessions, orders, add-to-cart and the discount rate) and is not clearly larger than twice what earlier events of the same kind did to that series: then it is written as a record with status `explained`, no alert, and its hours stay out of later baselines. Otherwise the alert is raised and the event is kept as a rejected rival with the reason, so a discount fault during a promo is not hidden by it. Hours held for late data are written with status `pending` and removed when the data is in.
 - **Impact.** The outcome is recomputed through the formulas of the graph with the moved rates back at their expected values, so every path counts (a payment fault lowers fees and discounts together). From a metric that moved, the `may_affect` links are followed with one targeted test each: out-of-stock listings cost orders through the add-to-cart rate.
-- **Not built.** Judging volumes such as sessions (they would need an hour-of-week baseline); a euro threshold for alerts.
+- **Not built.** An hour-of-week factor for rates (the simulator's rates have no daily pattern; its volumes have one, and the volume baseline uses the same hour of the week); a euro threshold for alerts.
 
 ### 3.5 Investigation (M3)
 
 Built in `brain/investigate.py`, `brain/localize.py`, `brain/attribution.py`; it runs on every tick for every open incident that has a live alert on that tick (an open incident without one keeps its last report until it is resolved) and records each question and its answer in the trail.
 
 - **Cause and symptom.** Among the metrics that moved, one that another moved metric may affect (a `may_affect` link, in the direction the link predicts) is read as a symptom. The investigation leads with a cause candidate.
+- **Top-down check.** In the incident's place and hours every factor of the order chain is checked against its baseline: sessions, views per session, add-to-cart, checkout, payment attempt, payment success and order rate. The trail lists each as normal or moved, and the report says which one moved and that the others, traffic included, stayed normal: the path from orders down to the step that broke, written out.
+- **Volumes.** A sessions or orders alert is investigated like a rate. The chain check names traffic as the moved factor, releases, the calendar and freshness are tested, and when nothing fits the report says "No cause is confirmed" and lists what is left to check (tracking, an app store, an outage).
 - **Localization.** Every place the dimensions can name that has counts in the window is scored on the 180 finest cells: at most 479 places and the whole (a place with nothing to divide by is left out). The score is the log-likelihood gain of "the rate moved by one common factor inside this place and nowhere else" over "nothing moved" (binomial for proportions, so a cell with 0 of 3 is weak evidence; Gaussian on the historical spread for other ratios), minus the price of the search: ln(number of places of that kind) + ln(number of kinds). The monitor's place is confirmed, narrowed (only when the rest of it is quiet), widened (only when the wider place moved as one) or kept; a fault in a combination that no watched series covers is narrowed to it. When the rate changed direction during the incident (an ad budget that overspends and then runs dry), the place is read from the hours since the last change of direction. A different place that explains the counts nearly as well is reported under "still uncertain".
-- **Attribution.** One function splits the outcome's change over the atomic factors along every path of the formula DAG: the logarithmic mean Divisia index (LMDI) per product, which is exact and leaves no interaction term, with a Shapley split as the fallback for zeros and other formula shapes. The incident's cost is a counterfactual, in EUR and in orders: the outcome as observed against the outcome with the moved rates put back to their baselines, together with any rate a directed link from them predicts to move, even while the data does not show it yet (that is then named under "still uncertain"). The baselines are frozen when the cost is first reported, so a long incident is not measured against itself. `explained_share` is that effect as a share of the whole gap to the state with every judged rate at its baseline (capped at 1, left out when the two have opposite signs); the rest is what the other rates differ from their baselines by: noise, or something else going on in the same place, and the trail names the largest of them. Traffic is taken as given.
-- **Mix versus rate.** For the leading rate the change inside the place is split into "the rates of the cells moved" and "the weights of the cells moved". A mix shift is one of the explanations that are tested, and is rejected or kept by its share.
-- **Hypotheses.** Every release from 12 h before the onset until now is scored on three questions. Is its system linked to what moved (the `systems` tags of the graph)? Does its scope fit the place (exactly, wider, only part of it, or elsewhere, with the rate inside its scope as evidence)? Did the change start with it (within two hours of the estimated onset, before or after; earlier than that only if the hours in between already lean the same way; more than two hours after it never)? `supported` needs all three. The others stay in the report as `plausible` or `rejected`, each with its reason. Without a supported release the moved metric itself is the cause candidate, supported once the second movement that a directed link predicts is there. A planned event, late data and a mix shift are always tested as well.
+- **Attribution.** One function splits the outcome's change over the atomic factors along every path of the formula DAG: the logarithmic mean Divisia index (LMDI) per product, which is exact and leaves no interaction term, with a Shapley split as the fallback for zeros and other formula shapes. The incident's cost is a counterfactual, in EUR and in orders: the outcome as observed against the outcome with the moved rates put back to their baselines, together with any rate a directed link from them predicts to move, even while the data does not show it yet (that is then named under "still uncertain"). The baselines are frozen when the cost is first reported, so a long incident is not measured against itself. `explained_share` is that effect as a share of the whole gap to the state with every judged rate at its baseline (capped at 1, left out when the two have opposite signs); the rest is what the other rates differ from their baselines by: noise, or something else going on in the same place, and the trail names the largest of them. Traffic is a factor of the cost when it moved (a volume alert); otherwise it is taken as given.
+- **Mix versus rate.** For the leading rate the change inside the place is split into "the rates of the cells moved" and "the weights of the cells moved". A mix shift is one of the explanations that are tested, and is rejected or kept by its share. When it explains at least 80 % of the change and no release is supported, it leads, and the change is innocent: written as `explained`, no alert (3.6).
+- **Hypotheses.** Every release from 12 h before the onset until now is scored on three questions. Is its system linked to what moved (the `systems` tags of the graph)? Does its scope fit the place (exactly, wider, only part of it, or elsewhere, with the rate inside its scope as evidence)? Did the change start with it (within two hours of the estimated onset, before or after; earlier than that only if the hours in between already lean the same way; more than two hours after it never)? `supported` needs all three. The others stay in the report as `plausible` or `rejected`, each with its reason. Without a supported release the moved metric itself is the cause candidate, supported once the second movement that a directed link predicts is there. A planned event, late data and a mix shift are always tested as well; an event the monitor did not accept (wrong direction or too large) stays a rejected rival with the monitor's reason. Each release's evidence says what `supported` requires and which parts held. For stock-outs the stock-out rate is the first cause the data can show, and the report says that supplier deliveries and purchase orders are not in the data. For an ad budget, a rise in sponsored impressions per session followed by a fall is told as spending that ran ahead of schedule until the budget ran out.
 - **Stop step.** Every candidate is tested on every run; nothing stops early. The trail's last step (`stop`) states the outcome: the leading explanation is supported and ahead of the next one, supported with every other one rejected, supported but not ahead of a rival, or not supported yet.
 - **Not built.** Attribution per finest cell (it runs at the incident's place); a range around the cost (the estimate is noisy for a short incident in a small place); causes that are not in the context tables.
 - **Known limits.** Two faults of one metric that start in the same hour in places that share a country or a platform can be reported as one incident at the series that contains both (DE x Android and DE x iOS as DE), with no release supported; faults in places that share nothing stay two incidents. A harmless release of the same system and place within two hours of the onset is `supported` next to the real one.
@@ -264,9 +292,11 @@ Built in `brain/investigate.py`, `brain/localize.py`, `brain/attribution.py`; it
 
 Built in `brain/incidents.py`.
 
-- **One incident per problem.** A fault shows up as many alerts: in the cell where it happened, diluted in every series that contains the cell, and on the metrics downstream. Alerts join one incident when one place lies inside the other and the graph relates their metrics (a cause link either way, or a shared system); the strongest alert of each metric leads. An open incident that matches is updated in place: same file, same id, same `first_seen`; its place is refined when stronger evidence points to a narrower series.
+- **One incident per problem.** A fault shows up as many alerts: in the cell where it happened, diluted in every series that contains the cell, and on the metrics downstream. Alerts join one incident when one place lies inside the other and the graph relates their metrics (a cause link either way, or a shared system); the strongest alert of each metric leads. An open incident that matches is updated in place: same file, same id, same `first_seen`; its place is refined when stronger evidence points to a narrower series. A group of alerts also joins an open incident whose localized place nests with its own when the metrics are related or both lead to the same supported cause, so a fault that shows in sibling series (one category in two countries) stays one incident.
+- **Back again.** A new incident with the same lead metric and a nested place as a resolved one carries `recurrence_of` and says "It is back"; the console links the two.
+- **Severity.** `high`, `medium` or `low` from the euro effect and the hours; the feed lists live incidents first, the severe ones on top.
 - **Lifecycle.** `open` on the tick that raises it, `ongoing` while alerts continue, `resolved` after three normal hours, and only on evidence of health: the data since the last bad hour would show the fault if it were still there, and does not. A quiet night in a small cell proves nothing, so the incident stays open.
-- **Not an alert.** A deviation that a planned event explains is written as `explained`; hours held back for late data as `pending` (removed once the data is in). Same file shape, no alert, grey in the console, skipped by the scorer.
+- **Not an alert.** A deviation that a planned event or a mix shift explains is written as `explained`, with the reason; hours held back for late data as `pending` (removed once the data is in). Same file shape, no alert, grey in the console, skipped by the scorer.
 - **Report content.** What changed and where, the cost in EUR and in orders, the drivers with their role (cause candidate or symptom), where in the segments, the hypotheses with status, score and evidence, the trail of every step, what is still uncertain, and a template summary. With `--narrate` a checked narration is added (3.7).
 
 ### 3.7 Where the language model is used
@@ -396,7 +426,7 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [x] Cause and symptom: a moved metric that another moved metric may affect is read as a symptom.
 - [x] Trail: watch, compare, drill, follow, decompose, check (freshness, calendar, each release), compare, stop; every step with its numbers.
 - [x] Incident JSON written to `incidents/` per the contract; new optional fields `localization`, `explained_share`, hypothesis `score`, driver `role`.
-- [x] Plain-ranking baseline in the scoring harness (3.5, honesty check; `scripts/baseline_ranking.py`, on `docs/results.md` with `--baseline`). On the ten holdout seeds it finds 49 of 120 faults, names the right cause for 31, raises 0 false alarms and stays silent through 80 of 80 innocent events at z 50, the threshold picked for at most 1 false alarm on the built-on seeds (the brain: 0 there, 1 in all runs), and at z 12 it finds 92, names the right cause for 74, raises 71 false alarms and stays silent through 40 of 80, against 120, 118, 1 and 80 for the brain: the gap reflects the brain's statistics, calendar, search over places and investigation together, not the graph alone, and part of the cause gap is the plain ranking's own cause rule: 17 of its 18 unconfirmed causes at z 50 are stock-outs in a category, where that rule names whatever release falls in the window.
+- [x] Plain-ranking baseline in the scoring harness (3.5, honesty check; `scripts/baseline_ranking.py`, on `docs/results.md` with `--baseline`). On the ten holdout seeds it finds 47 of 120 faults, names the right cause for 34, raises 1 false alarm and stays silent through 79 of 80 innocent events at z 50, the threshold picked for at most 1 false alarm on the built-on seeds (the brain: 0 there, 0 in all runs), and at z 12 it finds 91, names the right cause for 72, raises 83 false alarms and stays silent through 39 of 80, against 120, 116, 0 and 80 for the brain: the gap reflects the brain's statistics, calendar, search over places and investigation together, not the graph alone, and part of the cause gap is the plain ranking's own cause rule: 12 of its 13 unconfirmed causes at z 50 are stock-outs in a category, where that rule names whatever release falls in the window.
 
 **A+B checkpoint:** the S1 incident in the UI says DE × Android, `payment_success_rate`, release `payments-sdk`, with numbers. **Done 21 Nov.** In the console the report names DE × Android, the loss in EUR and in orders, the release `payments-sdk 4.2` as the supported cause with its three pieces of evidence (linked system, exact scope, released in the hour the change began), and lists late data and a mix shift as tested and rejected; with harmless releases next to the fault it rejects the release in another place and the release of an unlinked system with the reason. Scoring at `48b6516`, 49-day generator with routine releases, ten seeds (4, 8, 9, 10, 11, 12, 13, 22, 71, 80): 120 of 120 faults detected, 100 % localized, right cause 118 of 120 (the two misses are stockouts whose effect on the add-to-cart rate was too weak to confirm the link), 0 false alarms, 80 of 80 innocent events silent. Not an independent holdout: these seeds were also run while the investigator was built. The current numbers, with ten holdout seeds kept apart, are in `docs/results.md`.
 

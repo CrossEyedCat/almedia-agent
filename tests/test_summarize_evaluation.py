@@ -479,11 +479,11 @@ def test_the_readme_quotes_the_tracked_holdout_numbers_in_one_sentence():
     assert len(holdout) == 10 and numbers.endswith(".") and ". " not in numbers          # one sentence
     assert numbers.startswith(
         f"On the ten holdout seeds it finds {low['detected']} of {low['faults']} faults, names the right cause for "
-        f"{low['correct']}, raises {low['false_alarms']} false alarms and stays silent through {low['silent']} of "
+        f"{low['correct']}, raises {low['false_alarms']} false alarm{'' if low['false_alarms'] == 1 else 's'} and stays silent through {low['silent']} of "
         f"{low['innocents']} innocent events at z {b['z']:g}, the threshold picked for at most {se.MAX_FALSE_ALARMS} false "
         f"alarm on the built-on seeds (the brain: {built['false_alarms']} there, {se.tally(saved['runs'])['false_alarms']} "
         f"in all runs), and at z {b['second']['z']:g} it finds {high['detected']}, names the right cause for "
-        f"{high['correct']}, raises {high['false_alarms']} false alarms and stays silent through {high['silent']} of "
+        f"{high['correct']}, raises {high['false_alarms']} false alarm{'' if high['false_alarms'] == 1 else 's'} and stays silent through {high['silent']} of "
         f"{high['innocents']}, against {brain['detected']}, {brain['correct']}, {brain['false_alarms']} and "
         f"{brain['silent']} for the brain: ")
     assert (f"part of the cause gap is the plain ranking's own cause rule: {stockouts} of its {unconfirmed} unconfirmed "
@@ -627,3 +627,19 @@ def test_the_plain_ranking_and_its_sweep_are_scored_from_their_own_folders(tmp_p
     refused("holdout seed 5 has threshold-sweep folders")
     (runs / "seed5-baseline-z8").rmdir()
     assert se.main(args + ["--baseline-z", "8"]) == 0 and out.read_bytes() == before   # restored, the same page
+
+
+def shifted(obj, by=10):
+    """The same runs with seeds 101 and 102 renamed 111 and 112, everywhere they appear."""
+    if isinstance(obj, dict):
+        return {k: (v + by if k == "seed" and v in (101, 102) else shifted(v, by)) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [shifted(x, by) for x in obj]
+    return obj
+
+
+def test_on_a_later_holdout_the_first_version_is_named_as_the_first_holdout_s_and_not_compared(reports, baseline):
+    at_picked = shifted(dict(baseline, z=12.0, second=None))
+    paragraph = blocks(page(shifted(reports), holdout={111, 112}, baseline=at_picked))[4]
+    assert "had been run on the first holdout (seeds 101 to 110, not this page's holdout): it found 94/120 at z 12;" in paragraph
+    assert "this version" not in paragraph.split("The first version")[1]
