@@ -456,6 +456,138 @@ def test_a_time_without_a_zone_is_taken_as_utc(tmp_path):
     assert n == 1
 
 
+def _consistent_facts(f):
+    """The funnel order and the money rules hold in every row."""
+    assert (f[list(MEASURES)] >= 0).all().all()
+    assert (f.orders <= f.payment_successes).all() and (f.payment_successes <= f.payment_attempts).all()
+    assert (f.checkouts <= f.add_to_cart).all() and (f.add_to_cart <= f.product_views).all()
+    assert (f.stockouts <= f.product_views).all() and (f.product_views >= f.search_clicks + f.feed_clicks).all()
+    assert (f.refunds <= f.orders).all() and (f.discounts <= f.gmv).all()
+    assert (f.loc[f.orders == 0, "gmv"] == 0).all()
+
+
+def _ratio(d, num, den):
+    return d[num].sum() / d[den].sum()
+
+
+# ------------------------------------------------- new kinds: traffic, feed, mix, discount push
+def test_traffic_drop_lowers_sessions_in_its_place_and_keeps_every_rate(clean_db, tmp_path):
+    path = fresh_copy(tmp_path)
+    s, e = pd.Timestamp("2026-10-28T08:00:00Z"), pd.Timestamp("2026-10-28T20:00:00Z")
+    con = db.connect(path)
+    inject.traffic_drop(con, "DE", "Android", s, e, severity=0.5)
+    rel = con.execute("SELECT COUNT(*) FROM releases").fetchone()[0]
+    cal = con.execute("SELECT COUNT(*) FROM calendar").fetchone()[0]
+    truth = con.execute("SELECT kind, scope FROM ground_truth").fetchall()
+    con.close()
+    c, f = _compare(clean_db, path, lambda d: (d.country == "DE") & (d.platform == "Android"), (s, e))
+    assert 0.4 < f.sessions.sum() / c.sessions.sum() < 0.6
+    assert f.orders.sum() < 0.7 * c.orders.sum()
+    for num, den in (("payment_successes", "payment_attempts"), ("add_to_cart", "product_views"),
+                     ("search_clicks", "searches"), ("feed_clicks", "feed_impressions"), ("orders", "sessions"),
+                     ("gmv", "orders"), ("discounts", "gmv"), ("stockouts", "product_views")):
+        assert abs(_ratio(f, num, den) / _ratio(c, num, den) - 1) < 0.08, num        # rates stay where they were
+    assert rel == 0 and cal == 0                                                    # nothing announces it
+    assert truth[0][0] == "traffic_drop" and '"country": "DE"' in truth[0][1] and '"platform": "Android"' in truth[0][1]
+    _consistent_facts(facts(path))
+
+
+def test_feed_unavailable_moves_only_the_recommendations_channel_and_writes_its_release(clean_db, tmp_path):
+    path = fresh_copy(tmp_path)
+    s, e = pd.Timestamp("2026-10-28T08:00:00Z"), pd.Timestamp("2026-10-29T08:00:00Z")
+    con = db.connect(path)
+    inject.feed_unavailable(con, s, e, multiplier=12.0)
+    rel = con.execute("SELECT ts, system, country, platform, description FROM releases").fetchall()
+    con.close()
+    c, f = _compare(clean_db, path, lambda d: d.channel == "recommendations", (s, e))
+    assert _ratio(f, "stockouts", "product_views") > 8 * _ratio(c, "stockouts", "product_views")
+    assert _ratio(f, "feed_clicks", "feed_impressions") > 1.15 * _ratio(c, "feed_clicks", "feed_impressions")
+    assert _ratio(f, "add_to_cart", "product_views") < 0.9 * _ratio(c, "add_to_cart", "product_views")
+    assert f.orders.sum() < c.orders.sum() and f.sessions.sum() == c.sessions.sum()
+    assert rel == [("2026-10-28T08:00:00Z", "recommendations", None, None, "recommendations model 3.1 rollout")]
+    _consistent_facts(facts(path))
+
+
+def test_mix_shift_moves_traffic_to_one_category_with_every_per_category_rate_unchanged(clean_db, tmp_path):
+    path = fresh_copy(tmp_path)
+    s, e = pd.Timestamp("2026-10-28T08:00:00Z"), pd.Timestamp("2026-10-28T20:00:00Z")
+    con = db.connect(path)
+    inject.mix_shift(con, "electronics", s, e, share=0.5)
+    counts = [con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("releases", "calendar")]
+    con.close()
+    c, f = _compare(clean_db, path, lambda d: d.country.notna(), (s, e))        # the whole window may move
+    assert counts == [0, 0]                                                          # innocent and not announced
+    assert 0.45 < f[f.category == "electronics"].sessions.sum() / f.sessions.sum() < 0.55
+    assert abs(f.sessions.sum() / c.sessions.sum() - 1) < 0.03                      # the total stays the same
+    for cat in ("electronics", "fashion", "home"):
+        fc, cc = f[f.category == cat], c[c.category == cat]
+        for num, den in (("add_to_cart", "product_views"), ("payment_successes", "payment_attempts"), ("gmv", "orders")):
+            assert abs(_ratio(fc, num, den) / _ratio(cc, num, den) - 1) < 0.08, (cat, num)
+    # the overall add-to-cart rate and order value move because the mix moved
+    assert _ratio(f, "gmv", "orders") > 1.05 * _ratio(c, "gmv", "orders")
+    _consistent_facts(facts(path))
+
+
+def test_discount_push_raises_discounts_and_orders_in_recommendations_while_contribution_falls(clean_db, tmp_path):
+    path = fresh_copy(tmp_path)
+    s, e = pd.Timestamp("2026-10-28T08:00:00Z"), pd.Timestamp("2026-10-29T08:00:00Z")
+    con = db.connect(path)
+    inject.discount_push(con, s, e, lift=0.6)
+    rel = con.execute("SELECT ts, system, country, platform, description FROM releases").fetchall()
+    con.close()
+    c, f = _compare(clean_db, path, lambda d: d.channel == "recommendations", (s, e))
+    assert _ratio(f, "discounts", "gmv") > 1.4 * _ratio(c, "discounts", "gmv")
+    assert f.orders.sum() > 1.05 * c.orders.sum()
+    contribution = lambda d: d.marketplace_fees.sum() + d.ad_spend.sum() - d.discounts.sum()
+    assert contribution(f) < contribution(c)
+    assert f.sessions.sum() == c.sessions.sum()
+    assert rel == [("2026-10-28T08:00:00Z", "recommendations", None, None, "recommendations ranking 3.2 rollout")]
+    _consistent_facts(facts(path))
+
+
+def test_new_kinds_refuse_stacking_and_ending_one_writes_a_recommendations_rollback(tmp_path):
+    path = fresh_copy(tmp_path, hours=3 * 24)
+    con = db.connect(path)
+    s = pd.Timestamp("2026-10-26T06:00:00Z")
+    inject.traffic_drop(con, "FR", "Web", s, None)
+    with pytest.raises(inject.AlreadyInjected):
+        inject.traffic_drop(con, "FR", "Web", s + pd.Timedelta(hours=2), None, severity=0.3)
+    inject.feed_unavailable(con, s, None)
+    with pytest.raises(inject.AlreadyInjected):
+        inject.feed_unavailable(con, s + pd.Timedelta(hours=1), None)
+    inject.mix_shift(con, "home", s, s + pd.Timedelta(hours=6))
+    with pytest.raises(inject.AlreadyInjected):                       # a second mix shift at the same time would stack
+        inject.mix_shift(con, "beauty", s + pd.Timedelta(hours=1), s + pd.Timedelta(hours=4))
+    inject.discount_push(con, s, None)
+    rowid = con.execute("SELECT rowid FROM ground_truth WHERE kind = 'feed_unavailable'").fetchone()[0]
+    inject.end_injection(con, rowid, s + pd.Timedelta(hours=10))
+    rel = con.execute("SELECT system, country, platform, description FROM releases ORDER BY rowid").fetchall()
+    con.close()
+    assert rel[-1] == ("recommendations", None, None, "recommendations rollback")
+    for call in (lambda: inject.traffic_drop(con, "XX", "Web", s, None), lambda: inject.mix_shift(con, "toys", s, None),
+                 lambda: inject.traffic_drop(con, "DE", "Web", s, None, severity=1.5),
+                 lambda: inject.mix_shift(con, "home", s, None, share=1.0), lambda: inject.discount_push(con, s, None, lift=0)):
+        with pytest.raises(ValueError):
+            call()
+
+
+def test_the_command_line_knows_the_new_kinds(tmp_path):
+    path = fresh_copy(tmp_path, hours=2 * 24)
+    for argv in (["traffic_drop", "--country", "DE", "--platform", "Android", "--severity", "0.5"],
+                 ["feed_unavailable"], ["mix_shift", "--category", "home", "--share", "0.5", "--end", "2026-10-26T20:00:00Z"],
+                 ["discount_push", "--lift", "0.6"]):
+        assert inject.main(argv + ["--db", str(path)]) == 0
+    with pytest.raises(SystemExit) as exc:
+        inject.main(["traffic_drop", "--country", "DE", "--db", str(path)])          # needs a platform
+    assert exc.value.code == 2
+    con = db.connect(path)
+    kinds = [r[0] for r in con.execute("SELECT kind FROM ground_truth ORDER BY rowid")]
+    scope = con.execute("SELECT scope FROM ground_truth WHERE kind = 'traffic_drop'").fetchone()[0]
+    con.close()
+    assert kinds == ["traffic_drop", "feed_unavailable", "mix_shift", "discount_push"]
+    assert '"severity": 0.5' in scope
+
+
 def test_the_command_line_rejects_a_wrong_value_with_a_usage_error(tmp_path):
     path = fresh_copy(tmp_path, hours=2 * 24)
     for argv in (["payment_failure", "--country", "de", "--platform", "Android"],

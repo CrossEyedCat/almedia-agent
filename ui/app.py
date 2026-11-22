@@ -161,7 +161,9 @@ class Inject(BaseModel):
     platform: str | None = None
     category: str | None = None
     source: str | None = None
-    severity: float = 0.35
+    severity: float | None = None   # payment_failure: 0.35 when not given; traffic_drop: 0.5
+    share: float = 0.5              # mix_shift: the favoured category's share of sessions
+    lift: float = 0.6               # discount_push: relative rise of the discount per euro
     hours: int = Field(default=12, ge=1)
     delay_hours: float = 2
     when: str = "now"  # now = current data hour; wall mode synchronizes it to the real current hour
@@ -185,12 +187,28 @@ def _inject(con, req: "Inject"):
     # "now" is the latest hour of data: the effect shows at once and carries on as the clock moves
     start = last if req.when == "now" else last - pd.Timedelta(hours=5)
     end = start + pd.Timedelta(hours=req.hours)
-    if req.kind == "payment_failure":
+    if req.kind in ("payment_failure", "traffic_drop"):
         if req.country not in COUNTRIES or req.platform not in PLATFORMS:
             raise HTTPException(422, "country and platform must be valid")
-        if not 0 < req.severity < 1:
+        severity = req.severity if req.severity is not None else (0.35 if req.kind == "payment_failure" else 0.5)
+        if not 0 < severity < 1:
             raise HTTPException(422, "severity must be between 0 and 1")
-        n = inject.payment_failure(con, req.country, req.platform, start, req.severity, end=end)
+        if req.kind == "payment_failure":
+            n = inject.payment_failure(con, req.country, req.platform, start, severity, end=end)
+        else:
+            n = inject.traffic_drop(con, req.country, req.platform, start, end, severity)
+    elif req.kind == "feed_unavailable":
+        n = inject.feed_unavailable(con, start, end)
+    elif req.kind == "mix_shift":
+        if req.category not in CATEGORIES:
+            raise HTTPException(422, f"category must be one of {CATEGORIES}")
+        if not 0 < req.share < 1:
+            raise HTTPException(422, "share must be between 0 and 1")
+        n = inject.mix_shift(con, req.category, start, end, req.share)
+    elif req.kind == "discount_push":
+        if not 0 < req.lift <= 5:
+            raise HTTPException(422, "lift must be above 0 and at most 5")
+        n = inject.discount_push(con, start, end, req.lift)
     elif req.kind == "stockout_surge":
         if req.category not in CATEGORIES:
             raise HTTPException(422, f"category must be one of {CATEGORIES}")
