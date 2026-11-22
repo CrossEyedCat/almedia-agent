@@ -462,9 +462,6 @@ For narration (3.7) put an API key with credit in `.env` (never commit it) and a
 ANTHROPIC_API_KEY=...
 ```
 
-On Windows one test, `tests/test_demo_rehearsal.py::test_the_demo_lifecycle_rehearsal_passes`, fails because its
-subprocess gets no `SYSTEMROOT` or `TEMP`; it passes on Linux and in CI.
-
 ## 10. Third-party libraries
 
 Python packages, used as published under their own licenses (versions in `requirements.txt`): anthropic (narration only), fastapi and uvicorn (the console's server), httpx (the console's tests), pandas and numpy (data), scipy (exact binomial tails), pydantic (request bodies), pyyaml (metric definitions), python-dotenv (the API key), pytest (tests).
