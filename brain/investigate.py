@@ -444,9 +444,14 @@ class Investigator:
                 link = 0.0
                 evidence.append(f"system {r['system']} is not linked to any moved metric in the graph")
 
-            # does the scope fit the place?
+            # does the scope fit the place? A system that is itself a channel (recommendations) acts in that channel
             inside_share = None
-            if any(d in place_scope and place_scope[d] != v for d, v in scope.items()):
+            acts_in = r["system"] if r["system"] in self.channels() else None
+            if acts_in is not None and place.get("channel") not in (None, acts_in):
+                relation, fit = "conflict", 0.0
+                evidence.append(f"a {r['system']} release acts in the {acts_in} channel; the change is in the "
+                                f"{place['channel']} channel")
+            elif any(d in place_scope and place_scope[d] != v for d, v in scope.items()):
                 relation, fit = "conflict", 0.0
                 text = f"scope {seg_text(scope)} does not include {where}"
                 w = self.look(primary.metric, scope, inc.onset, end, skip) \
@@ -468,6 +473,8 @@ class Investigator:
                 fit = 0.6 if inside_share is not None and inside_share >= 0.8 else 0.2
                 evidence.append(f"scope {seg_text(scope)} covers only part of {where}"
                                 + (f": {inside_share:.0%} of the change lies inside it" if inside_share is not None else ""))
+            if acts_in is not None and place.get("channel") == acts_in:
+                evidence.append(f"a {r['system']} release acts in the {acts_in} channel, where the change is")
 
             # did the change start with the release?
             lag = int((inc.onset - ts) / HOUR)
@@ -535,6 +542,12 @@ class Investigator:
         reason = (f"{what} ({when(event['start'])} to {when(event['end'])}) predicts a rise in what moved and it rose "
                   f"within the {100 * PLANNED_MAX_LIFT:+.0f} % a planned event is taken to give: {', '.join(rose)}.")
         return {"status": status, "score": score, "evidence": evidence, "reason": reason}
+
+    def channels(self) -> set[str]:
+        """The values of the channel dimension: a release of a system with one of these names acts in that channel."""
+        if not hasattr(self, "_channels"):
+            self._channels = {str(v) for v in self.store.distinct("facts_hourly", "channel") if v is not None}
+        return self._channels
 
     # --------------------------------------------------------------- the report
     def report(self, inc, tick: Tick) -> dict:

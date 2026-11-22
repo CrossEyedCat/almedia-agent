@@ -212,3 +212,34 @@ def test_an_ad_budget_spent_early_is_told_as_spent_early(run):
 def test_an_ad_budget_still_in_its_first_phase_has_no_such_sentence(run):
     (inc,) = run(lambda con: inject.ad_budget_exhausted(con, "PL", FAULT, FAULT + 10 * H, boost_hours=3), last=2)
     assert "then fell" not in inc["report"]
+
+
+# ------------------------------------------------------------------ V5: the recommendations system
+def test_the_recommendations_system_is_linked_to_what_the_feed_moves():
+    graph = MetricGraph.load()
+    for m in ("feed_ctr", "stockout_rate", "views_per_session", "discount_rate"):
+        assert "recommendations" in graph.specs[m].systems, m
+
+
+def stockouts_in(channel):
+    def step(con):   # unavailable products shown in one channel only: stock-outs there x12
+        con.execute("UPDATE facts_hourly SET stockouts = MIN(product_views, stockouts * 12 + 3) WHERE channel = ? AND ts >= ?",
+                    (channel, ts(FAULT)))
+        con.commit()
+    return step
+
+
+def test_a_market_wide_recommendations_release_is_in_scope_for_the_recommendations_channel(run):
+    incidents = run(stockouts_in("recommendations"), release(FAULT, "recommendations", None, None, "recommendations model 3.1 rollout"))
+    inc = next(i for i in incidents if i["segment"].get("channel") == "recommendations")
+    lead = inc["hypotheses"][0]
+    assert lead["kind"] == "release" and lead["status"] == "supported" and "recommendations model 3.1" in lead["cause"]
+    assert any("recommendations channel" in e for e in lead["evidence"])
+
+
+def test_a_recommendations_release_does_not_explain_a_change_in_another_channel(run):
+    incidents = run(stockouts_in("organic"), release(FAULT, "recommendations", None, None, "recommendations model 3.1 rollout"))
+    inc = next(i for i in incidents if i["segment"].get("channel") == "organic")
+    rec = next(h for h in inc["hypotheses"] if "recommendations model 3.1" in h["cause"])
+    assert rec["status"] == "rejected" and any("organic" in e for e in rec["evidence"])
+
