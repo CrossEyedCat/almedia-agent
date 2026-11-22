@@ -68,6 +68,10 @@ false alarm was a one-hour jump in ad click-through in Poland on the web that cl
 - Payment failure in Germany on Android: the incident appears about 5 seconds after the click, with the payments release as the cause.
 - "End it (rollback)": the incident turns resolved about 8 seconds later (three normal data hours).
 - Promo in France: an `explained` record, grey, no alert. Late data: `pending` for about 4 seconds, then it disappears by itself.
+- Rehearsed again on 22 Nov, 01:00 CET, with the redesigned console and all open pull requests merged locally, fresh 28-day
+  backfill, `--speed 2`: incident 6 s after the click (seen at the next data hour), resolved 8 s after the rollback, promo
+  `explained` within 6 s, late data `pending` at once; **Add refund_rate** answered within about 10 s while the clock ran
+  (validation over 30 days of data), and the new `refunds` tree appeared in the graph.
 
 ## If something goes wrong
 
