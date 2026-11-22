@@ -358,7 +358,7 @@
         var sub = [el('span', null, [segText(i.segment) + (moved !== str(i.metric) ? ' · ' + str(i.metric) + (num(ch.delta_pct) != null ? ' ' + pct(ch.delta_pct) : '') : '')])];
         if (eur != null) sub.push(el('span', 'chg eur ' + euroTone(i, eur), [eurText(eur)]));
         var foot = [el('span', null, [str(i.id)]), el('span', null, [st === 'resolved' && i.resolved_at ? shortHour(i.first_seen) + ' to ' + shortHour(i.resolved_at)
-          : (LIVE.indexOf(st) >= 0 ? 'since ' : '') + shortHour(i.first_seen)])];
+          : (LIVE.indexOf(st) >= 0 ? st + ' since ' : '') + shortHour(i.first_seen)])];
         if (i.recurrence_of) foot.push(el('span', 'tag again', ['back again']));
         if (st === 'explained' && obj(i.innocent).kind) foot.push(el('span', 'tag innocent', ['innocent: ' + str(obj(i.innocent).kind)]));
         if (st === 'pending') foot.push(el('span', 'tag innocent', ['data late']));
