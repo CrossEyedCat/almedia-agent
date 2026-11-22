@@ -627,3 +627,19 @@ def test_the_plain_ranking_and_its_sweep_are_scored_from_their_own_folders(tmp_p
     refused("holdout seed 5 has threshold-sweep folders")
     (runs / "seed5-baseline-z8").rmdir()
     assert se.main(args + ["--baseline-z", "8"]) == 0 and out.read_bytes() == before   # restored, the same page
+
+
+def shifted(obj, by=10):
+    """The same runs with seeds 101 and 102 renamed 111 and 112, everywhere they appear."""
+    if isinstance(obj, dict):
+        return {k: (v + by if k == "seed" and v in (101, 102) else shifted(v, by)) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [shifted(x, by) for x in obj]
+    return obj
+
+
+def test_on_a_later_holdout_the_first_version_is_named_as_the_first_holdout_s_and_not_compared(reports, baseline):
+    at_picked = shifted(dict(baseline, z=12.0, second=None))
+    paragraph = blocks(page(shifted(reports), holdout={111, 112}, baseline=at_picked))[4]
+    assert "had been run on the first holdout (seeds 101 to 110, not this page's holdout): it found 94/120 at z 12;" in paragraph
+    assert "this version" not in paragraph.split("The first version")[1]

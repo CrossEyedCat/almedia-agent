@@ -19,50 +19,66 @@ of implying it. Numbers come from `docs/results.md`. Read the whole page once be
 4. Two faults of one metric that begin in the same hour in places sharing a country or a platform can be reported as one
    incident (a known limit, README 3.5); inject them an hour apart or in places that share neither a country nor a platform.
 
-## The 3-minute script (about 340 spoken words)
+## The 3-minute script (about 390 spoken words)
 
 **0:00 The problem.** (Header and graph on screen.)
 "A marketplace has thousands of numbers and nobody can watch them all. Most problems are not outages: the servers are fine, but
-payments fail for Android users in Germany and orders quietly fall. We built a system that watches the business by itself: it notices a
+payments fail for Android users in Germany and orders quietly fall. This system watches the business by itself: it notices a
 change, finds where and why, and explains it. No one asks it questions."
 
-**0:25 How it understands the business.** (Point at the graph, then click one box.)
-"It starts from a graph of how the business works: contribution is fees plus ad spend minus discounts, orders are sessions times conversion,
-conversion is a chain of step rates. Lines have meanings: exact formulas, breakdowns, possible causes, and context such as releases and promos.
-That graph is what lets it trace a change instead of just flagging it."
+**0:20 How it understands the business.** (Point at the graph, then click one box.)
+"It starts from a graph of how the business works: contribution is fees plus ad spend minus discounts, orders are sessions times
+conversion, conversion is a chain of step rates. Lines have meanings: exact formulas, breakdowns, possible causes, and context
+such as releases and promos."
 
-**0:55 A real fault.** (DEMO controls: Payment failure, DE, Android, Inject fault. Fold the controls.)
-"The data is simulated, and I now break it: a payment release goes wrong for Android in Germany. The monitor was not told. It reads the data
-hour by hour, compares each rate with what it expects, and..." (wait a few seconds for the incident) "...it has found it."
+**0:40 A real fault.** (DEMO controls: Payment failure, DE, Android, Inject fault. Fold the controls.)
+"I now break it: a payment release goes wrong for Android in Germany. The monitor was not told. Every hour it judges every step
+rate in 48 slices of the market, and visits and orders against the same hour of earlier weeks..." (wait for the incident)
+"...it has found it."
 
-**1:20 The report.** (Click the incident; the path orders, conversion, payment success lights up.)
-"It says what changed, by how much, what it costs in euros, where along the graph the change sits, which segment it is in,
-and what the cause is: the payments release for Android in Germany, with the evidence and what is still uncertain."
+**1:00 The report.** (Click the incident; the path from orders down to payment success lights up.)
+"It went down the chain like an analyst: traffic normal, add to cart and checkout normal, payment success down, in Android in
+Germany. It says what this costs in euros, and the cause: the payments release, the only one whose system, place and hour all
+fit. The other explanations are listed as rejected, with the reason, and so is what is still uncertain."
 
-**1:50 Not everything unusual is a problem.** (Promo in FR, then a late source.)
-"A planned promo lifts orders in France. It sees the promo in the calendar and records it as explained, no alert. A data source that
-arrives late is held as pending instead of raising a false alarm."
-(Timing, measured on 21 Nov with `--speed 2`: the promo row appears in a few seconds, grey, and stays. The pending row lives only while the data
-is late: the button delays three data hours, each by two, so about 6 to 8 seconds: inject "Arrives 2 h late" and look straight away, or leave this half sentence out.)
+**1:25 How it decides.** (Scroll the trail.)
+"How it decides: it watches every slice it can afford, because a fault in one cell vanishes in the totals. It follows a cause
+link only in the direction the link predicts. It scores four hundred places by how much better one shift explains the counts,
+minus the price of searching. It stops when every candidate the graph offers has been tested, and says how decisive that was."
 
-**2:15 Does it work?** (Open `docs/results.md`.)
-"We scored it against faults we injected ourselves, in twenty 49-day runs. On the ten it had never seen it found 120 of 120 faults,
-all in the right place, 118 with the cause confirmed, with one false alarm in 457 watched days, and all 80 innocent changes stayed quiet."
+**1:50 It closes by itself.** (Pick the fault in **In progress**, click **End it (rollback)**.)
+"Someone rolls the release back. A few normal hours later the incident is resolved, on evidence, not because alerts went quiet."
 
-**2:40 The honest part and the close.**
-"The two causes it did not confirm were stockouts: it named them as the candidate and said what was missing. The data is
-synthetic, from our own simulator, so this is an engineering check, not proof on real traffic.
-What it does today: it watches the business, not the servers."
-(If asked: the ten runs it was built on give the same numbers without the false alarm, four unconfirmed causes in all twenty; the
-false alarm was a one-hour jump in ad click-through in Poland on the web that closed by itself.)
+**2:00 Not everything unusual is a problem.** (Promo in FR; then **Mix shift (innocent)** if time allows.)
+"A planned promo lifts orders in France: it finds the promo in the calendar and checks that the rise has the promo's direction
+and size. No alert. Traffic moving toward one category moves the market's rates too; it measures that the mix explains it. No
+alert either."
+
+**2:15 A new metric.** (Click **Add refund_rate**, then **Add a duplicate metric**.)
+"A new metric arrives as a query, nothing else. The agent finds the formula itself, refunds over orders, the only one of a
+thousand candidates; finds its place in the graph, takes the context of what it is built from and starts watching it. A
+duplicate of an existing rate is refused, with the reason."
+
+**2:35 Does it work, and the close.** (Open `docs/results.md`.)
+"On ten new runs it had never seen it found all 120 faults, all in the right place, 116 with the cause confirmed, with no
+false alarm, and all 80 innocent changes stayed quiet. Eleven stress cases test what those runs do not; nine pass, and the
+two misses are listed. The data
+is our own simulator, so this is an engineering check, not proof on real traffic. It watches the business, not the servers."
 
 ## What not to say
 
-- The new-metric button works end to end for the console's `refund_rate` (README 3.3; run live on 21 Nov). Do not claim more than
-  that section says: the formula search covers one or two column metrics (19 of the 36), without constants.
-- Do not say "100%" without the cause number (118 of 120 on the holdout runs), the false alarm and the caveat on the data.
-- One of those 118 is a tie: the right release is supported and named first, but a routine release of the same system in the same
-  place two hours earlier is left supported beside it. `docs/results.md` lists it; do not say every cause was singled out.
+- The new-metric buttons work end to end for the console's `refund_rate` (found from its query alone) and for a duplicate (refused
+  as an alias); README 3.3. Do not claim more than that section says: the formula search covers one or two column metrics (19 of
+  the 36), without constants, and only a ratio of two columns is watched.
+- "Every slice it can afford" means the seven cuts of README 3.4, not every combination: a fault in a combination no cut holds is
+  found when it is large enough to show in a cut, then narrowed by the localization.
+- Changes under 10 % of a rate are not reported: a payment failure rate rising from 6 % to 14 % is missed (`docs/stress.md`).
+- Do not say "100%" without the cause number (116 of 120 on the holdout runs; the four unconfirmed are stock-outs) and the
+  caveat on the data.
+- No report on these runs supports two causes, but one can: a harmless release of the same system and place within two hours
+  of the onset is supported beside the real one (README 3.5). Do not say every cause is always singled out.
+- The holdout is seeds 111 to 120, made after the last change. Seeds 101 to 110, the first version's holdout, give 120/120,
+  118 causes and 1 false alarm with this version; do not call them independent any more.
 - "Holdout" means new random runs of our own simulator, with the same four kinds of fault. Do not call it a test on real data.
 - Do not call all twenty runs independent: ten are a holdout, ten were used while the brain was built. `docs/results.md` keeps them apart.
 - Do not call the wall-clock mode a demo mode: it moves one data hour per real hour. Use the accelerated clock on stage.
@@ -90,7 +106,7 @@ false alarm was a one-hour jump in ad click-through in Poland on the web that cl
 3. **The loop that runs by itself** (60 s): read, expect, detect, locate, explain, keep tracking; one fault is one incident, updated in place.
 4. **Demo** (60 s): a screenshot of the console with an incident and the lit path.
 5. **Results** (60 s): the table from `docs/results.md`; say the caveat on the same slide.
-6. **What failed and what next** (45 s): four unconfirmed causes in 240 faults (all stockouts); one false alarm; two faults at the same time are not tested; new metrics with constants in the formula; low-traffic hours.
+6. **What failed and what next** (45 s): the misses listed on `docs/results.md` and `docs/stress.md` (changes under 10 %; a fault in two sibling places is named at the place that holds both); stock-outs stop at the stock-out rate because suppliers are not simulated; new metrics with constants; all data is simulated.
 
 ## Recording the video (3:00 at most)
 

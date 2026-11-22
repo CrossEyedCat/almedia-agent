@@ -22,22 +22,33 @@ likely caused it, says what it costs and what is still uncertain, keeps one inci
 the problem is gone, and takes in a new metric while it runs. Nobody asks it a question. All data is simulated.
 
 **Measured** ([`docs/results.md`](docs/results.md)): twenty 49-day runs of our simulator, each with 12 injected faults of
-four kinds, 8 innocent changes and a routine deployment every day. Ten of the runs are a holdout the system had never been
-run on; the table shows those ten.
+four kinds, 8 innocent changes and a routine deployment every day. Ten of the runs (seeds 111 to 120) are a holdout
+generated on Sunday morning after the last change to the brain; the table shows those ten.
 
 | On the 10 holdout runs | Faults found | In the right place | Cause confirmed | False alarms | Innocent changes left alone |
 |---|---:|---:|---:|---:|---:|
-| This system | 120 / 120 | 120 / 120 | 118 / 120 | 1 in 457 watched days | 80 / 80 |
-| Plain ranking, strict threshold | 49 / 120 | 49 / 49 | 31 / 49 | 0 | 80 / 80 |
-| Plain ranking, sensitive threshold | 92 / 120 | 92 / 92 | 74 / 92 | 71 | 40 / 80 |
+| This system | 120 / 120 | 120 / 120 | 116 / 120 | 0 in 457 watched days | 80 / 80 |
+| Plain ranking, strict threshold | 47 / 120 | 46 / 47 | 34 / 47 | 1 | 79 / 80 |
+| Plain ranking, sensitive threshold | 91 / 120 | 87 / 91 | 72 / 91 | 83 | 39 / 80 |
 
-Place and cause are counted among the faults each monitor found: the strict ranking names the right cause for 31 of the
-49 it found, 31 of all 120. False alarms are counts on the same ten runs; for this system that is 1 in 457 watched days.
+Place and cause are counted among the faults each monitor found: the strict ranking names the right cause for 34 of the
+47 it found, 34 of all 120. False alarms are counts on the same ten runs. On the ten runs the brain was built on it also
+finds 120 of 120 with 118 causes and no false alarm. Seeds 101 to 110, the holdout of the first version, were replayed by
+this version too: 120 of 120, 118 causes, 1 false alarm; they are no longer independent, so the page does not count them as
+a holdout. One honest caveat on the new holdout: the integration commit `b9cbe9b` was replayed on it once an hour before the
+final commit `e220dfc`; those results were not read and nothing was changed after them (the last change came from
+`docs/stress.md`).
+
+**Stress cases** ([`docs/stress.md`](docs/stress.md)): what those runs do not test, one seeded case each: a traffic drop
+with unchanged rates, a fault during a promo, an unannounced mix shift, the two recommendations faults, a fault with no
+release or a late one, a fault that comes back and a fault during late data pass (9 of 11). Two fail: a payment fault
+under 10 % of the rate (failures 6 % to 14 %) is not reported, and stock-outs in one category in two countries are named
+as one incident at the whole category.
 
 The plain ranking is the honest baseline: each hour it reports the most anomalous rate and cell against the same hour of
 the previous three weeks, with no calendar, no pooled windows and no investigation. The strict threshold (z 50) was
-picked on the other ten runs by a fixed rule; the sensitive one (z 12) is the first version's threshold, fixed before
-this version ran on the holdout. These are engineering checks on our own simulator, not results on real traffic; the
+picked on the other ten runs by a fixed rule; the sensitive one (z 12) is the first version's threshold, fixed long
+before this holdout existed. These are engineering checks on our own simulator, not results on real traffic; the
 results page lists every miss, the false alarm and one report that leaves a harmless deployment supported next to the
 real cause.
 
@@ -52,18 +63,23 @@ and [`docs/system-overview.html`](docs/system-overview.html) the pictures):
 2. **A monitor** ([`brain/monitor.py`](brain/monitor.py)): every hour it judges each of the 15 atomic rates (funnel
    steps, money, ads, search, feed and stock-outs) in seven cuts of the market (48 series each, 720 in all) against its
    own history, with an exact binomial test where the rate is a share and a spread test where it is not, over one and
-   three hours; it waits for late data instead of judging incomplete hours, and a planned promo explains the change it
-   causes.
+   three hours; it also watches visits and orders as counts against the same hour of earlier weeks, so orders falling
+   with every rate unchanged is caught; it waits for late data instead of judging incomplete hours, and a planned promo
+   explains only a change that has the promo's direction and size.
 3. **An investigator** ([`brain/investigate.py`](brain/investigate.py)): separates the cause from its symptoms along the
    graph, finds the place by scoring up to 479 places (every combination of dimension values that has counts, from one
    country or one platform down to one finest cell), splits the outcome's change over its factors (LMDI) and puts a euro
-   figure on it, and tests every recent release, the calendar, late data and a mix shift as explanations, keeping the
-   rejected ones with the reason. Every step goes into the incident's trail.
-4. **Incidents** ([`brain/incidents.py`](brain/incidents.py)): one file per problem, updated in place, resolved only when
-   the data would show the fault and does not. The console ([`ui/`](ui)) draws the graph, the incidents and the reports.
+   figure on it, checks every step of the order chain in that place top-down (traffic, add to cart, checkout, payment...)
+   and says which one moved, and tests every recent release, the calendar, late data and a mix shift as explanations,
+   keeping the rejected ones with the reason; a mix shift that explains the change is innocent and raises no alert.
+   Every step goes into the incident's trail.
+4. **Incidents** ([`brain/incidents.py`](brain/incidents.py)): one file per problem, also when the fault shows in sibling
+   or crossing series, updated in place, resolved only when the data would show the fault and does not; a fault that comes
+   back is linked to the resolved one, and each incident has a severity from its euro effect. The console ([`ui/`](ui)) draws the graph, the incidents and the reports.
 5. **New metrics** ([`brain/extension.py`](brain/extension.py)): a definition and its SQL dropped into a folder are run
    in a sandbox, checked against its formula (the given one, or one found by search when the definition has none),
-   placed in the graph and watched from the next hour, without a language model.
+   placed in the graph, given the release, calendar and freshness context of what it is built from, and watched from the
+   next hour, without a language model. A duplicate of an existing metric is refused as an alias.
 6. **A language model**, only where it helps a reader: with `--narrate` (an API key in `.env`; the scoring and all
    results run without it) it writes a short summary of each incident from the incident's own evidence; every number in
    it is checked against that evidence, and the template report stays. Seen live on Sunday morning: the console showed
@@ -86,10 +102,10 @@ and start the console with `GRAPH_JSON=data/graph.json .venv/bin/python -m uvico
 
 **Check it yourself**: `python -m pytest` (the whole suite); `python -m scripts.live_check --run runs/check` (the real
 processes for a simulated day and a half with every kind of event and nobody watching; it exits with an error if any check
-fails); and, to rebuild `docs/results.md`: for each seed N in 4 8 9 10 11 12 13 22 71 80 101 102 103 104 105 106 107
-108 109 110, `python -m sim.score generate --seed N --db runs/seedN.db` then
+fails); `python scripts/stress_cases.py` (the stress page); and, to rebuild `docs/results.md`: for each seed N in 4 8 9
+10 11 12 13 22 71 80 111 112 113 114 115 116 117 118 119 120, `python -m sim.score generate --seed N --db runs/seedN.db` then
 `python -m brain.run --replay --db runs/seedN.db --incidents runs/seedN-incidents --fresh`; then
-`python -m scripts.summarize_evaluation --runs runs --seeds 4,8,9,10,11,12,13,22,71,80,101,102,103,104,105,106,107,108,109,110 --holdout 101,102,103,104,105,106,107,108,109,110 --commit <the brain commit you ran> --warmup-hours 80 --baseline --baseline-z 50`.
+`python -m scripts.summarize_evaluation --runs runs --seeds 4,8,9,10,11,12,13,22,71,80,111,112,113,114,115,116,117,118,119,120 --holdout 111,112,113,114,115,116,117,118,119,120 --commit <the brain commit you ran> --warmup-hours 80 --baseline --baseline-z 50`.
 The section "Against a plain ranking" also needs `python -m scripts.baseline_ranking --db runs/seedN.db --out <folder> --z <Z>` run
 into `seedN-baseline` (z 50, every seed), `seedN-baseline-z12-all` (z 12, every seed) and the sweep folders `seedN-baseline-z<Z>`
 (built-on seeds only); without `--baseline` the page is written without that section. The docstring of
@@ -408,7 +424,7 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 - [x] Cause and symptom: a moved metric that another moved metric may affect is read as a symptom.
 - [x] Trail: watch, compare, drill, follow, decompose, check (freshness, calendar, each release), compare, stop; every step with its numbers.
 - [x] Incident JSON written to `incidents/` per the contract; new optional fields `localization`, `explained_share`, hypothesis `score`, driver `role`.
-- [x] Plain-ranking baseline in the scoring harness (3.5, honesty check; `scripts/baseline_ranking.py`, on `docs/results.md` with `--baseline`). On the ten holdout seeds it finds 49 of 120 faults, names the right cause for 31, raises 0 false alarms and stays silent through 80 of 80 innocent events at z 50, the threshold picked for at most 1 false alarm on the built-on seeds (the brain: 0 there, 1 in all runs), and at z 12 it finds 92, names the right cause for 74, raises 71 false alarms and stays silent through 40 of 80, against 120, 118, 1 and 80 for the brain: the gap reflects the brain's statistics, calendar, search over places and investigation together, not the graph alone, and part of the cause gap is the plain ranking's own cause rule: 17 of its 18 unconfirmed causes at z 50 are stock-outs in a category, where that rule names whatever release falls in the window.
+- [x] Plain-ranking baseline in the scoring harness (3.5, honesty check; `scripts/baseline_ranking.py`, on `docs/results.md` with `--baseline`). On the ten holdout seeds it finds 47 of 120 faults, names the right cause for 34, raises 1 false alarm and stays silent through 79 of 80 innocent events at z 50, the threshold picked for at most 1 false alarm on the built-on seeds (the brain: 0 there and 0 in all runs), and at z 12 it finds 91, names the right cause for 72, raises 83 false alarms and stays silent through 39 of 80, against 120, 116, 0 and 80 for the brain: the gap reflects the brain's statistics, calendar, search over places and investigation together, not the graph alone, and part of the cause gap is the plain ranking's own cause rule: 12 of its 13 unconfirmed causes at z 50 are stock-outs in a category, where that rule names whatever release falls in the window.
 
 **A+B checkpoint:** the S1 incident in the UI says DE × Android, `payment_success_rate`, release `payments-sdk`, with numbers. **Done 21 Nov.** In the console the report names DE × Android, the loss in EUR and in orders, the release `payments-sdk 4.2` as the supported cause with its three pieces of evidence (linked system, exact scope, released in the hour the change began), and lists late data and a mix shift as tested and rejected; with harmless releases next to the fault it rejects the release in another place and the release of an unlinked system with the reason. Scoring at `48b6516`, 49-day generator with routine releases, ten seeds (4, 8, 9, 10, 11, 12, 13, 22, 71, 80): 120 of 120 faults detected, 100 % localized, right cause 118 of 120 (the two misses are stockouts whose effect on the add-to-cart rate was too weak to confirm the link), 0 false alarms, 80 of 80 innocent events silent. Not an independent holdout: these seeds were also run while the investigator was built. The current numbers, with ten holdout seeds kept apart, are in `docs/results.md`.
 

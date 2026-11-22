@@ -98,14 +98,14 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
 <body style="margin:0">
 <main class="wrap">
 <header>
-  <div class="eyebrow">Eye of the System · brain · HackLab #2 Berlin · state of 22 Nov 2026, 07:11</div>
+  <div class="eyebrow">Eye of the System · brain · HackLab #2 Berlin · state of 22 Nov 2026, 07:46</div>
   <h1>Monitoring Brain Architecture</h1>
   <p class="lede">The brain is the part of the system that understands the marketplace. It keeps a graph of metrics and how they depend on each other, and computes any metric for any segment from the simulator's data. For every new hour of data it uses both to notice a change, find where it happened and what caused it, and write a report without being asked. It also takes in new metric definitions while it runs.</p>
   <ul class="facts">
     <li><b>36</b> metrics, <b>299</b> typed edges</li>
-    <li><b>19</b> modules, <b>6,225</b> lines</li>
-    <li><b>374</b> test functions in the <b>26</b> test files that import <code>brain/</code></li>
-    <li>holdout: <b>120/120</b> faults detected, <b>120/120</b> localized, <b>118/120</b> with the cause, <b>1</b> false alarm in <b>457</b> watched days, <b>80/80</b> innocent events silent (<a href="results.md">results.md</a>)</li>
+    <li><b>19</b> modules, <b>6,233</b> lines</li>
+    <li><b>375</b> test functions in the <b>26</b> test files that import <code>brain/</code></li>
+    <li>holdout: <b>120/120</b> faults detected, <b>120/120</b> localized, <b>116/120</b> with the cause, <b>0</b> false alarms in <b>457</b> watched days, <b>80/80</b> innocent events silent (<a href="results.md">results.md</a>)</li>
   </ul>
 </header>
 
@@ -615,28 +615,26 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
 
 <section>
   <h2>Measured</h2>
-  <p>A run is a simulated history of 49 days with twelve injected faults and eight innocent events. <code>python -m brain.run --replay</code> walks it hour by hour, and <code>sim/score.py</code> compares the incident files with what was injected. There are twenty runs. The seeds of ten of them are a holdout: no version of the brain was run on them before. The four tiles show the holdout. The runs used the brain at commit <code>e08afe3</code>; the replay path has not changed since (narration runs only live). All data is simulated.</p>
+  <p>A run is a simulated history of 49 days with twelve injected faults and eight innocent events. <code>python -m brain.run --replay</code> walks it hour by hour, and <code>sim/score.py</code> compares the incident files with what was injected. There are twenty runs. The seeds of ten of them are a holdout: no version of the brain was run on them before. The four tiles show the holdout. The runs used the brain at commit <code>e220dfc</code>; the replay path has not changed since (narration runs only live). All data is simulated.</p>
   <div class="tiles">
     <div><span class="big">120/120</span><span class="what">faults detected</span><span class="why">120/120 of them in the injected place. Mean delay 0.14 h after the first affected hour of data.</span></div>
-    <div><span class="big">118/120</span><span class="what">with the cause</span><span class="why">The report names the injected cause as supported. A cause that is only plausible does not count.</span></div>
-    <div><span class="big">1</span><span class="what">false alarm in 457 watched days</span><span class="why">An incident that matches no injected fault.</span></div>
+    <div><span class="big">116/120</span><span class="what">with the cause</span><span class="why">The report names the injected cause as supported. A cause that is only plausible does not count.</span></div>
+    <div><span class="big">0</span><span class="what">false alarms in 457 watched days</span><span class="why">An incident that matches no injected fault.</span></div>
     <div><span class="big">80/80</span><span class="what">innocent events silent</span><span class="why">Promos and late data: explained or held, no alert.</span></div>
   </div>
   <div class="tbl">
     <table>
       <thead><tr><th>Seeds</th><th class="num">Runs</th><th class="num">Faults detected</th><th class="num">Localized</th><th class="num">With the cause</th><th class="num">False alarms</th><th class="num">Watched days</th><th class="num">Innocent events silent</th><th class="num">Mean delay (h)</th></tr></thead>
       <tbody>
-<tr><td>Holdout (run once)</td><td class="num">10</td><td class="num">120/120</td><td class="num">120/120</td><td class="num">118/120</td><td class="num">1</td><td class="num">457</td><td class="num">80/80</td><td class="num">0.14</td></tr>
+<tr><td>Holdout (run once)</td><td class="num">10</td><td class="num">120/120</td><td class="num">120/120</td><td class="num">116/120</td><td class="num">0</td><td class="num">457</td><td class="num">80/80</td><td class="num">0.14</td></tr>
 <tr><td>Used while the brain was built</td><td class="num">10</td><td class="num">120/120</td><td class="num">120/120</td><td class="num">118/120</td><td class="num">0</td><td class="num">457</td><td class="num">80/80</td><td class="num">0.22</td></tr>
-<tr><td>All</td><td class="num">20</td><td class="num">240/240</td><td class="num">240/240</td><td class="num">236/240</td><td class="num">1</td><td class="num">913</td><td class="num">160/160</td><td class="num">0.18</td></tr>
+<tr><td>All</td><td class="num">20</td><td class="num">240/240</td><td class="num">240/240</td><td class="num">234/240</td><td class="num">0</td><td class="num">913</td><td class="num">160/160</td><td class="num">0.18</td></tr>
       </tbody>
     </table>
   </div>
   <p>What is not perfect:</p>
   <ul class="read">
-    <li><b>Causes not confirmed.</b> In 4 of the 240 detected faults (2 of them on holdout seeds) the report does not name the injected cause as supported. All 4 are <code>stockout_surge</code> faults: beauty, seed 106 (holdout); sports, seed 109 (holdout); sports, seed 4; electronics, seed 10. Each is detected and localized, and its report says that no cause is confirmed yet. Without a release to point at, a moved rate counts as the cause only when the second movement that a cause link of the graph predicts shows in the data.</li>
-    <li><b>One false alarm.</b> <code>ad_ctr</code> in PL × Web, seed 110 (holdout), first seen 2026-11-05T20:00:00Z, status resolved. That is 1 in 913 watched days over all runs. Watched days leave out the first 80 hours of each run, the history a replay needs before its first judgement.</li>
-    <li><b>One tie.</b> In 1 of the 236 reports with the right cause a second cause is supported beside it: <code>payment_failure</code> in DE × Android, seed 107 (holdout). A harmless release of the same system in the same place within two hours of the onset is supported next to the real one: a known limit (project README, section 3.5).</li>
+    <li><b>Causes not confirmed.</b> In 6 of the 240 detected faults (4 of them on holdout seeds) the report does not name the injected cause as supported. All 6 are <code>stockout_surge</code> faults: sports, seed 4; electronics, seed 10; beauty, seed 112 (holdout); home, seed 115 (holdout); sports, seed 118 (holdout); home, seed 119 (holdout). Each is detected and localized, and its report says that no cause is confirmed yet. Without a release to point at, a moved rate counts as the cause only when the second movement that a cause link of the graph predicts shows in the data.</li>
     <li><b>What the runs do not test.</b> Holdout means new random seeds of the same simulator: the same four kinds of fault (<code>ad_budget_exhausted</code>, <code>payment_failure</code>, <code>search_regression</code>, <code>stockout_surge</code>) and the same scorer. No two events overlap in these schedules, and data that never arrives is not in them. The hand-over of a new metric is not part of the runs; it has its own tests (<code>tests/test_extension.py</code>, 49 test functions).</li>
   </ul>
   <p>The results per run and per kind of fault and the full list of limits are in <a href="results.md">docs/results.md</a>. That page and <code>docs/results.json</code> are written by <code>scripts/summarize_evaluation.py</code>; <code>python -m sim.score score</code> reports one run.</p>
@@ -689,7 +687,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
 <tr><td><code>attribution.py</code></td><td class="num">131</td><td>Splits an outcome&#x27;s change over the atomic factors along every path of the formulas: LMDI, with Shapley as the fallback</td><td><code>attribute, leaves, expand</code></td><td><code>test_attribution</code></td></tr>
 <tr><td><code>impact.py</code></td><td class="num">87</td><td>The outcome recomputed through the formulas of the graph with some rates replaced by other values</td><td><code>tree_metrics, recompute, estimate</code></td><td><code>test_attribution, test_incidents, test_overlap</code></td></tr>
 <tr><th colspan="5">Incidents and the loop</th></tr>
-<tr><td><code>incidents.py</code></td><td class="num">569</td><td>Groups alerts into incidents and keeps each incident in one file from open to resolved; writes the explained and pending records</td><td><code>Book.update, Incident, write_json</code></td><td><code>test_incidents, test_extension, test_incidents_book, test_investigate and 3 more</code></td></tr>
+<tr><td><code>incidents.py</code></td><td class="num">577</td><td>Groups alerts into incidents and keeps each incident in one file from open to resolved; writes the explained and pending records</td><td><code>Book.update, Incident, write_json</code></td><td><code>test_incidents, test_extension, test_incidents_book, test_investigate and 3 more</code></td></tr>
 <tr><td><code>run.py</code></td><td class="num">157</td><td>The loop: live next to the simulator&#x27;s clock, or a replay of a finished database hour by hour</td><td><code>python -m brain.run, live, replay</code></td><td><code>test_extension, test_incidents, test_narrate, test_overlap</code></td></tr>
 <tr><td><code>narrate.py</code></td><td class="num">262</td><td>With --narrate (live only): a language model writes a short narration of each incident from its own evidence; every number is checked against it, and the template report stays</td><td><code>Narrator.submit, Narrator.ready, evidence, numbers_backed</code></td><td><code>test_narrate</code></td></tr>
 <tr><th colspan="5">New metrics</th></tr>
