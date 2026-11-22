@@ -14,29 +14,51 @@ For a rate in a series (one cut of the dimensions, one value combination):
 - hours whose sources have not arrived are held: not judged, not healthy;
 - the last hours are re-read on every tick, so a rewritten past is seen too.
 
+Volumes (sessions, orders) are judged as counts, in the whole market, per country, per platform and
+per country x platform, because an outage or a lost app-store listing removes visits and orders
+without moving any rate:
+
+- expected count of an hour = mean of the same hour of the week over the previous `volume_weeks`
+  weeks (this absorbs the daily and weekly cycle), leaving out weeks that were flagged, covered by a
+  calendar event or part of an open incident;
+- the spread is negative-binomial: variance = (mu + a * mu^2) * (1 + 1/k) for a mean of k weeks, with
+  the extra-Poisson part `a` estimated per series from how the same hour differed between weeks;
+- an hour is bad on the same rules as a rate (p below 1e-7 alone or summed with the two hours
+  before), and the count moved by at least `volume_min_effect` (20 %);
+- an orders alert is dropped when the sessions or a rate in the same place already moved in that
+  episode: the orders are then the symptom of that change, not a second problem.
+
 The monitor reports alerts; brain/incidents.py turns them into incident files.
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
+from scipy import stats as sps
 
 from brain.clock import HOUR, Clock
 from brain.data import Store, iso_hour
 from brain.evaluator import Evaluator
 from brain.graph import MetricGraph
 from brain.metric_spec import DIMENSIONS
-from brain.stats import binomial_surprise, ratio_surprise, robust_scale, scaled_residual
+from brain.stats import LN10, _z_from_log_tail, binomial_surprise, ratio_surprise, robust_scale, scaled_residual
 
 MIN_DISPERSION_HOURS = 48
 CELL_PRIOR_VOLUME = 20.0   # a finest cell's own history counts against this much of the pooled rate
+WEEK = 168                 # hours
 
 CUTS: tuple[tuple[str, ...], ...] = (
     (), ("country",), ("platform",), ("category",), ("channel",),
     ("country", "platform"), ("country", "category"),
 )
+VOLUMES: tuple[str, ...] = ("sessions", "orders")
+VOLUME_CUTS: tuple[tuple[str, ...], ...] = ((), ("country",), ("platform",), ("country", "platform"))
+VOLUME_MIN_SLOTS = 24       # hours of the week seen in at least two weeks before `a` is trusted
+VOLUME_MIN_DISPERSION = 1e-4  # a: never assume counts steadier than a 1 % hour-to-hour spread
+VOLUME_TRIM = 5.0           # a week-to-week spread this many times the fitted one is left out of the fit
 
 
 @dataclass(frozen=True)
@@ -57,6 +79,11 @@ class Config:
     release_watch_hours: int = 24     # after a release, its metrics are tested in its scope this long
     release_min_surprise: float = 4.0  # one question per release and metric: p below 1e-4 is enough
     cuts: tuple[tuple[str, ...], ...] = CUTS
+    volumes: tuple[str, ...] = VOLUMES        # counts judged against the same hour of earlier weeks
+    volume_cuts: tuple[tuple[str, ...], ...] = VOLUME_CUTS
+    volume_weeks: int = 3                     # the expected count: mean of the same hour over this many weeks
+    volume_min_effect: float = 0.20           # and the count moved by at least 20 %
+    volume_min_expected: float = 30.0         # on at least this many expected events in the window
 
 
 @dataclass(frozen=True)
@@ -69,19 +96,26 @@ class Watched:
     counts: bool        # numerator and denominator are both counts of events
 
 
+@dataclass(frozen=True)
+class Volume:
+    metric: str
+    column: str
+    sources: tuple[str, ...]   # judged only when these have arrived (for orders: every watched rate's)
+
+
 @dataclass
 class Alert:
     metric: str
-    kind: str                 # "proportion", "excess" or "ratio": the test that was used
+    kind: str                 # "proportion", "excess" or "ratio": the test that was used; "volume" for a count
     segment: dict
     onset: pd.Timestamp       # first hour of the episode
     last_bad: pd.Timestamp    # newest bad hour
     hours: int                # bad hours in the episode
-    observed: float           # rate now: over the newest bad hours (at most three)
-    expected: float           # baseline rate
-    numerator: float          # counts behind `observed`
-    denominator: float
-    episode_observed: float   # rate over the whole episode
+    observed: float           # rate now: over the newest bad hours (at most three); a volume: count per hour
+    expected: float           # baseline rate; a volume: expected count per hour over the same hours
+    numerator: float          # counts behind `observed`; a volume: observed count summed over those hours
+    denominator: float        # a volume: expected count summed over those hours
+    episode_observed: float   # rate over the whole episode; a volume: count per hour over the episode
     score: float              # strongest surprise in the episode, -log10 p
     z: float                  # normal-equivalent of that
     explained_by: dict | None = None   # a calendar row that covers it
@@ -138,6 +172,43 @@ def watch_list(graph: MetricGraph) -> list[Watched]:
         counts = graph.specs[num[0]].unit == "count" and graph.specs[den[0]].unit == "count"
         out.append(Watched(name, ncol, dcol, tuple(graph.sources(name)), calendar, counts))
     return out
+
+
+def volume_list(graph: MetricGraph, watched: list[Watched], names=VOLUMES) -> list[Volume]:
+    """The counts judged as volumes. Orders wait for every source a rate is read from: an orders
+    change is judged only once the rates that could explain it are judged too."""
+    every = {s for w in watched for s in w.sources}
+    out = []
+    for name in names:
+        spec = graph.specs.get(name)
+        if spec is None or not spec.column:
+            continue
+        own = set(graph.sources(name))
+        out.append(Volume(name, spec.column, tuple(sorted(own if name == "sessions" else own | every))))
+    return out
+
+
+def count_surprise(x, mean, var):
+    """Two-sided tail of a count against a negative binomial with this mean and variance
+    (variance above the mean: extra-Poisson spread). Returns (surprise, z) like brain/stats.py."""
+    x, mean, var = (np.asarray(a, dtype=float) for a in (x, mean, var))
+    ok = np.isfinite(x) & np.isfinite(mean) & np.isfinite(var) & (mean > 0) & (var > mean)
+    xx, mm, vv = np.where(ok, np.round(x), 0.0), np.where(ok, mean, 1.0), np.where(ok, var, 2.0)
+    xx = np.maximum(xx, 0.0)
+    r = mm ** 2 / (vv - mm)
+    p = r / (r + mm)
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        lower = sps.nbinom.logcdf(xx, r, p)
+        upper = sps.nbinom.logsf(xx - 1, r, p)
+        # far in the tail the exact value underflows: the normal tail keeps it finite and ordered
+        approx = sps.norm.logsf(np.abs(xx - mm) / np.sqrt(vv))
+    lower = np.where(np.isfinite(lower), lower, np.where(xx < mm, approx, 0.0))
+    upper = np.where(np.isfinite(upper), upper, np.where(xx > mm, approx, 0.0))
+    tail = np.minimum(np.minimum(lower, upper), 0.0)
+    surprise = np.maximum(-(tail + np.log(2.0)) / LN10, 0.0)
+    z = _z_from_log_tail(np.minimum(tail + np.log(2.0), 0.0) - np.log(2.0), np.where(upper < lower, 1.0, -1.0))
+    z = np.where(xx == np.round(mm), 0.0, z)
+    return np.where(ok, surprise, np.nan), np.where(ok, z, np.nan)
 
 
 class Cube:
@@ -207,12 +278,14 @@ class Monitor:
         self.config = config
         self.evaluator = Evaluator(graph, store)
         self.watched = watch_list(graph)
-        self.sources = sorted({s for w in self.watched for s in w.sources})
-        columns = sorted({c for w in self.watched for c in (w.numerator, w.denominator)})
-        self.cubes = {cut: Cube(cut, columns) for cut in config.cuts}
+        self.volumes = volume_list(graph, self.watched, config.volumes)
+        self.sources = sorted({s for w in self.watched for s in w.sources} | {s for v in self.volumes for s in v.sources})
+        columns = sorted({c for w in self.watched for c in (w.numerator, w.denominator)} | {v.column for v in self.volumes})
+        self.cubes = {cut: Cube(cut, columns) for cut in dict.fromkeys(tuple(config.cuts) + tuple(config.volume_cuts))}
         self.leaf = Cube(DIMENSIONS, columns)         # the finest cells: not judged, kept for localization
         self._flags: dict[tuple, np.ndarray] = {}     # (metric, cut) -> bad hours [hour, series]
         self._rates: dict[tuple, tuple] = {}          # (metric, cut) -> (rate, usable) of the last tick
+        self._vols: dict[tuple, dict] = {}            # (volume, cut) -> {"a", "ok", "usable"} of the last tick
         self._kinds: dict[str, str] = {}
         self._loaded_until: pd.Timestamp | None = None
         self.open_episodes: list[tuple] = []      # (metric, segment, onset) of incidents that are still open
@@ -224,7 +297,8 @@ class Monitor:
         joined is judged from the next tick, a rate that left is dropped. Returns the names that are new."""
         known = {w.metric for w in self.watched}
         self.watched = watch_list(self.graph)
-        self.sources = sorted({s for w in self.watched for s in w.sources})
+        self.volumes = volume_list(self.graph, self.watched, self.config.volumes)
+        self.sources = sorted({s for w in self.watched for s in w.sources} | {s for v in self.volumes for s in v.sources})
         cubes = list(self.cubes.values()) + [self.leaf]
         missing = sorted({c for w in self.watched for c in (w.numerator, w.denominator)} - set(cubes[0].columns))
         if missing:
@@ -237,7 +311,8 @@ class Monitor:
     def _refresh(self, now: pd.Timestamp) -> None:
         cfg = self.config
         if self._loaded_until is None:
-            start = now - cfg.lookback_hours * HOUR
+            # the volumes compare an hour with the same hour `volume_weeks` weeks back
+            start = now - max(cfg.lookback_hours, cfg.volume_weeks * WEEK + cfg.reread_hours) * HOUR
         else:
             start = max(min(self._loaded_until, now) - cfg.reread_hours * HOUR, self.cubes[()].t0)
         for cut, cube in list(self.cubes.items()) + [(self.leaf.dims, self.leaf)]:
@@ -330,16 +405,27 @@ class Monitor:
         judged_hours = [self.cubes[()].hour(r) for r in range(j0, rows)]
         tick.late = clock.late(judged_hours, self.sources)
         events = tick.events = self._calendar(now)
-        for cube in self.cubes.values():
+        volumes = []
+        for cut, cube in self.cubes.items():
             cal = self._calendar_mask(cube, events)
-            for w in self.watched:
-                late_rows = [cube.row(h) for h, srcs in tick.late.items() if srcs & set(w.sources)]
-                for h, srcs in tick.late.items():
-                    if srcs & set(w.sources):
-                        tick.held.setdefault(h, set()).add(w.metric)
-                tick.alerts += self._judge(cube, w, j0, late_rows, cal, events)
-                tick.judged_series += len(cube.keys)
+            if cut in cfg.cuts:
+                for w in self.watched:
+                    late_rows = [cube.row(h) for h, srcs in tick.late.items() if srcs & set(w.sources)]
+                    for h, srcs in tick.late.items():
+                        if srcs & set(w.sources):
+                            tick.held.setdefault(h, set()).add(w.metric)
+                    tick.alerts += self._judge(cube, w, j0, late_rows, cal, events)
+                    tick.judged_series += len(cube.keys)
+            if cut in cfg.volume_cuts:
+                for v in self.volumes:
+                    late_rows = [cube.row(h) for h, srcs in tick.late.items() if srcs & set(v.sources)]
+                    for h, srcs in tick.late.items():
+                        if srcs & set(v.sources):
+                            tick.held.setdefault(h, set()).add(v.metric)
+                    volumes += self._judge_volume(cube, v, j0, late_rows, cal, events)
+                    tick.judged_series += len(cube.keys)
         tick.alerts += self._release_watch(now, tick, events)
+        tick.alerts += self._symptoms_dropped(volumes, tick.alerts)
         return tick
 
     def _judge(self, cube: Cube, w: Watched, j0: int, late_rows: list[int], cal: np.ndarray,
@@ -411,15 +497,7 @@ class Monitor:
             better = hit & ~(best >= score)
             best = np.where(better, score, best)
             best_z = np.where(better, z, best_z)
-            bad |= hit
-            # a sum over several hours says "somewhere in here": an earlier hour of the window is bad
-            # too when it alone moved the same way, by at least min_effect, and is itself unusual
-            for i in range(bad.shape[0]):
-                for back in range(1, width):
-                    if i - back >= 0:
-                        with np.errstate(invalid="ignore"):
-                            bad[i - back] |= hit[i] & (np.sign(single[i - back]) == np.sign(effect[i]))                                 & (np.abs(single[i - back]) >= cfg.min_effect) \
-                                & (single_score[i - back] >= cfg.onset_min_surprise)
+            self._mark(bad, hit, effect, single, single_score, width, cfg.min_effect)
         flags[j0:rows] = bad
 
         # one alert per series whose newest bad hour is recent
@@ -429,12 +507,7 @@ class Monitor:
             last = int(np.flatnonzero(col)[-1])
             if last < rows - cfg.active_hours:
                 continue
-            first = last
-            r = last
-            while r >= 0 and first - r <= cfg.episode_gap_hours:
-                if col[r]:
-                    first = r
-                r -= 1
+            first = self._episode_start(col, last, cfg.episode_gap_hours)
             ep_n = np.nansum(N[first:last + 1, k])
             ep_d = np.nansum(D[first:last + 1, k])
             newest = max(first, last - max(cfg.windows) + 1)   # the state now: the newest bad hours
@@ -454,6 +527,216 @@ class Monitor:
                 alert.explained_by = self._covering_event(alert, events)
             alerts.append(alert)
         return alerts
+
+    def _mark(self, bad, hit, effect, single, single_score, width: int, min_effect: float) -> None:
+        """Mark the bad hours of one window width, in place."""
+        bad |= hit
+        # a sum over several hours says "somewhere in here": an earlier hour of the window is bad
+        # too when it alone moved the same way, by at least min_effect, and is itself unusual
+        for i in range(bad.shape[0]):
+            for back in range(1, width):
+                if i - back >= 0:
+                    with np.errstate(invalid="ignore"):
+                        bad[i - back] |= hit[i] & (np.sign(single[i - back]) == np.sign(effect[i])) \
+                            & (np.abs(single[i - back]) >= min_effect) \
+                            & (single_score[i - back] >= self.config.onset_min_surprise)
+
+    @staticmethod
+    def _episode_start(col: np.ndarray, last: int, gap: int) -> int:
+        """First hour of the episode that ends at `last`: bad hours at most `gap` hours apart."""
+        first = r = last
+        while r >= 0 and first - r <= gap:
+            if col[r]:
+                first = r
+            r -= 1
+        return first
+
+    # ---------------------------------------------------------------- volumes
+    def _volume_usable(self, metric: str, cube: Cube, X: np.ndarray, flags: np.ndarray, cal: np.ndarray) -> np.ndarray:
+        """Hours that may serve as an earlier week: counted, not flagged, no calendar event, no open incident."""
+        usable = np.isfinite(X) & (X >= 0) & ~flags & ~cal
+        for m, segment, onset in self.open_episodes:
+            if m == metric and set(segment) == set(cube.dims):
+                k = cube._kidx.get(tuple(segment[d] for d in cube.dims))
+                if k is not None:
+                    usable[max(cube.row(onset), 0):, k] = False
+        return usable
+
+    def _volume_expected(self, X: np.ndarray, usable: np.ndarray, rows: np.ndarray):
+        """Mean of the same hour of the week over the previous weeks, and how many weeks it has.
+        X and usable are [hour, series]; rows are the hours asked about."""
+        weeks = self.config.volume_weeks
+        total = np.zeros((len(rows), X.shape[1]))
+        seen = np.zeros((len(rows), X.shape[1]))
+        for w in range(1, weeks + 1):
+            back = rows - w * WEEK
+            valid = (back >= 0) & (back < X.shape[0])
+            if not valid.any():
+                continue
+            b = back[valid]
+            u = usable[b]
+            total[valid] += np.where(u, X[b], 0.0)
+            seen[valid] += u
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(seen > 0, total / seen, np.nan), seen
+
+    def _volume_dispersion(self, X: np.ndarray, usable: np.ndarray, j0: int) -> np.ndarray:
+        """Extra-Poisson spread `a` per series (variance = mu + a mu^2), from how the same hour of the
+        week differed between the previous weeks. A week that differs wildly (a past fault nobody
+        flagged) is left out of the fit. NaN when too few hours were seen twice."""
+        weeks = self.config.volume_weeks
+        lo = j0 - weeks * WEEK
+        block = np.full((weeks * WEEK, X.shape[1]), np.nan)
+        s0 = max(lo, 0)
+        if j0 > s0:
+            block[s0 - lo:] = np.where(usable[s0:j0], X[s0:j0], np.nan)
+        block = block.reshape(weeks, WEEK, X.shape[1])
+        m = np.isfinite(block).sum(axis=0)
+        with np.errstate(invalid="ignore", divide="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            mean = np.nanmean(block, axis=0)
+            var = np.nanvar(block, axis=0, ddof=1)
+        keep = (m >= 2) & np.isfinite(mean) & np.isfinite(var) & (mean > 0)
+        a = np.full(X.shape[1], np.nan)
+        for _ in range(2):
+            wgt = np.where(keep, m - 1, 0)
+            num = (wgt * np.where(keep, var - mean, 0.0)).sum(axis=0)
+            den = (wgt * np.where(keep, mean, 0.0) ** 2).sum(axis=0)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                a = np.maximum(np.where(den > 0, num / den, np.nan), VOLUME_MIN_DISPERSION)
+                fitted = mean + a * mean ** 2
+                keep = keep & (var <= VOLUME_TRIM * fitted)
+        return np.where(keep.sum(axis=0) >= VOLUME_MIN_SLOTS, a, np.nan)
+
+    def _judge_volume(self, cube: Cube, v: Volume, j0: int, late_rows: list[int], cal: np.ndarray,
+                      events: list[dict]) -> list[Alert]:
+        cfg = self.config
+        rows = cube.rows
+        X = cube.data[v.column].copy()
+        for r in late_rows:
+            X[r, :] = np.nan
+        flags = self._flag(v.metric, cube)
+        usable = self._volume_usable(v.metric, cube, X, flags, cal)
+        usable[j0:] = False                                   # the hours being judged are not history
+        a = self._volume_dispersion(X, usable, j0)
+        lo = max(j0 - max(cfg.windows) + 1, 0)
+        E, seen = self._volume_expected(X, usable, np.arange(lo, rows))
+        with np.errstate(invalid="ignore", divide="ignore"):
+            V = (E + a * E ** 2) * (1.0 + 1.0 / seen)
+        ok = np.isfinite(a)
+        self._vols[(v.metric, cube.dims)] = {"a": a, "ok": ok, "usable": usable}
+
+        bad = np.zeros((rows - j0, len(cube.keys)), dtype=bool)
+        best = np.full(bad.shape, np.nan)
+        best_z = np.full(bad.shape, np.nan)
+        single = np.full(bad.shape, np.nan)
+        single_score = np.full(bad.shape, np.nan)
+        for width in cfg.windows:
+            Xw, Ew, Vw = (np.full(bad.shape, np.nan) for _ in range(3))
+            for i, r in enumerate(range(j0, rows)):
+                if r - width + 1 >= lo:
+                    Xw[i] = X[r - width + 1:r + 1].sum(axis=0)     # NaN if any hour is missing or held
+                    Ew[i] = E[r - width + 1 - lo:r + 1 - lo].sum(axis=0)
+                    Vw[i] = V[r - width + 1 - lo:r + 1 - lo].sum(axis=0)
+            score, z = count_surprise(Xw, Ew, Vw)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                effect = Xw / Ew - 1.0
+                enough = (score >= cfg.min_surprise) & (Ew >= cfg.volume_min_expected)
+            if width == 1:
+                single, single_score = effect, score
+            hit = ok & enough & (np.abs(effect) >= cfg.volume_min_effect)
+            better = hit & ~(best >= score)
+            best = np.where(better, score, best)
+            best_z = np.where(better, z, best_z)
+            self._mark(bad, hit, effect, single, single_score, width, cfg.volume_min_effect)
+        flags[j0:rows] = bad
+
+        alerts = []
+        for k in np.flatnonzero(bad.any(axis=0)):
+            col = flags[:, k]
+            last = int(np.flatnonzero(col)[-1])
+            if last < rows - cfg.active_hours:
+                continue
+            first = self._episode_start(col, last, cfg.episode_gap_hours)
+            span = np.arange(first, last + 1)
+            ep_x = np.nansum(X[span, k])
+            newest = np.arange(max(first, last - max(cfg.windows) + 1), last + 1)
+            ex, _ = self._volume_expected(X[:, k:k + 1], usable[:, k:k + 1], newest)
+            now_x, now_e = float(np.nansum(X[newest, k])), float(np.nansum(ex))
+            recent = slice(max(first, j0) - j0, last - j0 + 1)
+            i = int(np.nanargmax(best[recent, k])) if np.isfinite(best[recent, k]).any() else None
+            alert = Alert(
+                metric=v.metric, kind="volume", segment=cube.segment(k), onset=cube.hour(first),
+                last_bad=cube.hour(last), hours=int(col[first:last + 1].sum()),
+                observed=now_x / len(newest), expected=now_e / len(newest), numerator=now_x, denominator=now_e,
+                episode_observed=float(ep_x) / len(span),
+                score=float(best[recent, k][i]) if i is not None else 0.0,
+                z=float(best_z[recent, k][i]) if i is not None else 0.0)
+            alert.explained_by = self._covering_event(alert, events)
+            alerts.append(alert)
+        return alerts
+
+    def _symptoms_dropped(self, volumes: list[Alert], alerts: list[Alert]) -> list[Alert]:
+        """Orders = sessions x conversion. When the sessions or a rate in a compatible place moved in
+        the same hours, the orders are its symptom: they go into that alert's story, not a new one."""
+        sessions = [a for a in volumes if a.metric == "sessions"]
+        out = []
+        for a in volumes:
+            if a.metric == "orders":
+                if any(compatible(a.segment, s.segment) and (s.effect < 0) == (a.effect < 0) for s in sessions):
+                    continue
+                if any(compatible(a.segment, r.segment) for r in alerts if r.kind != "volume"):
+                    continue
+                if self._rate_flagged(a):
+                    continue
+            out.append(a)
+        return out
+
+    def _rate_flagged(self, alert: Alert) -> bool:
+        """A watched rate was bad in a compatible series during the alert's episode."""
+        rates = {w.metric for w in self.watched}
+        for (metric, cut), flags in self._flags.items():
+            if metric not in rates:
+                continue
+            cube = self.cubes[cut]
+            r0, r1 = max(cube.row(alert.onset), 0), min(cube.row(alert.last_bad) + 1, flags.shape[0])
+            if r1 <= r0:
+                continue
+            for k, key in enumerate(cube.keys[:flags.shape[1]]):
+                if compatible(alert.segment, dict(zip(cut, key))) and flags[r0:r1, k].any():
+                    return True
+        return False
+
+    def _volume_series(self, metric: str, segment: dict):
+        for (m, cut), state in self._vols.items():
+            if m == metric and set(cut) == set(segment):
+                cube = self.cubes[cut]
+                k = cube._kidx.get(tuple(segment[d] for d in cut))
+                if k is not None and k < len(state["ok"]) and state["ok"][k]:
+                    return cube, k, state
+        return None
+
+    def _volume_hours(self, metric: str, segment: dict, start, end, skip=()):
+        """Observed count, expected count and its variance per hour of a volume series over [start, end)."""
+        found = self._volume_series(metric, segment)
+        v = next((x for x in self.volumes if x.metric == metric), None)
+        if found is None or v is None:
+            return None
+        cube, k, state = found
+        r0, r1 = max(cube.row(start), 0), min(cube.row(end), cube.rows)
+        if r1 <= r0:
+            return None
+        rows = np.arange(r0, r1)
+        x = cube.data[v.column][r0:r1, k].astype(float)
+        usable = state["usable"][:, k:k + 1]
+        e, seen = self._volume_expected(cube.data[v.column][:usable.shape[0], k:k + 1], usable, rows)
+        e, seen = e[:, 0], seen[:, 0]
+        a = float(state["a"][k])
+        with np.errstate(invalid="ignore", divide="ignore"):
+            var = (e + a * e ** 2) * (1.0 + 1.0 / seen)
+        held = {cube.row(h) for h in skip}
+        keep = np.isfinite(x) & np.isfinite(e) & np.isfinite(var) & np.array([r not in held for r in rows])
+        return cube, rows[keep], x[keep], e[keep], var[keep]
 
     def _release_watch(self, now: pd.Timestamp, tick: Tick, events: list[dict]) -> list[Alert]:
         """A release is a reason to look closer. The hourly scan asks thousands of questions an hour
@@ -549,12 +832,26 @@ class Monitor:
 
     def expected_rate(self, metric: str, segment: dict) -> float | None:
         """The baseline rate of a metric in a watched series, from the last tick."""
+        if self._is_volume(metric):
+            return None    # a count has no single expected rate: its expected count depends on the hour
         found = self._series(metric, segment)
         return float(found[2][0][found[1]]) if found else None
 
+    def _is_volume(self, metric: str) -> bool:
+        return any(v.metric == metric for v in self.volumes) and not any(w.metric == metric for w in self.watched)
+
     def hourly(self, metric: str, segment: dict, start, end, skip=()) -> list[dict]:
         """The metric in a watched series hour by hour over [start, end), each hour against the
-        baseline: which way it went and how surely. Hours without data or still held are left out."""
+        baseline: which way it went and how surely. Hours without data or still held are left out.
+        A volume: the count of each hour against the same hour of the previous weeks."""
+        if self._is_volume(metric):
+            got = self._volume_hours(metric, segment, start, end, skip)
+            if got is None:
+                return []
+            cube, rows, x, e, var = got
+            score, z = count_surprise(x, e, var)
+            return [{"hour": cube.hour(int(r)), "observed": float(x[i]), "expected": float(e[i]),
+                     "score": float(score[i]), "z": float(z[i])} for i, r in enumerate(rows) if np.isfinite(score[i])]
         found = self._series(metric, segment)
         w = next((x for x in self.watched if x.metric == metric), None)
         if not found or w is None:
@@ -575,6 +872,8 @@ class Monitor:
                 for i in range(len(d)) if np.isfinite(score[i]) and (r0 + i) not in held]
 
     def has_series(self, metric: str, segment: dict) -> bool:
+        if self._is_volume(metric):
+            return self._volume_series(metric, segment) is not None
         return self._series(metric, segment) is not None
 
     def cells(self, metric: str, start, end, skip=()) -> dict | None:
@@ -615,10 +914,18 @@ class Monitor:
         return {"dims": cube.dims, "keys": list(cube.keys), "num": n[r0:r1].sum(axis=0), "den": d[r0:r1].sum(axis=0),
                 "rate": rate, "history_den": hist_d, "kind": kind, "shift": shift, "unit_var": unit_var}
 
-    def window(self, metric: str, segment: dict, start, end, skip=(), as_rate: float | None = None) -> dict | None:
+    def window(self, metric: str, segment: dict, start, end, skip=(), as_rate: float | None = None,
+               as_ratio: float | None = None) -> dict | None:
         """One targeted look: the metric in a watched series over [start, end) against its baseline.
         Used to follow a link of the graph from a metric that moved to one it may affect, where a
-        single question is asked and the bar can be far lower than for the hourly scan."""
+        single question is asked and the bar can be far lower than for the hourly scan.
+
+        A volume (sessions, orders) answers in counts per hour: observed and expected are counts per
+        hour, numerator and denominator the observed and expected counts summed over the window, and
+        `as_rate` is a count per hour at the alert's expected level (`as_ratio`, the faulty count as a
+        share of the expected one, is the better question for a count, whose level follows the hour)."""
+        if self._is_volume(metric):
+            return self._volume_window(metric, segment, start, end, skip, as_rate, as_ratio)
         found = self._series(metric, segment)
         w = next((x for x in self.watched if x.metric == metric), None)
         if not found or w is None:
@@ -636,6 +943,8 @@ class Monitor:
         if sum_d <= 0:
             return None
         base = float(rate[k]) - shift
+        if as_rate is None and as_ratio is not None:
+            as_rate = as_ratio * float(rate[k])
         if kind == "ratio":
             score, z = ratio_surprise(np.array([sum_n]), np.array([sum_d]), np.array([base]), np.array([scale[k]]))
         else:
@@ -650,5 +959,25 @@ class Monitor:
                 telling, _ = ratio_surprise(np.array([hyp]), np.array([sum_d]), np.array([base]), np.array([scale[k]]))
             else:
                 telling, _ = binomial_surprise(np.array([round(hyp)]), np.array([sum_d]), np.array([base]))
+            out["telling"] = float(telling[0])
+        return out
+
+    def _volume_window(self, metric: str, segment: dict, start, end, skip=(), as_rate: float | None = None,
+                       as_ratio: float | None = None) -> dict | None:
+        got = self._volume_hours(metric, segment, start, end, skip)
+        if got is None or len(got[1]) == 0:
+            return None
+        _, rows, x, e, var = got
+        sum_x, sum_e, sum_v = float(x.sum()), float(e.sum()), float(var.sum())
+        if sum_e <= 0:
+            return None
+        score, z = count_surprise(np.array([sum_x]), np.array([sum_e]), np.array([sum_v]))
+        hours = len(rows)
+        out = {"metric": metric, "observed": sum_x / hours, "expected": sum_e / hours, "numerator": sum_x,
+               "denominator": sum_e, "score": float(score[0]), "z": float(z[0])}
+        if as_ratio is None and as_rate is not None:
+            as_ratio = as_rate / (sum_e / hours)
+        if as_ratio is not None:
+            telling, _ = count_surprise(np.array([as_ratio * sum_e]), np.array([sum_e]), np.array([sum_v]))
             out["telling"] = float(telling[0])
         return out
