@@ -10,6 +10,17 @@ whoever runs it makes it.
 --warmup-hours is the history the replay needs before its first judgement (brain.run --replay starts after
 min_history_hours + reread_hours, 80 with the defaults). With it the false-alarm rate is per watched day.
 
+--baseline also scores the plain ranking of scripts/baseline_ranking.py and adds the section "Against a plain
+ranking". It reads three kinds of folder, each written by that script with its threshold recorded (in threshold.txt
+and in every incident): seed<N>-baseline-z<Z>/, the threshold sweep, on the seeds outside --holdout only;
+seed<N>-baseline/, every seed at the threshold the sweep gives by the rule of pick_threshold, which --baseline-z must
+name; and seed<N>-baseline-z12-all/, every seed at 12, the second point (the first version's threshold). A folder whose
+recorded threshold is not the one it should hold, a --baseline-z that is not the rule's pick and a holdout seed with
+sweep folders are refused: the threshold is never chosen on the holdout. The first version's numbers in the section
+(FIRST_VERSION) were measured on its own output before it was replaced. Every other number in the section is counted
+from the scored runs. The page also says that the grid of thresholds was fixed before the sweep ran and that the first
+version had been run on the holdout; like --holdout, the script cannot check either, whoever runs it makes the claim.
+
 The page is the rendering of the JSON written beside it and of nothing else: `from_json` rebuilds it, and a
 test compares the two tracked files, so the page cannot be edited by hand without the test failing.
 """
@@ -19,6 +30,8 @@ import argparse
 import json
 import math
 import os
+import re
+from functools import partial
 from pathlib import Path
 
 import pandas as pd
@@ -34,20 +47,80 @@ LIMITS = [
     '- The new-metric hand-over is not part of these runs; it has its own tests (`tests/test_extension.py`).',
     '- Replays test detection across synthetic hours. Wall-clock mode follows real time and cannot compress multi-hour recovery into seconds.',
 ]
+PLAIN = (
+    'The plain ranking (`scripts/baseline_ranking.py`) is what an analyst could build in an afternoon, scored by the same '
+    'scorer on the same runs. It watches the same rates in the same cuts as the brain and judges each hour on its own: '
+    'every series against the mean and standard deviation of its own rate at the same hour of the day over the previous '
+    '21 days, leaving out a series whose history there never varied, and it keeps the one series with the largest '
+    'absolute z-score at or above the threshold. It does not use the calendar, sums over three hours, the targeted test '
+    'after each release, the search over all places or the investigation of causes. Its cause, always written as '
+    'supported, is the latest release whose country and platform do not contradict the place (any country when the place '
+    'names none), from 12 hours before to 2 hours after the first alert; a rollback is never named; otherwise the metric '
+    'that moved.'
+)
+STOCKOUTS = (' Of its {m} unconfirmed {causes} {where} at z {z:g}, {n} {are} in a category, where the rule names whatever '
+             'release falls in the window')
+FIRST = (
+    ' The first version gave a history that never varied a spread of 1e-6 and had been run on the holdout: it found '
+    '{detected}/{faults} at z {z:g}{now}; it named the right cause for {correct}, raised {false_alarms} false alarms '
+    '({never_varied} of them from never-varied histories) and stayed silent through {silent}/{innocents} innocent events. '
+    'Its floor was removed after a review of those alarms, and the threshold was then picked on the built-on seeds only.'
+)
+STOCKOUT = 'stockout_surge'   # its place is a category, which names no country: the cause rule takes any release there
+# The first version of scripts/baseline_ranking.py (spread floor 1e-6, z 12) on the ten holdout runs, scored by sim/score.py
+# from its own incident files before it was replaced; never_varied: its false alarms whose spread was the floor.
+FIRST_VERSION = dict(z=12.0, faults=120, detected=94, correct=73, false_alarms=396, never_varied=323, innocents=80,
+                     silent=33)
+SECOND = 'finds more, alarms more'
+SECOND_Z = 12.0           # the second point: the first version's threshold, named before this version saw the holdout
+SECOND_FOLDER = f'baseline-z{SECOND_Z:g}-all'
+MAX_FALSE_ALARMS = 1      # the threshold rule: the smallest z with at most this many false alarms on the built-on seeds
+SWEEP_FOLDER = re.compile(r'seed(\d+)-baseline-z(\d+(?:\.\d+)?)')
+RECORD = 'threshold.txt'  # written by scripts/baseline_ranking.py beside its incidents, also when it raised none
 
 
-def collect(runs: Path, seeds: list[int]) -> list[dict]:
-    """Score every run from its own files. A missing database or an empty incidents folder is an error."""
+def collect(runs: Path, seeds: list[int], folder: str = 'incidents', load=sc.load_incidents) -> list[dict]:
+    """Score every run from its own files (seed<N>-<folder>, read by `load`). A missing database or an empty
+    incidents folder is an error."""
     reports = []
     for seed in seeds:
         path = runs / f'seed{seed}.db'
         if not path.is_file():
             raise FileNotFoundError(f'missing database: {path}')
         events, start, end = sc.load_truth(path)
-        incidents = sc.load_incidents(runs / f'seed{seed}-incidents')
+        incidents = load(runs / f'seed{seed}-{folder}')
         days = (end - start + pd.Timedelta(hours=1)) / pd.Timedelta(days=1)
         reports.append(dict(seed=seed, days=days, **sc.score(events, incidents, end, days)))
     return reports
+
+
+def _number(value) -> str:
+    if value is None:
+        return 'none'
+    return f'{value:g}' if isinstance(value, (int, float)) and not isinstance(value, bool) else repr(value)
+
+
+def plain_incidents(folder: Path, z: float) -> list[dict]:
+    """The plain ranking's incidents in a folder that scripts/baseline_ranking.py wrote at threshold z: its record
+    (threshold.txt) and every incident must say z. With the record, a folder without incidents is a measured zero."""
+    folder = Path(folder)
+    if not folder.is_dir():
+        raise ValueError(f'{folder}: plain-ranking folder does not exist')
+    record = folder / RECORD
+    if not record.is_file():
+        raise ValueError(f'{folder}: no {RECORD}, so not a finished run of scripts/baseline_ranking.py')
+    try:
+        recorded = float(record.read_text(encoding='utf-8').strip())
+    except ValueError:
+        raise ValueError(f'{record}: not a number') from None
+    incidents = sc.load_incidents(folder) if any(folder.glob('*.json')) else []
+    said = []                                         # the distinct thresholds the record and the incidents give
+    for v in [recorded] + [i.get('threshold') for i in incidents]:
+        if v not in said:
+            said.append(v)
+    if any(v != z for v in said):
+        raise ValueError(f"{folder}: recorded threshold {', '.join(map(_number, said))}, not {z:g}")
+    return incidents
 
 
 def _mean(values: list[float]) -> str:
@@ -90,8 +163,139 @@ def _scope(scope: dict) -> str:
     return ', '.join(f"{d}={scope[d]}" for d in sc.DIMS if d in scope)
 
 
-def render(reports: list[dict], holdout=(), commit: str | None = None, warmup_hours: float = 0) -> list[str]:
-    """The page as lines. `holdout`: seeds no version of the brain was run on before this evaluation."""
+def pick_threshold(sweep: list[dict]) -> tuple[float, bool]:
+    """The rule for the plain ranking's threshold, applied to the sweep on the seeds the brain was built on: the
+    smallest z with at most MAX_FALSE_ALARMS false alarms; when none gets there, the z with the fewest (the smaller on
+    a tie). Returns the z and whether the bound was reached."""
+    within = [s['z'] for s in sweep if s['false_alarms'] <= MAX_FALSE_ALARMS]
+    if within:
+        return min(within), True
+    fewest = min(s['false_alarms'] for s in sweep)
+    return min(s['z'] for s in sweep if s['false_alarms'] == fewest), False
+
+
+def unconfirmed(runs: list[dict]) -> tuple[int, int]:
+    """The detected faults whose report does not support the injected cause, as (stock-outs in a category, all of
+    them). A stock-out's place is a category, which names no country, so the plain ranking's cause rule takes whatever
+    release falls in its window there."""
+    wrong = [p for r in runs for p in r['per_fault'] if p['detected'] and not p.get('correct_cause')]
+    return sum(p['kind'] == STOCKOUT and 'category' in p['fault'] and 'country' not in p['fault'] for p in wrong), len(wrong)
+
+
+def _by_kind(runs: list[dict]) -> str:
+    """'26/30 ad_budget_exhausted, 0/30 payment_failure, ... and 23/30 stockout_surge': detected of all, per fault kind."""
+    kinds: dict[str, list[int]] = {}
+    for r in runs:
+        for p in r['per_fault']:
+            k = kinds.setdefault(p['kind'], [0, 0])
+            k[0] += bool(p['detected'])
+            k[1] += 1
+    parts = [f'{found}/{total} {kind}' for kind, (found, total) in sorted(kinds.items())]
+    return ', '.join(parts[:-1]) + ' and ' + parts[-1] if len(parts) > 1 else ''.join(parts)
+
+
+def _picked(sweep: list[dict], built: list[dict], everything: list[dict]) -> str:
+    """The picked threshold's label: what the rule asked of it on the built-on seeds and the brain's false alarms
+    there and in all runs, all counted. Without a sweep nothing is claimed."""
+    if not sweep:
+        return ''
+    _, reached = pick_threshold(sweep)
+    asked = ('at most {} false alarm on the built-on seeds'.format(MAX_FALSE_ALARMS) if reached else
+             'the fewest false alarms on the built-on seeds, {}'.format(min(s['false_alarms'] for s in sweep)))
+    brain = (f"; the brain: {tally(built)['false_alarms']} there, {tally(everything)['false_alarms']} in all runs"
+             if built else '')
+    return f' (threshold picked for {asked}{brain})'
+
+
+def sweep_folders(runs: Path) -> dict[int, dict[float, str]]:
+    """Per seed, the thresholds of its sweep folders (seed<N>-baseline-z<Z>) and their folder suffixes."""
+    found: dict[int, dict[float, str]] = {}
+    for p in sorted(runs.iterdir()) if runs.is_dir() else []:
+        m = SWEEP_FOLDER.fullmatch(p.name)
+        if m and p.is_dir():
+            found.setdefault(int(m.group(1)), {})[float(m.group(2))] = f'baseline-z{m.group(2)}'
+    return found
+
+
+def _against(reports: list[dict], holdout: set, warmup_hours: float, baseline: dict) -> list[str]:
+    """The section that sets the brain beside the plain ranking of scripts/baseline_ranking.py: the brain, the plain
+    ranking at the threshold the rule picked and at the second point, on the summary's columns; one sentence per
+    threshold on what it finds by fault kind; the sweep on the built-on seeds; one paragraph on what the plain ranking
+    is, what its cause rule gets wrong and what its first version did."""
+    z, second, first = baseline['z'], baseline.get('second'), baseline.get('first_version')
+    has_holdout = any(r['seed'] in holdout for r in reports)
+    sweep = baseline.get('sweep') or []
+    fresh = lambda rs: [r for r in rs if r['seed'] in holdout]                            # noqa: E731
+    keep, where = (fresh, 'on the holdout') if has_holdout else ((lambda rs: rs), 'in all runs')
+    points = [(z, baseline['runs'])] + ([(second['z'], second['runs'])] if second else [])
+    picked = _picked(sweep, [r for r in reports if r['seed'] not in holdout], reports)
+
+    def rows(label: str, only) -> list[str]:
+        out = [_row(f'Brain, {label}', tally(only(reports), warmup_hours)),
+               _row(f'Plain ranking at z {z:g}{picked}, {label}', tally(only(baseline['runs']), warmup_hours))]
+        if second:
+            out.append(_row(f"Plain ranking at z {second['z']:g} ({SECOND}), {label}", tally(only(second['runs']), warmup_hours)))
+        return out
+
+    lines = ['', '## Against a plain ranking', '',
+             '| Monitor, seeds | Runs | Faults detected | Localized | Correct supported cause | False alarms | Innocent events silent | Mean delay (h) |',
+             '|---|---:|---:|---:|---:|---:|---:|---:|']
+    if has_holdout:
+        lines += rows('holdout', fresh)
+    lines += rows('all runs', lambda rs: rs)
+    kinds = []
+    for pz, runs in points:
+        found = _by_kind(keep(runs))
+        if found:
+            kinds.append(f"At z {pz:g} {'it' if kinds else 'the plain ranking'} finds {found} faults {where}.")
+    if kinds:
+        lines += ['', ' '.join(kinds)]
+    if sweep:
+        chosen, reached = pick_threshold(sweep)
+        grid = ', '.join(format(s['z'], 'g') for s in sorted(sweep, key=lambda s: s['z']))
+        rule = (f"The threshold was picked on the {sweep[0]['runs']} runs of seeds used while the brain was built, never on "
+                f'the holdout, by one rule: the smallest threshold tried with at most {MAX_FALSE_ALARMS} false alarm there, '
+                'else the one with the fewest. '
+                + (f'It gives {chosen:g}.' if reached else
+                   f'None tried had at most {MAX_FALSE_ALARMS} false alarm there, so it gives {chosen:g}, the one with the '
+                   'fewest.')
+                + f' The grid of thresholds tried ({grid}) was fixed before the sweep ran.')
+        if second:
+            rule += (f" The second point, {second['z']:g}, is the first version's threshold"
+                     + ('; both were fixed before this version was run on the holdout.' if has_holdout else '.'))
+
+        def label(s: dict) -> str:
+            marks = (['picked'] if s['z'] == z else []) + (['second point'] if second and s['z'] == second['z'] else [])
+            return f"{s['z']:g}" + (f" ({', '.join(marks)})" if marks else '')
+
+        lines += ['', rule, '',
+                  '| Threshold (z), seeds used while the brain was built | Runs | Faults detected | Localized | Correct supported cause | False alarms | Innocent events silent | Mean delay (h) |',
+                  '|---|---:|---:|---:|---:|---:|---:|---:|']
+        lines += [_row(label(s), s) for s in sorted(sweep, key=lambda s: s['z'])]
+    paragraph = PLAIN
+    wrong = [(pz, *unconfirmed(keep(runs))) for pz, runs in points]
+    wrong = [(pz, n, m) for pz, n, m in wrong if m]
+    if wrong:
+        (pz, n, m), rest = wrong[0], wrong[1:]
+        paragraph += (STOCKOUTS.format(m=m, causes='cause' if m == 1 else 'causes', where=where, z=pz, n=n,
+                                       are='is a stock-out' if n == 1 else 'are stock-outs')
+                      + ''.join(f'; at z {z2:g}, {n2} of {m2}' for z2, n2, m2 in rest) + '.')
+    if first:
+        same = [runs for pz, runs in points if pz == first['z']]       # this version at the first version's threshold
+        now = ''
+        if has_holdout and same:
+            t = tally(fresh(same[0]))
+            now = f", this version {t['detected']}/{t['faults']}"
+        paragraph += FIRST.format(**first, now=now)
+    lines += ['', paragraph]
+    return lines
+
+
+def render(reports: list[dict], holdout=(), commit: str | None = None, warmup_hours: float = 0,
+           baseline: dict | None = None) -> list[str]:
+    """The page as lines. `holdout`: seeds no version of the brain was run on before this evaluation. `baseline`:
+    the plain ranking's picked threshold `z` and its scored `runs` (same seeds), the `second` point (`z`, `runs`), the
+    `sweep` on the built-on seeds (tallies per threshold) and the `first_version`'s numbers on the holdout."""
     holdout = set(holdout)
     fresh = [r for r in reports if r['seed'] in holdout]
     seen = [r for r in reports if r['seed'] not in holdout]
@@ -132,6 +336,8 @@ def render(reports: list[dict], holdout=(), commit: str | None = None, warmup_ho
         rates += (f' Watched days leave out the first {warmup_hours:g} hours of each run, before the replay\'s first '
                   f'judgement ({data_days} days of data).')
     lines.append(rates)
+    if baseline:
+        lines += _against(reports, holdout, warmup_hours, baseline)
 
     lines += ['', '## By fault kind (all runs)', '',
               '| Fault | Detected | Localized | Correct supported cause | Mean delay (h) |', '|---|---:|---:|---:|---:|']
@@ -210,6 +416,8 @@ def write(out: Path, lines: list[str], reports: list[dict], meta: dict | None = 
     meta = dict(meta or {})
     saved = {'holdout': sorted(meta.get('holdout') or []), 'commit': meta.get('commit'),
              'warmup_hours': meta.get('warmup_hours') or 0, 'runs': reports}
+    if meta.get('baseline'):
+        saved['baseline'] = meta['baseline']
     texts = {out.with_suffix('.json'): json.dumps(saved, indent=2, default=str) + '\n', out: '\n'.join(lines) + '\n'}
     out.parent.mkdir(parents=True, exist_ok=True)
     temps = {target: target.with_name(target.name + '.tmp') for target in texts}
@@ -227,7 +435,7 @@ def write(out: Path, lines: list[str], reports: list[dict], meta: dict | None = 
 def from_json(path: Path) -> list[str]:
     """The page, rebuilt from the JSON that was written beside it."""
     saved = json.loads(Path(path).read_text(encoding='utf-8'))
-    return render(saved['runs'], saved['holdout'], saved['commit'], saved['warmup_hours'])
+    return render(saved['runs'], saved['holdout'], saved['commit'], saved['warmup_hours'], saved.get('baseline'))
 
 
 def _seeds(text: str) -> list[int]:
@@ -242,9 +450,18 @@ def main(argv=None):
     ap.add_argument('--commit', help='the commit of the brain that produced the incident files')
     ap.add_argument('--warmup-hours', type=float, default=0, help='history per run before the first judgement')
     ap.add_argument('--out', type=Path, default=Path('docs/results.md'))
+    ap.add_argument('--baseline', action='store_true',
+                    help='also score the plain ranking (seed<N>-baseline) and its threshold sweep (seed<N>-baseline-z<Z>)')
+    ap.add_argument('--baseline-z', type=float, help='the threshold the plain ranking in seed<N>-baseline was run with')
     args = ap.parse_args(argv)
     if not (math.isfinite(args.warmup_hours) and args.warmup_hours >= 0):
         ap.error('the warm-up must be a number of hours from 0')
+    if args.baseline_z is not None and not args.baseline:
+        ap.error('--baseline-z is given without --baseline')
+    if args.baseline and args.baseline_z is None:
+        ap.error('--baseline needs --baseline-z, the threshold the plain ranking was run with')
+    if args.baseline and not (math.isfinite(args.baseline_z) and args.baseline_z > 0):
+        ap.error('the plain ranking\'s threshold must be a positive number')
     if args.out.suffix.lower() == '.json':
         ap.error('the page cannot be a .json file: its numbers are written beside it under that name')
     try:
@@ -266,11 +483,54 @@ def main(argv=None):
         if args.warmup_hours / 24 >= r['days']:
             ap.error(f"the warm-up is not shorter than run {r['seed']} ({r['days']:.0f} days)")
     meta = dict(holdout=holdout, commit=args.commit, warmup_hours=args.warmup_hours)
+    if args.baseline:
+        meta['baseline'] = _baseline(ap, args, seeds, holdout)
     write(args.out, render(reports, **meta), reports, meta)
     t = tally(reports)
     print(f"{args.out}: {t['detected']}/{t['faults']} detected; {t['false_alarms']} false alarms; "
           f"{t['silent']}/{t['innocents']} innocent events silent")
+    if args.baseline:
+        for point in (meta['baseline'], meta['baseline']['second']):
+            b = tally(point['runs'])
+            print(f"plain ranking at z {point['z']:g}: {b['detected']}/{b['faults']} detected; {b['false_alarms']} false "
+                  f"alarms; {b['silent']}/{b['innocents']} innocent events silent")
     return 0
+
+
+def _baseline(ap, args, seeds: list[int], holdout: list[int]) -> dict:
+    """The plain ranking's threshold sweep, its runs at the threshold the sweep gives and at the second point, each
+    folder read only at the threshold it recorded."""
+    folders = sweep_folders(args.runs)
+    for s in holdout:
+        if folders.get(s):
+            ap.error(f'holdout seed {s} has threshold-sweep folders (seed{s}-baseline-z...): the threshold must be '
+                     'chosen without the holdout')
+    built = [s for s in seeds if s not in holdout]
+    if not built:
+        ap.error('--baseline needs seeds outside the holdout to choose its threshold on')
+    tried = folders.get(built[0], {})
+    for s in built:
+        if folders.get(s, {}) != tried:
+            ap.error(f'the threshold sweep differs between seeds: seed {s} has {sorted(folders.get(s, {}))}, '
+                     f'seed {built[0]} has {sorted(tried)}')
+    if not tried:
+        ap.error('no threshold sweep (seed<N>-baseline-z<Z> folders) for the seeds outside the holdout')
+    try:
+        sweep = [dict(z=z, **tally(collect(args.runs, built, folder, partial(plain_incidents, z=z)), args.warmup_hours))
+                 for z, folder in sorted(tried.items())]
+    except (FileNotFoundError, ValueError) as e:
+        ap.error(str(e))
+    chosen, _ = pick_threshold(sweep)
+    if chosen != args.baseline_z:
+        ap.error(f'--baseline-z {args.baseline_z:g} is not the threshold the sweep gives ({chosen:g}): the smallest with '
+                 f'at most {MAX_FALSE_ALARMS} false alarm on the seeds outside the holdout, else the one with the fewest')
+    try:
+        runs = collect(args.runs, seeds, 'baseline', partial(plain_incidents, z=args.baseline_z))
+        second = collect(args.runs, seeds, SECOND_FOLDER, partial(plain_incidents, z=SECOND_Z))
+    except (FileNotFoundError, ValueError) as e:
+        ap.error(str(e))
+    return dict(z=args.baseline_z, runs=runs, second=dict(z=SECOND_Z, runs=second), sweep=sweep,
+                first_version=dict(FIRST_VERSION))
 
 
 if __name__ == '__main__':

@@ -14,6 +14,39 @@ Localized and correct cause are counted among the detected faults. A cause count
 In 1 of the 236 reports with the correct cause a second cause is supported beside it (listed below).
 False alarms. holdout: 1 in 457 watched days (0.002/day); all runs: 1 in 913 watched days (0.001/day). Watched days leave out the first 80 hours of each run, before the replay's first judgement (490 and 980 days of data).
 
+## Against a plain ranking
+
+| Monitor, seeds | Runs | Faults detected | Localized | Correct supported cause | False alarms | Innocent events silent | Mean delay (h) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Brain, holdout | 10 | 120/120 | 120/120 | 118/120 | 1 | 80/80 | 0.14 |
+| Plain ranking at z 50 (threshold picked for at most 1 false alarm on the built-on seeds; the brain: 0 there, 1 in all runs), holdout | 10 | 49/120 | 49/49 | 31/49 | 0 | 80/80 | 0.69 |
+| Plain ranking at z 12 (finds more, alarms more), holdout | 10 | 92/120 | 92/92 | 74/92 | 71 | 40/80 | 0.73 |
+| Brain, all runs | 20 | 240/240 | 240/240 | 236/240 | 1 | 160/160 | 0.18 |
+| Plain ranking at z 50 (threshold picked for at most 1 false alarm on the built-on seeds; the brain: 0 there, 1 in all runs), all runs | 20 | 102/240 | 102/102 | 68/102 | 1 | 159/160 | 0.77 |
+| Plain ranking at z 12 (finds more, alarms more), all runs | 20 | 184/240 | 180/184 | 145/184 | 159 | 80/160 | 0.82 |
+
+At z 50 the plain ranking finds 26/30 ad_budget_exhausted, 0/30 payment_failure, 0/30 search_regression and 23/30 stockout_surge faults on the holdout. At z 12 it finds 29/30 ad_budget_exhausted, 8/30 payment_failure, 25/30 search_regression and 30/30 stockout_surge faults on the holdout.
+
+The threshold was picked on the 10 runs of seeds used while the brain was built, never on the holdout, by one rule: the smallest threshold tried with at most 1 false alarm there, else the one with the fewest. It gives 50. The grid of thresholds tried (3, 4, 5, 6, 8, 10, 12, 15, 20, 30, 50, 75, 100) was fixed before the sweep ran. The second point, 12, is the first version's threshold; both were fixed before this version was run on the holdout.
+
+| Threshold (z), seeds used while the brain was built | Runs | Faults detected | Localized | Correct supported cause | False alarms | Innocent events silent | Mean delay (h) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 3 | 10 | 120/120 | 92/120 | 93/120 | 6723 | 0/80 | 0.32 |
+| 4 | 10 | 120/120 | 93/120 | 94/120 | 3676 | 3/80 | 0.41 |
+| 5 | 10 | 116/120 | 93/116 | 93/116 | 1267 | 22/80 | 0.43 |
+| 6 | 10 | 111/120 | 95/111 | 88/111 | 490 | 33/80 | 0.48 |
+| 8 | 10 | 106/120 | 95/106 | 83/106 | 173 | 39/80 | 0.40 |
+| 10 | 10 | 99/120 | 93/99 | 78/99 | 103 | 40/80 | 0.65 |
+| 12 (second point) | 10 | 92/120 | 88/92 | 71/92 | 88 | 40/80 | 0.91 |
+| 15 | 10 | 84/120 | 84/84 | 65/84 | 82 | 40/80 | 0.89 |
+| 20 | 10 | 68/120 | 67/68 | 47/68 | 71 | 41/80 | 0.84 |
+| 30 | 10 | 60/120 | 59/60 | 40/60 | 30 | 59/80 | 0.77 |
+| 50 (picked) | 10 | 53/120 | 53/53 | 37/53 | 1 | 79/80 | 0.85 |
+| 75 | 10 | 39/120 | 39/39 | 28/39 | 0 | 80/80 | 1.13 |
+| 100 | 10 | 18/120 | 18/18 | 15/18 | 0 | 80/80 | 0.50 |
+
+The plain ranking (`scripts/baseline_ranking.py`) is what an analyst could build in an afternoon, scored by the same scorer on the same runs. It watches the same rates in the same cuts as the brain and judges each hour on its own: every series against the mean and standard deviation of its own rate at the same hour of the day over the previous 21 days, leaving out a series whose history there never varied, and it keeps the one series with the largest absolute z-score at or above the threshold. It does not use the calendar, sums over three hours, the targeted test after each release, the search over all places or the investigation of causes. Its cause, always written as supported, is the latest release whose country and platform do not contradict the place (any country when the place names none), from 12 hours before to 2 hours after the first alert; a rollback is never named; otherwise the metric that moved. Of its 18 unconfirmed causes on the holdout at z 50, 17 are stock-outs in a category, where the rule names whatever release falls in the window; at z 12, 17 of 18. The first version gave a history that never varied a spread of 1e-6 and had been run on the holdout: it found 94/120 at z 12, this version 92/120; it named the right cause for 73, raised 396 false alarms (323 of them from never-varied histories) and stayed silent through 33/80 innocent events. Its floor was removed after a review of those alarms, and the threshold was then picked on the built-on seeds only.
+
 ## By fault kind (all runs)
 
 | Fault | Detected | Localized | Correct supported cause | Mean delay (h) |
