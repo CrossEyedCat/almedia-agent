@@ -32,9 +32,11 @@ from brain.attribution import attribute, leaves
 from brain.clock import HOUR
 from brain.data import iso_hour
 from brain.evaluator import NotComputable
+from brain.graph import DEMAND_SYSTEM
 from brain.impact import tree_metrics
 from brain.localize import choose, scan
 from brain.monitor import Alert, Monitor, Tick, compatible
+from brain.stats import ratio_surprise, robust_scale
 
 RELEASE_BEFORE_HOURS = 2      # a release this long before the estimated onset is "at the onset"
 RELEASE_AFTER_HOURS = 2       # the onset estimate can be early when the first hours were weak
@@ -44,6 +46,9 @@ NORMAL_MAX_SURPRISE = 2.0     # below this a window is "normal" for the purpose 
 MIX_MAX_SHARE = 0.2           # a mix shift that explains less than this share of the change is rejected
 INSIDE_MIN_SHARE = 0.5        # a release that covers only part of the place must hold at least this much of the change
 MAX_REJECTED_RELEASES = 4     # rejected releases kept in the report (the best scoring ones)
+CHECK_MIN_SURPRISE = 3.0      # a factor of the checked chain "moved": p below 0.001 over the hours checked,
+CHECK_MIN_EFFECT = 0.03       # and by at least 3 % (in a big place a tiny drift is significant, but it is not the story)
+VOLUME_WEEKS = 3              # a count is compared with the same hours of up to three earlier weeks
 PLACES_SHOWN = 5
 DIM_ORDER = ("country", "platform", "category", "channel")
 SCOPE_DIMS = ("country", "platform")   # the dimensions a release row can name
@@ -168,6 +173,131 @@ class Investigator:
         rate = float((w1 * (p1 - p0)).sum())
         size = abs(mix) + abs(rate)
         return {"mix": mix, "rate": rate, "share": abs(mix) / size if size else 0.0}
+
+    # ------------------------------------------------------- the chain, top-down
+    def is_count(self, metric: str) -> bool:
+        """A volume read straight from a column (sessions), not a rate."""
+        spec = self.graph.specs.get(metric)
+        return spec is not None and spec.unit == "count" and spec.formula is None and bool(spec.column)
+
+    def volume(self, metric: str, segment: dict, start, end, skip=()) -> dict | None:
+        """A count in a place over [start, end) against the same hours of up to VOLUME_WEEKS earlier
+        weeks, or of the earlier days when there is less than a week of history: counts follow the hour
+        of day and the day of week, so no pooled rate can stand in for them. The spread is what the same
+        comparison showed hour by hour in the week before. None without history."""
+        if not self.is_count(metric):
+            return None
+        start, end = pd.Timestamp(start), pd.Timestamp(end)
+        week, day = 7 * 24 * HOUR, 24 * HOUR
+        try:
+            frame = self.monitor.evaluator.frame([metric], start - VOLUME_WEEKS * week, end, segment, by_hour=True)
+        except (NotComputable, KeyError):
+            return None
+        values = {pd.Timestamp(t): float(v) for t, v in zip(frame["ts"], frame[metric])}
+
+        def reference(h):
+            for step, n in ((week, VOLUME_WEEKS), (day, 7)):
+                refs = [values.get(h - k * step) for k in range(1, n + 1) if h - k * step < start]
+                refs = [v for v in refs if v is not None and math.isfinite(v)]
+                if refs:
+                    return float(np.mean(refs))
+            return None
+
+        held = {pd.Timestamp(h) for h in skip}
+        obs = exp = squares = 0.0
+        hours, h = 0, start
+        while h < end:
+            v = values.get(h)
+            r = reference(h) if h not in held and v is not None and math.isfinite(v) else None
+            if r is not None:
+                obs, exp, squares, hours = obs + v, exp + r, squares + r * r, hours + 1
+            h += HOUR
+        if not hours or exp <= 0:
+            return None
+        rel = []
+        h = start - week
+        while h < start:
+            v, r = values.get(h), reference(h)
+            if v is not None and math.isfinite(v) and r:
+                rel.append((v - r) / r)
+            h += HOUR
+        spread = robust_scale(rel)
+        sd = spread * math.sqrt(squares) if math.isfinite(spread) else 2.0 * math.sqrt(exp)
+        score, z = ratio_surprise(np.array([obs]), np.array([1.0]), np.array([exp]), np.array([max(sd, 1e-9)]))
+        return {"metric": metric, "observed": obs, "expected": exp, "hours": hours,
+                "score": float(score[0]), "z": float(z[0])}
+
+    def chain(self, moved) -> tuple[str, list[str]] | None:
+        """The count of the outcome tree that the moved factors feed, with every factor it is made of and
+        its price: orders (sessions x the funnel rates) and the order value for a funnel rate, ad clicks
+        and the click price for an ad rate. The brief's path runs down this chain: traffic, then each step."""
+        outcomes = self.graph.top_outcomes()
+        if not outcomes:
+            return None
+        specs, tree = self.graph.specs, tree_metrics(self.graph, outcomes[0])
+        counts = [(m, leaves(self.graph, m)) for m in tree
+                  if specs[m].unit == "count" and specs[m].investigative_formula is not None]
+        fed = [c for c in counts if any(x in c[1] for x in moved)] or counts
+        if not fed:
+            return None
+        node, factors = max(fed, key=lambda c: len(c[1]))
+        for p in tree:
+            f = specs[p].investigative_formula
+            if f is not None and f.kind == "product" and node in f.factors():
+                factors = factors + [x for x in f.factors()
+                                     if x != node and specs[x].investigative_formula is None and x not in factors]
+        return node, factors
+
+    def check(self, moved, segment: dict, start, end, skip=()) -> dict | None:
+        """Every factor of the chain in the place and hours: observed against expected, normal or moved.
+        Rates against the monitor's baseline (one targeted look each), counts against earlier weeks."""
+        found = self.chain(moved)
+        if found is None:
+            return None
+        node, factors = found
+        rows = []
+        for m in factors:
+            w = self.volume(m, segment, start, end, skip) if self.is_count(m) else \
+                self.monitor.window(m, segment, start, end, skip)
+            if w is None or not w["expected"]:
+                rows.append({"metric": m, "state": "no baseline"})
+                continue
+            effect = w["observed"] / w["expected"] - 1.0
+            state = "moved" if w["score"] >= CHECK_MIN_SURPRISE and abs(effect) >= CHECK_MIN_EFFECT else "normal"
+            rows.append(dict(w, metric=m, effect=effect, state=state))
+        return {"node": node, "rows": rows, "segment": segment, "start": pd.Timestamp(start)}
+
+    def label(self, metric: str) -> str:
+        return f"traffic ({metric})" if DEMAND_SYSTEM in self.graph.specs[metric].systems and self.is_count(metric) else metric
+
+    def check_text(self, found: dict) -> tuple[str, str]:
+        """(trail line, report sentence) of a check."""
+        parts = []
+        for r in found["rows"]:
+            if r["state"] == "no baseline":
+                parts.append(f"{r['metric']}: no baseline here")
+                continue
+            per = r.get("hours")
+            obs, exp = (r["observed"] / per, r["expected"] / per) if per else (r["observed"], r["expected"])
+            parts.append(f"{r['metric']} {num(obs)}{'/h' if per else ''} vs {num(exp)}{'/h' if per else ''}, "
+                         + ("normal" if r["state"] == "normal" else f"moved {100 * r['effect']:+.0f} %"))
+        where = seg_text(found["segment"])
+        line = f"{found['node']} in {where} since {when(found['start'])}, factor by factor: " + "; ".join(parts)
+        moved = [r for r in found["rows"] if r["state"] == "moved"]
+        normal = [r for r in found["rows"] if r["state"] == "normal"]
+        traffic = [r["metric"] for r in normal if self.label(r["metric"]) != r["metric"]]
+        if moved:
+            sentence = (f" Of the factors of {found['node']} in {where}, "
+                        + ", ".join(f"{self.label(r['metric'])} moved ({100 * r['effect']:+.0f} %)" for r in moved))
+            if normal:
+                sentence += "; the others" + (f", {self.label(traffic[0])} included," if traffic else "") + " stayed normal"
+            sentence += "."
+        elif normal:
+            sentence = (f" Every factor of {found['node']} in {where}"
+                        + (f", {self.label(traffic[0])} included," if traffic else "") + " stayed normal over these hours.")
+        else:
+            sentence = ""
+        return line, sentence
 
     # ----------------------------------------------------------- 3. what it cost
     def explain(self, alerts: list[Alert], followed: list[dict], segment: dict, start, end, skip=(),
@@ -424,6 +554,9 @@ class Investigator:
                                     f"{num(f['observed'])} against {num(f['expected'])} in {seg_text(segment)} over the incident "
                                     f"(z {f['z']:+.1f}), "
                                     + ("the direction the link predicts" if f["sign"] else "the link predicts no direction")})
+        # top-down, as the brief walks it: every factor of the chain the moved rates feed, traffic first
+        checked = self.check(list(inc.metrics) + [f["metric"] for f in followed if f["shown"]], segment, since, end, held)
+        check_line, check_sentence = self.check_text(checked) if checked is not None else ("", "")
 
         body = {
             "id": inc.id, "status": inc.status,
@@ -479,6 +612,8 @@ class Investigator:
         elif any(m in tree_metrics(graph, o) for o in graph.top_outcomes()[:1] for m in inc.metrics):
             uncertain.append("The effect on the outcome could not be computed for this window: a factor of the formulas "
                              "has no value or no baseline there.")
+        if checked is not None:
+            trail.append({"action": "check", "target": f"factors of {checked['node']}", "result": check_line})
 
         # 4. why
         trail.append({"action": "check", "target": "freshness",
@@ -574,15 +709,22 @@ class Investigator:
             uncertain.append("Only one hour of evidence so far.")
         if sum(h["status"] == "supported" for h in hypotheses) > 1:
             uncertain.append("More than one explanation fits in system, place and time.")
-        if cost is not None:
+        counted = [r for r in (checked["rows"] if checked is not None else []) if self.is_count(r["metric"])]
+        if cost is not None and not counted:
             uncertain.append("Traffic is taken as given: only rates are judged, so a change in sessions is not part of the effect.")
+        for r in counted:
+            if r["state"] == "moved" and (cost is None or r["metric"] not in cost["moved"]):
+                uncertain.append(f"{self.label(r['metric']).capitalize()} moved too ({100 * r['effect']:+.0f} % against the same "
+                                 "hours of earlier weeks); the effect above counts only the moved rates.")
+            elif r["state"] == "no baseline":
+                uncertain.append(f"{r['metric']} has too little history here to say whether it moved.")
 
         body["hypotheses"] = hypotheses
         body["trail"] = trail
         body["uncertain"] = uncertain
         body["report"] = (
             f"{primary.metric} {'fell' if obs < exp else 'rose'} to {num(obs)} from an expected {num(exp)} in "
-            f"{where}, starting {when(inc.onset)}.{loss} "
+            f"{where}, starting {when(inc.onset)}.{loss}{check_sentence} "
             + (f"Most likely cause: {lead['cause']}." if lead["status"] == "supported" else "No cause is confirmed yet.")
             + (f" {sum(h['status'] == 'rejected' for h in hypotheses)} other explanation(s) were tested and rejected."
                if any(h["status"] == "rejected" for h in hypotheses) else ""))
