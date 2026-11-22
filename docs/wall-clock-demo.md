@@ -14,7 +14,7 @@ python -m sim.live --wall-clock --db data/realtime.db
 
 For the UI set MARKET_DB=data/realtime.db, MARKET_CLOCK=wall, INCIDENTS_DIR=incidents-wall,
 INCOMING_METRICS_DIR=incoming_metrics-wall, then start uvicorn ui.app:app --port 8000.
-Use the SAME paths in the monitor when it becomes available. UI state/inject/rollback also synchronize on access,
+Start the monitor with the SAME paths (`python -m brain.run --db data/realtime.db --incidents incidents-wall --incoming incoming_metrics-wall`). UI state/inject/rollback also synchronize on access,
 so an idle page catches up when used. A future database or one over 48h behind is rejected; never silently truncate it.
 Initialize a new database with --until-now instead. All JSON contract timestamps remain UTC.
 

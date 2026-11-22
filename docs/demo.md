@@ -52,7 +52,7 @@ Never point the live UI at eval_incidents. Missing or empty scoring output is an
 | Time | Say | Do | Must be visible |
 |---|---|---|---|
 | 0:00 | "A marketplace has thousands of metrics and nobody can watch them all. This system watches by itself." | Header and graph on screen | Moving clock, formula tree |
-| 0:20 | "It knows how the business works: orders are checkouts times payment success. Each line has a meaning." | Point at the tree; name the four line types | Tree from contribution down |
+| 0:20 | "It knows how the business works: orders are checkouts times payment success. Each line has a meaning." | Point at the tree; formula lines are solid, possible causes dashed with a sign; a click on a box lists its breakdown and context links | Tree from contribution down |
 | 0:45 | "Fault: a payment release breaks Android payments in Germany." | Choose **Payment failure** (DE, Android) in the DEMO bar, click **Inject fault** | Toast "Payment failure injected from ..." |
 | 1:00 | "It notices, follows the graph, and tells us where and why." | Wait for the incident (about 3 to 6 simulated hours = 6 to 12 s) [B] | Incident appears; path orders to payment success lit in red |
 | 1:20 | Read the report: the actual impact in euros, measured contribution, affected country/platform and supported cause; what is still uncertain | Click the incident | Impact, hypotheses with evidence, trail |
@@ -87,4 +87,4 @@ The scoring script (`python -m sim.score generate`) mixes all four with promos a
 
 - Inject at a chosen header-clock hour and record it in each rehearsal. `--now` affects the latest data hour; it does not fix the hour of day.
 - Reset between rehearsals with the full stop/archive/backfill/restart list above.
-- Fault severity in the button is 0.4 (payment success falls by 40%), faults default to 12 simulated hours unless rolled back, promo is 12 hours, late data is 2 hours.
+- Fault severity in the button is 0.4 (payment success falls by 40%), a fault from the page lasts 72 simulated hours (the ad-budget fault 12) unless rolled back, promo is 12 hours, late data is 2 hours.
