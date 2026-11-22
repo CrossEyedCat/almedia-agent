@@ -388,3 +388,19 @@ def test_page_faults_outlast_the_demo_script_and_the_ad_fault_keeps_its_shape(cl
         assert hours[kind] * seconds_per_hour > click_to_close, kind
     assert hours["ad_budget_exhausted"] == 12
     assert "hours: hours, when: 'now'" in html      # the button sends the value of its own fault
+
+
+def test_the_candidate_designs_are_served_beside_the_current_console(client, tmp_path, monkeypatch):
+    page = ui.STATIC / "v9" / "index.html"
+    monkeypatch.setitem(ui.DESIGNS, 9, "Test design")
+    page.parent.mkdir(exist_ok=True)
+    try:
+        page.write_text("<!doctype html><title>Eye of the System v9</title>", encoding="utf-8")
+        assert "Eye of the System v9" in client.get("/v/9").text
+        listing = client.get("/designs").text
+        assert 'href="/v/9"' in listing and 'href="/"' in listing
+    finally:
+        page.unlink()
+        page.parent.rmdir()
+    assert client.get("/v/9").status_code == 404
+    assert client.get("/v/77").status_code == 404

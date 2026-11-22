@@ -77,6 +77,38 @@ def index():
     return _page("index.html")
 
 
+DESIGNS = {1: "Ops room", 2: "Analyst brief", 3: "Investigation canvas", 4: "Presenter cockpit"}
+
+
+@app.get("/v/{n}")
+def design(n: int):
+    """One of the four candidate designs of the console (ui/static/v<n>/), served beside the current one."""
+    page = STATIC / f"v{n}" / "index.html"
+    if n not in DESIGNS or not page.is_file():
+        raise HTTPException(404, f"no design {n}")
+    return HTMLResponse(page.read_text(encoding="utf-8"), headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/designs")
+def designs():
+    """A page that links the current console and the four candidate designs, each with the same live data."""
+    rows = "".join(
+        f'<li><a href="/v/{n}">{n}. {name}</a> <span>/v/{n}</span></li>'
+        for n, name in DESIGNS.items() if (STATIC / f"v{n}" / "index.html").is_file())
+    html = (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
+        '<title>Eye of the System: designs</title><style>'
+        'body{font:16px "Segoe UI Variable","Segoe UI",system-ui,sans-serif;margin:48px;color:#14171f;background:#f5f6f8}'
+        'h1{font-size:28px;margin:0 0 8px}p{color:#4a5262;margin:0 0 24px}ul{list-style:none;padding:0;margin:0}'
+        'li{margin:0 0 12px}a{color:#2f4ac6;font-weight:600;text-decoration:none;font-size:20px}a:hover{text-decoration:underline}'
+        'span{color:#6b7280;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;margin-left:8px}'
+        '@media (prefers-color-scheme: dark){body{background:#12151c;color:#e8ecf2}p,span{color:#9aa3b2}a{color:#8ea2ff}}'
+        '</style></head><body><h1>Eye of the System: four designs</h1>'
+        '<p>The same monitor, the same live data and the same API; only the console differs.</p>'
+        f'<ul><li><a href="/">Current console</a> <span>/</span></li>{rows}</ul></body></html>')
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/api/domains")
 def domains():
     return domain_map.as_json()
