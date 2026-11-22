@@ -14,47 +14,61 @@ of implying it. Numbers come from `docs/results.md`. Read the whole page once be
    To show "In brief" (the model's narration above the report), add `--narrate` to the brain command: it needs
    ANTHROPIC_API_KEY in `.env` and spends a few requests per incident. Without it the report is the template only, and
    "In brief" (docs/demo.md at 1:20, and the demo slide) does not appear.
-2. Wait until the clock in the header moves and the incident list reads "No incidents. The monitor is watching."
-3. Open the folded DEMO controls once so you know where the buttons are, then fold them again. Dark or light theme: add `?theme=light` or `?theme=dark`.
+2. Wait until the clock in the header moves and the incident dock along the bottom reads "No incidents. The monitor is
+   watching every hour of data."
+3. Open the **Test bench** (marked DEMO, in the header) once so you know where the buttons are, then close it (**Close**
+   or Esc). Dark or light theme: add `?theme=light` or `?theme=dark`. The earlier console, with the same data and
+   buttons, is at `/classic` if the canvas misbehaves.
 4. Two faults of one metric that begin in the same hour in places sharing a country or a platform can be reported as one
    incident (a known limit, README 3.5); inject them an hour apart or in places that share neither a country nor a platform.
 
 ## The 3-minute script (about 390 spoken words)
 
-**0:00 The problem.** (Header and graph on screen.)
+**0:00 The problem.** (Header, graph canvas and the empty incident dock on screen.)
 "A marketplace has thousands of numbers and nobody can watch them all. Most problems are not outages: the servers are fine, but
 payments fail for Android users in Germany and orders quietly fall. This system watches the business by itself: it notices a
 change, finds where and why, and explains it. No one asks it questions."
 
-**0:20 How it understands the business.** (Point at the graph, then click one box.)
+**0:20 How it understands the business.** (Point at the graph, then click one box: its definition and links open in the
+panel on the right. Close the panel with the x before the fault, so the incident's report can open there by itself.)
 "It starts from a graph of how the business works: contribution is fees plus ad spend minus discounts, orders are sessions times
 conversion, conversion is a chain of step rates. Lines have meanings: exact formulas, breakdowns, possible causes, and context
 such as releases and promos."
 
-**0:40 A real fault.** (DEMO controls: Payment failure, DE, Android, Inject fault. Fold the controls.)
+**0:40 A real fault.** (**Test bench** in the header: Payment failure, DE, Android, **Inject fault**. **Close** the bench.)
 "I now break it: a payment release goes wrong for Android in Germany. The monitor was not told. Every hour it judges every step
 rate in 48 slices of the market, and visits and orders against the same hour of earlier weeks..." (wait for the incident)
 "...it has found it."
 
-**1:00 The report.** (Click the incident; the path from orders down to payment success lights up.)
+**1:00 The report.** (The incident's card slides into the dock, its report opens on the right and the view flies to the
+path from orders down to payment success, lit in the card's colour; the steps that stayed normal are marked "held". If the
+panel shows something else, click the card.)
 "It went down the chain like an analyst: traffic normal, add to cart and checkout normal, payment success down, in Android in
 Germany. It says what this costs in euros, and the cause: the payments release, the only one whose system, place and hour all
 fit. The other explanations are listed as rejected, with the reason, and so is what is still uncertain."
 
-**1:25 How it decides.** (Scroll the trail.)
+**1:25 How it decides.** (Click **Replay the investigation**, at the top right of the canvas or in the report. Press
+**Next** (or the right arrow key) about once per sentence while speaking: each step flies to the metrics it touched, rings
+them with a numbered pin and shows its result over the canvas, and the same step is lit in the report's trail. The payment
+fault has ten steps: watch, compare, drill into places, split along the formula, check the factors of orders, check
+freshness, the calendar and the release, compare the explanations, stop. It need not reach the last one. **Stop replay**
+or Esc before 1:50.)
 "How it decides: it watches every slice it can afford, because a fault in one cell vanishes in the totals. It follows a cause
 link only in the direction the link predicts. It scores four hundred places by how much better one shift explains the counts,
 minus the price of searching. It stops when every candidate the graph offers has been tested, and says how decisive that was."
 
-**1:50 It closes by itself.** (Pick the fault in **In progress**, click **End it (rollback)**.)
+**1:50 It closes by itself.** (**Test bench**: pick the fault in **In progress**, click **End it (rollback)**. Keep the
+bench open for the next steps.)
 "Someone rolls the release back. A few normal hours later the incident is resolved, on evidence, not because alerts went quiet."
 
-**2:00 Not everything unusual is a problem.** (Promo in FR; then **Mix shift (innocent)** if time allows.)
+**2:00 Not everything unusual is a problem.** (In the bench: **Promo (12 h)** in FR; then **Mix shift (innocent)** if time
+allows. Each shows up as a quiet **explained** card in the dock, grey with a dashed edge, not as an alert.)
 "A planned promo lifts orders in France: it finds the promo in the calendar and checks that the rise has the promo's direction
 and size. No alert. Traffic moving toward one category moves the market's rates too; it measures that the mix explains it. No
 alert either."
 
-**2:15 A new metric.** (Click **Add refund_rate**, then **Add a duplicate metric**.)
+**2:15 A new metric.** (In the bench, under New metric: **Add refund_rate**, then **Add a duplicate metric**. The answers
+appear in the bench; close it to see the new `refunds` tree on the canvas.)
 "A new metric arrives as a query, nothing else. The agent finds the formula itself, refunds over orders, the only one of a
 thousand candidates; finds its place in the graph, takes the context of what it is built from and starts watching it. A
 duplicate of an existing rate is refused, with the reason."
@@ -101,6 +115,13 @@ is our own simulator, so this is an engineering check, not proof on real traffic
   answered in 4.6 s, "formula refunds / orders found from the SQL, the only one of 1045 candidates", validated on 29 days,
   watched from the next tick; **Add a duplicate metric**: answered in 7.2 s, rejected as an alias of payment_success_rate.
 
+- Rehearsed on the new main console (design 3) on 22 Nov, 10:50 CET, fresh 28-day backfill, `--speed 2`, at 1280 x 800:
+  payment failure DE x Android from **Test bench**: incident about 1 s after the click, opened in the report with the
+  payments release supported; **Replay the investigation** steps through ten steps on the canvas (arrow keys work); close
+  the bench before the replay, it covers the canvas. **End it (rollback)**: resolved 5 s later; **Promo (12 h)** FR:
+  `explained` in 2.6 s; **Add refund_rate**: "formula refunds / orders found from the SQL, the only one of 1045 candidates"
+  in 3.6 s, with **Show the checks**.
+
 ## If something goes wrong
 
 - No incident after 20 seconds: say "it is still collecting evidence" and move on to the promo; or play the recording.
@@ -122,7 +143,8 @@ The rules ask for the pitch, how the solution works and a live demo, with a team
 needs nothing beyond Windows 11:
 
 1. **Prepare** (10 minutes): a clean start as in "Before you start"; the console in a browser window of 1280 x 800 (the
-   projector size the page is tuned for), light theme (`?theme=light`), zoom 100 %; notifications off; the DEMO bar folded.
+   projector size the page is tuned for), light theme (`?theme=light`), zoom 100 %; notifications off; the Test bench closed
+   and the report panel pinned (the **Pinned** button in its header), so the report keeps its own column beside the graph.
    Let the clock run a few data hours into the day before you inject: night hours have small counts.
 2. **Camera parts**: open with 15 s to camera (who you are, the problem in one sentence) and close with 15 s (the result and
    the one-line close). The Camera app records them.

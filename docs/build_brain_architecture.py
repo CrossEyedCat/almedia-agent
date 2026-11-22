@@ -609,6 +609,9 @@ GROUPS = [
         ("narrate.py", "With --narrate (live only): a language model writes a short narration of each incident from its "
                        "own evidence; every number is checked against it, and the template report stays",
          ["Narrator.submit", "Narrator.ready", "evidence", "numbers_backed"]),
+        ("settings.py", "Runtime settings the console writes (settings.json beside the database): narration on or off and "
+                        "the detection thresholds, applied by the live loop without a restart; the monitor's status file",
+         ["read", "settings_path", "write_status"]),
     ]),
     ("New metrics", [
         ("extension.py", "The extension agent: takes a definition from the incoming folder, checks it against the data, "

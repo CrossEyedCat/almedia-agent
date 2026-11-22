@@ -15,10 +15,16 @@ Replay of a finished database hour by hour, as if it were live (for the scoring 
 Paths default to the environment variables the console uses (MARKET_DB, INCIDENTS_DIR, GRAPH_JSON),
 then to data/market.db, incidents/ and no graph export. Stop it with Ctrl+C before a database is
 rebuilt: on Windows an open reader blocks deleting the file.
+
+The live loop also follows the console's settings.json next to the database (brain/settings.py): the
+detection thresholds and narration on or off apply from the next poll, without a restart, and a new key in
+the repository's .env builds a new narrator. It writes brain_status.json there on every poll. --narrate is
+the starting value while the file says nothing about narration. The replay never reads either file.
 """
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import os
 import sys
 import time
@@ -27,13 +33,16 @@ from pathlib import Path
 
 import pandas as pd
 
+from brain import settings
 from brain.clock import HOUR, Clock
 from brain.data import Store, iso_hour
 from brain.extension import Extension
 from brain.graph import MetricGraph
 from brain.incidents import Book, write_json
 from brain.monitor import Config, Monitor
-from brain.narrate import Narrator, describe as describe_narrator
+from brain.narrate import ENV_FILE, MODEL, Narrator, describe as describe_narrator, key_set
+
+_UNSEEN = ("never read",)     # a stamp no file has: the first poll always reads settings.json
 
 
 def export_graph(graph: MetricGraph, store: Store, path: Path) -> None:
@@ -75,13 +84,153 @@ def replay(monitor: Monitor, book: Book, start=None, end=None, quiet: bool = Fal
     return opened
 
 
+def watched_series(monitor) -> int:
+    """Series judged on each tick: every watched rate in each of its cuts, every count in each of its cuts
+    (760 on the simulator's graph). 0 before the first tick has loaded the data."""
+    cubes = getattr(monitor, "cubes", None) or {}
+    cfg = getattr(monitor, "config", None)
+    if cfg is None:
+        return 0
+
+    def places(cuts):
+        return sum(len(cubes[cut].keys) for cut in cuts if cut in cubes)
+    return (len(getattr(monitor, "watched", ())) * places(cfg.cuts)
+            + len(getattr(monitor, "volumes", ())) * places(cfg.volume_cuts))
+
+
+class Control:
+    """The console's settings.json (next to the database), applied to the running monitor between ticks, and
+    the monitor's status, brain_status.json in the same folder, written on every poll. Live loop only.
+
+    A value in the file wins; a value it leaves out falls back to the starting value: the monitor's config as it
+    was built, --narrate for narration. A broken file counts as empty and is reported in settings_error."""
+
+    def __init__(self, db, monitor, book, narrate: bool = False, env_file=ENV_FILE, make_narrator=None):
+        self.settings_file = settings.settings_path(db)
+        self.status_file = settings.status_path(db)
+        self.base = monitor.config                 # what a value left out of the file falls back to
+        self.narrate = narrate                     # the command line's wish, while the file says nothing
+        self.env_file = Path(env_file) if env_file is not None else None
+        self.make_narrator = make_narrator or (lambda: Narrator(env_file=self.env_file))
+        self.wanted = narrate                      # narration as applied
+        self.error: str | None = None
+        self.applied_at = settings.utc_now()
+        self._seen = _UNSEEN
+        self._env_seen = settings.stamp(self.env_file)
+        self._key_set = key_set(self.env_file)
+        self._status_failed = False
+
+    # ------------------------------------------------------------------ settings.json and .env
+    def poll(self, monitor, book) -> list[str]:
+        """Apply what changed since the last poll. Returns the lines to print."""
+        lines, built = [], False
+        env = settings.stamp(self.env_file)
+        env_changed = env != self._env_seen
+        if env_changed:
+            self._env_seen, self._key_set = env, key_set(self.env_file)
+        seen = settings.stamp(self.settings_file)
+        if seen != self._seen:
+            try:
+                read = settings.read(self.settings_file)
+            except OSError as e:                   # being replaced at this moment: read it on the next poll
+                self.error = f"{self.settings_file.name} could not be read: {type(e).__name__}"
+            else:
+                self._seen = seen
+                built = self._apply(read, monitor, book)
+                lines.append(self._said(read, monitor, book))
+        if env_changed and self.wanted and not built:    # a new key: a new narrator that reads it
+            self._stop_narrator(book)
+            self._start_narrator(book)
+            lines.append(f"settings: the key file changed; {describe_narrator(book.narrator)}")
+        return lines
+
+    def _apply(self, read: settings.Settings, monitor, book) -> bool:
+        """Thresholds and narration from the file. Returns whether a narrator was built."""
+        given = {name: read.get("detection." + name) for name in settings.DETECTION}
+        monitor.config = dataclasses.replace(self.base, **{k: v for k, v in given.items() if v is not None})
+        self.wanted = bool(read.get("narration.enabled", self.narrate))
+        built = False
+        if self.wanted and book.narrator is None:
+            self._start_narrator(book)
+            built = True
+        elif not self.wanted and book.narrator is not None:
+            self._stop_narrator(book)
+        self.error = read.problems()
+        self.applied_at = settings.utc_now()
+        return built
+
+    def _start_narrator(self, book) -> None:
+        book.narrator = self.make_narrator()
+
+    @staticmethod
+    def _stop_narrator(book) -> None:
+        if book.narrator is not None:
+            book.narrator.close()                  # requests in flight are dropped, nothing new is submitted
+            book.narrator = None
+
+    def _said(self, read: settings.Settings, monitor, book) -> str:
+        if read.error:
+            return f"settings: {read.error}"
+        applied = self.applied(monitor)
+        line = "settings: applied " + ", ".join(f"{k} {applied[k]:g}" for k in settings.DETECTION)
+        line += ", " + (describe_narrator(book.narrator) if self.wanted else "narration: not asked")
+        if not self.settings_file.exists():
+            line += f" (no {self.settings_file.name}: the command line and the defaults)"
+        if read.warnings:
+            line += "; " + "; ".join(read.warnings)
+        return line
+
+    # ------------------------------------------------------------------ brain_status.json
+    def applied(self, monitor) -> dict:
+        return {"narration_enabled": self.wanted, **{k: getattr(monitor.config, k) for k in settings.DETECTION}}
+
+    def status(self, monitor, book, newest) -> dict:
+        narrator = book.narrator
+        if not self.wanted:
+            told = "not asked"
+        elif narrator is None:
+            told = "off: no narrator"
+        else:
+            told = narrator.status
+        return {
+            "pid": os.getpid(),
+            "updated_at": settings.utc_now(),
+            "newest_hour": iso_hour(newest) if newest is not None else None,
+            "watched_series": watched_series(monitor),
+            "incidents_folder": str(Path(book.folder).resolve()),
+            "narration": {"status": told, "model": getattr(narrator, "model", MODEL) or MODEL, "key_set": self._key_set},
+            "applied": self.applied(monitor),
+            "applied_at": self.applied_at,
+            "settings_error": self.error,
+        }
+
+    def write_status(self, monitor, book, newest) -> None:
+        try:
+            settings.write_status(self.status_file, self.status(monitor, book, newest))
+            self._status_failed = False
+        except Exception as e:                     # the console misses a beat; the monitor goes on. Said once.
+            if not self._status_failed:
+                print(f"status: {self.status_file.name} not written: {type(e).__name__}: {e}", file=sys.stderr,
+                      flush=True)
+            self._status_failed = True
+
+
 def live(monitor: Monitor, book: Book, poll: float, max_ticks: int | None = None, quiet: bool = False,
-         extension: Extension | None = None) -> None:
-    last_seen, idle, ticks = None, 0, 0
+         extension: Extension | None = None, control: Control | None = None) -> None:
+    last_seen, idle, ticks, newest = None, 0, 0, None
     narrator = book.narrator
     said = narrator.status if narrator is not None else None   # what the start line already told
     print("monitor is watching; Ctrl+C stops it", flush=True)
     while max_ticks is None or ticks < max_ticks:
+        if control is not None:
+            try:
+                for line in control.poll(monitor, book):   # settings.json and .env: applied before the tick
+                    print(line, flush=True)
+            except Exception:
+                traceback.print_exc()
+            if book.narrator is not narrator:              # switched on, off or rebuilt: the line above told it
+                narrator = book.narrator
+                said = narrator.status if narrator is not None else None
         try:
             if extension is not None:
                 try:
@@ -104,6 +253,8 @@ def live(monitor: Monitor, book: Book, poll: float, max_ticks: int | None = None
         if narrator is not None and narrator.status != said:   # a refused key shows only on a request,
             said = narrator.status                               # so say it here, even when the tick failed
             print(describe_narrator(narrator), flush=True)
+        if control is not None:
+            control.write_status(monitor, book, newest)
         time.sleep(poll)
 
 
@@ -124,7 +275,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-ticks", type=int, help="live: stop after this many ticks (for tests)")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--narrate", action="store_true",
-                    help="live: a language model narrates each incident from its evidence (brain/narrate.py)")
+                    help="live: a language model narrates each incident from its evidence (brain/narrate.py); "
+                         "the starting value: narration.enabled in settings.json next to the database wins")
     a = ap.parse_args(argv)
 
     store = Store(a.db)
@@ -143,12 +295,14 @@ def main(argv: list[str] | None = None) -> int:
             extension = Extension(graph, store, a.incoming, a.graph_out, monitor, fresh=a.fresh, quiet=a.quiet)
             if a.narrate:
                 print(describe_narrator(narrator), flush=True)
-            live(monitor, book, a.poll, a.max_ticks, a.quiet, extension)
+            control = Control(a.db, monitor, book, narrate=a.narrate)
+            print(f"settings: following {control.settings_file}; status in {control.status_file}", flush=True)
+            live(monitor, book, a.poll, a.max_ticks, a.quiet, extension, control)
     except KeyboardInterrupt:
         print("stopped")
     finally:
-        if narrator is not None:
-            narrator.close()
+        for n in {id(x): x for x in (narrator, book.narrator) if x is not None}.values():
+            n.close()
         store.conn.close()
     return 0
 

@@ -153,8 +153,15 @@ def test_the_module_table_lists_every_module_outside_the_brain():
     built = _builder().build()
     paths = _python_files("sim") + _python_files("ui") + _python_files("scripts")
     paths += sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "ui" / "static").iterdir() if p.is_file())
+    paths += sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "ui" / "static" / "v3").iterdir() if p.is_file())
     listed = {r[0] for r in _rows(built) if r}
     assert not [p for p in paths if p not in listed], "modules missing from the table"
+    # the main console is design 3 (served at /); the old page and its style are the classic console (/classic)
+    jobs = {r[0]: html.unescape(r[1]) for r in _rows(built) if len(r) > 1}
+    for name in ("ui/static/v3/index.html", "ui/static/v3/style.css", "ui/static/v3/app.js"):
+        assert "main console" in jobs[name].lower(), name
+    for name in ("ui/static/index.html", "ui/static/console.css"):
+        assert "classic console" in jobs[name].lower(), name
     for which, page in _pages().items():
         for name in ("scripts/summarize_evaluation.py", "scripts/check_guardrails.py"):
             assert name in {r[0] for r in _rows(page) if r}, f"{which} page: {name} is not in the module table"
