@@ -45,6 +45,42 @@ from brain.monitor import Alert, Monitor, Tick, compatible, leading, nested
 RESOLVE_AFTER_HOURS = 3      # normal, judged hours before an incident is closed
 HEALTH_MIN_SURPRISE = 2.0    # "back to normal" needs data that would show the fault, and does not show it
 
+HIGH_EUR = 400.0
+"""Severity `high`: the incident's euro effect so far (the largest absolute value among the impact keys that end
+in `_eur`) reaches this. A gain counts by its size too: an ad overspend books as revenue. On the built-on
+evaluation seeds (120 incidents) the effect has median 151 EUR, 75th percentile 266, 90th 391: about the top
+tenth is high."""
+MEDIUM_EUR = 100.0
+"""Severity `medium` from this euro effect (about the 30th percentile of the same incidents); below it `low`."""
+LONG_HOURS = 12
+"""An incident running this many hours (onset to newest bad hour) moves up one level, to at most `high`: a
+problem that lasts costs attention even when its euro effect is small or cannot be computed. The evaluation's
+faults run 4 to 12 hours."""
+SEVERITIES = ("high", "medium", "low")
+FEED_STATUS = {"open": 0, "ongoing": 0, "resolved": 1, "explained": 2, "pending": 3}
+
+
+def severity(impact: dict | None, hours: float) -> str:
+    """`high`, `medium` or `low` from the euro effect and the hours (see HIGH_EUR, MEDIUM_EUR, LONG_HOURS)."""
+    eur = [abs(v) for k, v in (impact or {}).items()
+           if str(k).endswith("_eur") and isinstance(v, (int, float)) and math.isfinite(v)]
+    size = max(eur, default=0.0)
+    level = 0 if size >= HIGH_EUR else 1 if size >= MEDIUM_EUR else 2
+    if hours >= LONG_HOURS:
+        level = max(level - 1, 0)
+    return SEVERITIES[level]
+
+
+def feed_rank(record: dict) -> tuple:
+    """Sort key of the incident feed: live first (open, ongoing), then resolved, explained, pending; within a
+    status the severe ones first, then the newest."""
+    try:
+        newest_first = -pd.Timestamp(record.get("last_seen")).value
+    except (TypeError, ValueError):
+        newest_first = 0
+    return (FEED_STATUS.get(record.get("status"), 4),
+            SEVERITIES.index(record["severity"]) if record.get("severity") in SEVERITIES else len(SEVERITIES),
+            newest_first)
 
 
 def clean(value):
@@ -222,6 +258,10 @@ class Book:
         self._write_notes(tick, explained)
         return list(written.values())
 
+    def feed(self) -> list[dict]:
+        """The incidents' newest bodies in the order of the feed (feed_rank): live ones first, the severe on top."""
+        return sorted((i.body for i in self.incidents + self.innocent if i.body), key=feed_rank)
+
     def _keep(self, inc: Incident, born: set) -> None:
         inc.id = f"inc-{self._next:04d}"
         self._next += 1
@@ -250,7 +290,9 @@ class Book:
         return found
 
     def _decorate(self, inc: Incident) -> None:
-        """What the book adds to the investigator's body: the link to the incident it repeats."""
+        """What the book adds to the investigator's body: the severity, and the link to the incident it repeats."""
+        hours = (inc.last_seen - inc.onset) / HOUR + 1
+        inc.body = dict(inc.body, severity=severity(inc.body.get("impact"), hours))
         old = inc.recurrence
         if old is not None:
             line = f"It is back: same metric and place as {old.id}, resolved {self._when(old.resolved_at)}."

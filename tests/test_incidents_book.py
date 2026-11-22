@@ -264,3 +264,46 @@ def test_a_real_payment_fault_that_returns_is_linked_to_the_first(clean_db, tmp_
     first, second = alerts_in(book.folder)
     assert first["status"] == "resolved" and "recurrence_of" not in first
     assert second["recurrence_of"] == first["id"] and "It is back" in second["report"]
+
+
+# ------------------------------------------------------------------ I4: severity and the feed's order
+from brain.incidents import HIGH_EUR, LONG_HOURS, MEDIUM_EUR, feed_rank  # noqa: E402
+
+
+def severity_of(stub_book, eur, hours=1, impact_key="contribution_eur"):
+    book = stub_book(extra={key(DE): {"impact": {} if eur is None else {impact_key: eur, "orders": -50}}})
+    feed(book, Alert(**{**alert("take_rate", DE, 30).__dict__, "onset": FAULT - (hours - 1) * H}))
+    (inc,) = alerts_in(book.folder)
+    return inc["severity"]
+
+
+@pytest.mark.parametrize("eur, hours, expected", [
+    (-HIGH_EUR, 1, "high"), (HIGH_EUR + 1, 1, "high"),       # a gain counts by its size too (an ad overspend)
+    (-MEDIUM_EUR, 1, "medium"), (-(MEDIUM_EUR - 1), 1, "low"), (None, 1, "low"),
+    (-MEDIUM_EUR, LONG_HOURS, "high"), (-10, LONG_HOURS, "medium"), (None, LONG_HOURS, "medium"),
+])
+def test_severity_comes_from_the_euro_impact_and_the_hours(stub_book, eur, hours, expected):
+    assert severity_of(stub_book, eur, hours) == expected
+
+
+def test_only_euro_keys_count_for_severity(stub_book):
+    assert severity_of(stub_book, -5000, impact_key="orders_lost") == "low"
+
+
+def test_the_feed_shows_live_incidents_first_and_the_severe_ones_on_top():
+    rows = [{"id": "a", "status": "resolved", "severity": "high", "last_seen": "2026-11-03T15:00:00Z"},
+            {"id": "b", "status": "open", "severity": "low", "last_seen": "2026-11-03T16:00:00Z"},
+            {"id": "c", "status": "ongoing", "severity": "high", "last_seen": "2026-11-03T12:00:00Z"},
+            {"id": "d", "status": "open", "severity": "medium", "last_seen": "2026-11-03T13:00:00Z"},
+            {"id": "e", "status": "explained", "last_seen": "2026-11-03T17:00:00Z"},
+            {"id": "f", "status": "ongoing", "severity": "high", "last_seen": "2026-11-03T14:00:00Z"}]
+    assert [r["id"] for r in sorted(rows, key=feed_rank)] == ["f", "c", "d", "b", "a", "e"]
+
+
+def test_the_book_keeps_its_feed_sorted(stub_book):
+    fr, es = {"country": "FR"}, {"country": "ES"}
+    book = stub_book(extra={key(DE): {"impact": {"contribution_eur": -20}},
+                            key(fr): {"impact": {"contribution_eur": -5 * HIGH_EUR}},
+                            key(es): {"impact": {"contribution_eur": -MEDIUM_EUR}}})
+    feed(book, alert("take_rate", DE, 30), alert("take_rate", fr, 20), alert("take_rate", es, 10))
+    assert [b["severity"] for b in book.feed()] == ["high", "medium", "low"]
