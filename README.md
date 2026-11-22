@@ -64,9 +64,10 @@ and [`docs/system-overview.html`](docs/system-overview.html) the pictures):
 5. **New metrics** ([`brain/extension.py`](brain/extension.py)): a definition and its SQL dropped into a folder are run
    in a sandbox, checked against its formula (the given one, or one found by search when the definition has none),
    placed in the graph and watched from the next hour, without a language model.
-6. **A language model**, only where it helps a reader: with `--narrate` (needs an API key with credit; the demo and all
+6. **A language model**, only where it helps a reader: with `--narrate` (an API key in `.env`; the scoring and all
    results run without it) it writes a short summary of each incident from the incident's own evidence; every number in
-   it is checked against that evidence, and the template report stays.
+   it is checked against that evidence, and the template report stays. Seen live on Sunday morning: the console showed
+   it about 10 s after the fault began, and a new one when the incident resolved.
 
 **Run it** (Python 3.13, Windows PowerShell; the full demo with resets and timings is [`docs/demo.md`](docs/demo.md)):
 
@@ -269,9 +270,10 @@ Built in `brain/incidents.py`.
 
 The core loop runs without it, so the demo cannot fail on an API call. Built in `brain/narrate.py`, switched on with `python -m brain.run --narrate` (live loop only; the replay and the scoring never call it).
 
-- **A narration of each incident**, three or four plain sentences, written by `claude-opus-5-5` from the incident's own evidence and nothing else. One request per milestone (a new incident, a change of the leading explanation, the incident resolved), never per tick; background threads, 20 s per request.
+- **A narration of each incident**, three or four plain sentences, written by `claude-opus-5-5` from the incident's own evidence and nothing else. One request per milestone (a new incident, a change of the leading explanation, a cost that has doubled since the last text, the incident resolved), never per tick; background threads, 20 s per request.
 - **Checked before it is shown.** The text must be plain and finished, and every number in it must appear in the evidence (as given, rounded to the precision written, or as a percentage of a share). A text with any other number is dropped, not repaired. The template report always stays; the console shows the narration as "In brief" above it.
 - **Fails quietly.** No credit or a refused key turns narration off for the run, with the reason in the incident file and in the monitor's start line; a timeout or a server error waits a minute before the same milestone is tried again. The key comes from the environment or `.env` and never appears in a reason.
+- **Seen live** on Sunday morning, four requests in all: "In brief" showed about 10 s after the fault began, and a new text when the incident resolved. That run also showed the text falling behind the figures (−345 EUR in the text, −1,943 EUR above it), so a cost that has doubled is now a milestone too.
 - **Not needed** to find a formula or a place for a new metric: that is a deterministic search (3.3). **Not built:** suggesting descriptions or cause links for new metrics.
 
 ### 3.8 What the algorithm choices are based on
@@ -324,7 +326,7 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 ### M0 Setup — Sat 11:00–12:30
 
 - [x] **A+B** Accept the repo invite, clone, create the venv, `pip install -r requirements.txt`.
-- [ ] **A+B** Each claims the free Claude API credits (event page → *Infrastructure Tools & Credits*) and puts the key in their own `.env`. B's key is in `.env` but has no credit yet; narration (3.7) falls back to the template until it has.
+- [ ] **A+B** Each claims the free Claude API credits (event page → *Infrastructure Tools & Credits*) and puts the key in their own `.env`. B's key is in `.env` with credit, and narration (3.7) was seen live on Sunday morning; A's is open.
 - [x] **A+B** Fix the scenario list: S1–S4 are mandatory, S5 and S6 only if time allows.
 - [x] **A+B** Fix the dimensions: countries, platforms, categories, channels (§2).
 - [x] **A+B** Freeze the three contracts in §3.1: column names, units, timestamp format (UTC, hour start, `2026-11-01T13:00:00Z`), database path `data/market.db`.
@@ -423,7 +425,7 @@ Times are CET. Safe deadline: **Sunday 15:00** (the event T&C says 15:00 on day 
 
 **B**
 - [x] Lifecycle `open → ongoing → resolved`: one file per incident, matched by place and related metrics and updated in place; resolved only on evidence of health. `brain/incidents.py`, built with the monitor (3.4, 3.6).
-- [x] LLM narration from structured evidence, template fallback, 20 s timeout. `brain/narrate.py`, `python -m brain.run --narrate`; every number checked against the evidence (3.7). Needs API credit to show on stage.
+- [x] LLM narration from structured evidence, template fallback, 20 s timeout. `brain/narrate.py`, `python -m brain.run --narrate`; every number checked against the evidence (3.7). Seen live on Sunday morning with credit.
 - [x] Unattended run of one simulated day with mixed events: no crash, no duplicate alerts. `python -m scripts.live_check --run <new folder>`: the real clock, monitor and console-style injections for 36 simulated hours with four faults and their rollbacks, a promo, late data and the new metric. Run on 21 Nov: every fault found once, in place, with its cause, and resolved after its rollback; no false alarm; promo explained; late hours held and released; `refund_rate` validated; no traceback.
 
 **A+B** From 12:00 only bug fixes.
