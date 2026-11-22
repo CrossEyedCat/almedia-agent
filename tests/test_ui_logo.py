@@ -1,5 +1,5 @@
-"""The brand icon of the main console: five versions while the owner picks one (0 the first eye, 1-4 alternatives),
-chosen with ?logo=0..4 or by a click on the icon, remembered in the browser, and used for the tab's icon too."""
+"""The brand icon of the main console: the radar sweep the owner chose out of five versions on 22.11, drawn only in the
+theme's colours, and the same drawing on the browser tab."""
 import re
 
 import pytest
@@ -19,44 +19,33 @@ def _page_and_script(client) -> tuple[str, str]:
     return html, client.get(src).text
 
 
-def _logos(js: str) -> list[dict]:
-    """The LOGOS list as written in app.js: one {name, svg} per version, in order."""
-    block = js.split("var LOGOS = [", 1)[1].split("\n  ];", 1)[0]
-    return [{"name": n, "svg": s} for n, s in re.findall(r"\{ name: '([^']+)', svg: '([^']*)' \}", block)]
+def _mark(html: str) -> str:
+    """The inside of the header's icon."""
+    return re.search(r'<div class="brand">\s*<svg class="mark" viewBox="0 0 24 24" aria-hidden="true">(.*?)</svg>',
+                     html, re.S).group(1)
 
 
-def test_the_icon_is_a_button_that_shows_the_next_version_and_the_tab_icon_follows(client):
-    html, js = _page_and_script(client)
-    assert re.search(r'<button class="mark-btn" id="brand-mark" type="button"[^>]*><svg class="mark" viewBox="0 0 24 24"', html)
-    assert '<link rel="icon" id="favicon"' in html
-    assert "$('brand-mark').addEventListener('click', nextLogo);" in js
-    assert "link.href = 'data:image/svg+xml,'" in js                  # the tab's icon is the same drawing
-    assert "showLogo();      // the tab's icon takes the new theme's colours" in js
+def test_the_header_icon_is_the_radar_sweep_with_one_accent_blip(client):
+    html, _ = _page_and_script(client)
+    mark = _mark(html)
+    assert re.search(r'<circle cx="12" cy="12" r="9\.25" fill="none" stroke="currentColor"', mark)   # the scope
+    assert mark.count('class="acc"') == 1                                                         # the blip
+    assert "Eye of the System</h1>" in html
 
 
-def test_the_version_comes_from_the_address_then_the_browser_then_the_first_eye(client):
-    _, js = _page_and_script(client)
-    assert "params.get('logo')" in js and "store('v3-logo')" in js
-    assert "if (/^[0-4]$/.test(asked)) { store('v3-logo', asked); return +asked; }" in js
-    assert "return /^[0-4]$/.test(kept) ? +kept : 0;" in js
-
-
-def test_five_versions_each_drawn_only_in_the_theme_colours(client):
-    _, js = _page_and_script(client)
-    logos = _logos(js)
-    assert len(logos) == 5 and logos[0]["name"] == "Eye"
-    assert len({l["name"] for l in logos}) == 5 and len({l["svg"] for l in logos}) == 5
-    for l in logos:
-        svg = l["svg"]
-        assert svg and "<svg" not in svg and "<text" not in svg and "<style" not in svg, l["name"]
-        assert not re.search(r"#[0-9a-fA-F]{3,6}\b|rgb\(|\bid=|style=|url\(", svg), l["name"]   # colour only from CSS
-        assert 'class="acc' in svg, l["name"]                     # the accent part, in --iris
-        # every fill or stroke is the ink, the accent's class, or none
-        for colour in re.findall(r'(?:fill|stroke)="([^"]+)"', svg):
-            assert colour in ("currentColor", "none"), (l["name"], colour)
-
-
-def test_the_accent_classes_take_the_theme_accent(client):
+def test_the_icon_is_drawn_only_in_the_theme_colours(client):
+    html, _ = _page_and_script(client)
+    mark = _mark(html)
+    assert not re.search(r"#[0-9a-fA-F]{3,6}\b|rgb\(|\bid=|style=|url\(|<text", mark)
+    for colour in re.findall(r'(?:fill|stroke)="([^"]+)"', mark):
+        assert colour in ("currentColor", "none"), colour
     css = client.get("/static/v3/style.css").text
     assert ".mark .acc { fill: var(--iris); }" in css
-    assert ".mark .acc-s { stroke: var(--iris); fill: none; }" in css
+
+
+def test_the_tab_icon_is_the_same_drawing_and_follows_the_theme(client):
+    html, js = _page_and_script(client)
+    assert '<link rel="icon" id="favicon"' in html
+    assert "mark.innerHTML.replace(/currentColor/g, ink)" in js and "link.href = 'data:image/svg+xml,'" in js
+    assert "showLogo();      // the tab's icon takes the new theme's colours" in js
+    assert "nextLogo" not in js and "v3-logo" not in js                  # the choice is made: no switch left

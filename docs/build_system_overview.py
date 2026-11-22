@@ -127,6 +127,8 @@ def facts() -> dict:
         ("ui/static/v3/style.css", "The main console's style, light and dark"),
         ("ui/static/v3/app.js", "The main console's script: draws the graph, the dock and the reports, replays an incident's trail "
                                 "on the graph, sends the Test bench's requests"),
+        ("ui/static/v3/route.js", "Where each link on the graph leaves and enters its boxes and the curve between, chosen so no "
+                                  "link makes a hook wherever boxes are moved; pure geometry, also run by the tests under node"),
         ("ui/static/index.html", "Classic console (/classic): domain selector, graph, incidents, report, DEMO controls"),
         ("ui/static/data.html", "Read-only browser of the simulator tables"),
         ("ui/static/console.css", "Style of the classic console and of the data browser, light and dark"),

@@ -74,9 +74,6 @@ button.primary:hover { background: var(--iris-ink); border-color: var(--iris-ink
 .mark { width: 26px; height: 26px; color: var(--ink); display: block; }
 .mark .acc { fill: var(--iris); }
 .mark .acc-s { stroke: var(--iris); fill: none; }
-.mark-btn { display: grid; place-items: center; padding: 3px; margin: -3px; border: 0; border-radius: 8px; background: none; cursor: pointer; }
-.mark-btn:hover { background: var(--paper-2); }
-.mark-btn:focus-visible { outline: 2px solid var(--iris); outline-offset: 1px; }
 .clock { display: flex; align-items: center; gap: 10px; padding-left: 20px; border-left: 1px solid var(--line); min-width: 0; white-space: nowrap; }
 .clock-mode { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--paper-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 10px 1px 8px; }
 .clock-mode::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }

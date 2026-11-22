@@ -1722,47 +1722,15 @@
   if (params.get('settings') === '1') openSettings();
 
   // ------------------------------------------------------------ brand icon
-  // The icon left of the title, in five versions while the owner picks one: 0 is the first eye, 1-4 the alternatives.
-  // ?logo=0..4 picks one and this browser remembers it; a click on the icon shows the next. The tab's icon follows.
-  // Each is the inside of a 24 x 24 SVG: the shape in the ink colour, class "acc" filled and "acc-s" stroked in the accent.
-  var LOGOS = [
-    { name: 'Eye', svg: '<path d="M2 12C5 6.5 19 6.5 22 12C19 17.5 5 17.5 2 12Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle class="acc" cx="12" cy="12" r="3.3"/>' },
-    // 1 the eye turns into the metric tree: half a lid round the pupil, two branches to two metrics
-    { name: 'Eye on the graph', svg: '<path d="M15.2 5.73C10.25 4.21 4.46 6.3 1.8 12C4.28 17.32 9.49 19.49 14.2 18.53" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.7 12C15.3 12 15.7 7.5 20.6 7.5M10.7 12C15.3 12 15.7 16.5 20.6 16.5" fill="none" stroke="currentColor" stroke-width="1.75"/><circle class="acc" cx="10.7" cy="12" r="3.5"/><circle cx="20.6" cy="7.5" r="2.2" fill="currentColor"/><circle cx="20.6" cy="16.5" r="2.2" fill="currentColor"/>' },
-    // 2 a lens over a line chart, the spike where a metric breaks in the accent
-    { name: 'Signal lens', svg: '<circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.25"/><path d="M15.9 15.9L21.5 21.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M2.6 12.5l2.4 1.25 2.35-1.75M11.75 13.75l1.9-1.75 1.6.75 2.15-.75" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/><path d="M7.35 12l2.35-6.25 2.05 8" class="acc-s" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>' },
-    // 3 a radar scope: the sweep beam and one blip, the hourly watch
-    { name: 'Radar sweep', svg: '<circle cx="12" cy="12" r="9.25" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M12 12L18.54 5.46A9.25 9.25 0 0 0 8.84 3.31Q14.5 8.68 12 12Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle class="acc" cx="8.46" cy="15.54" r="2"/>' },
-    // 4 an eye made of the graph: four linked metric nodes as the lids, the accent node as the pupil
-    { name: 'Graph eye', svg: '<path d="M2.25 12 12 6 21.75 12 12 18Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="2.25" cy="12" r="2.25" fill="currentColor"/><circle cx="21.75" cy="12" r="2.25" fill="currentColor"/><circle cx="12" cy="6" r="1.75" fill="currentColor"/><circle cx="12" cy="18" r="1.75" fill="currentColor"/><circle class="acc" cx="12" cy="12" r="2.75"/>' }
-  ];
-  var logo = (function () {
-    var asked = params.get('logo') || '', kept = store('v3-logo') || '';
-    if (/^[0-4]$/.test(asked)) { store('v3-logo', asked); return +asked; }
-    return /^[0-4]$/.test(kept) ? +kept : 0;
-  })();
+  // The tab's icon is the header's icon (the radar sweep: the hourly watch, one blip caught), drawn again with the
+  // theme's colours written in, since a favicon cannot read CSS variables; it follows the theme toggle
   function showLogo() {
-    var v = LOGOS[logo] || LOGOS[0], b = $('brand-mark');
-    if (!b) return;
-    b.querySelector('svg').innerHTML = v.svg;
-    b.setAttribute('aria-label', 'Brand icon ' + logo + ' of 4, ' + v.name + '. Show the next version');
-    b.title = 'Brand icon ' + logo + ': ' + v.name + ' (click for the next)';
-    // the tab's icon: the same drawing with the theme's colours written in, since a favicon cannot read CSS variables
+    var mark = document.querySelector('.brand .mark'), link = $('favicon');
+    if (!mark || !link) return;
     var css = getComputedStyle(document.documentElement), ink = css.getPropertyValue('--ink').trim() || '#172033', acc = css.getPropertyValue('--iris').trim() || '#5847D9';
-    var body = v.svg.replace(/currentColor/g, ink).replace(/class="acc-s"/g, 'stroke="' + acc + '" fill="none"').replace(/class="acc"/g, 'fill="' + acc + '"');
-    var link = $('favicon');
-    if (link) link.href = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">' + body + '</svg>');
+    var body = mark.innerHTML.replace(/currentColor/g, ink).replace(/class="acc-s"/g, 'stroke="' + acc + '" fill="none"').replace(/class="acc"/g, 'fill="' + acc + '"');
+    link.href = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">' + body + '</svg>');
   }
-  function nextLogo() {
-    do { logo = (logo + 1) % LOGOS.length; } while (!LOGOS[logo]);
-    store('v3-logo', String(logo));
-    try {
-      var u = new URL(location.href);
-      if (u.searchParams.has('logo')) { u.searchParams.set('logo', String(logo)); history.replaceState(null, '', u); }
-    } catch (e) {}
-    showLogo();
-  }
-  if ($('brand-mark')) $('brand-mark').addEventListener('click', nextLogo);
   showLogo();
 
   get('/api/domains').then(function (d) { domains = d; }).catch(function () {}).then(function () { refresh(); setInterval(refresh, 2000); });
