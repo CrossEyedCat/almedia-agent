@@ -115,6 +115,10 @@ def facts() -> dict:
                                         "against the same hour of the previous three weeks, no calendar and no investigation"),
         ("scripts/live_check.py", "Unattended live check: the real clock, brain and console-style injections for 36 simulated hours with every "
                                   "kind of event, then eight checks; exit code 1 if one fails"),
+        ("scripts/stress_cases.py", "Eleven targeted stress cases (traffic drop, small payment fault, fault during a promo, "
+                                    "unannounced mix shift, recommendations faults, missing or late release, sibling places, "
+                                    "recurrence, late source), each a seeded 30-day history replayed by the brain and judged "
+                                    "from its output files; writes docs/stress.md and docs/stress.json"),
         ("ui/app.py", "The console's API: graph export, incidents, state, injection, rollback, new metric, data browser"),
         ("ui/domains.py", "Which metric belongs to which business domain"),
         ("ui/static/index.html", "Console: domain selector, graph, incidents, report, DEMO controls"),

@@ -119,24 +119,39 @@ def test_a_volume_alert_gets_the_same_release_check(traffic_drop):
 
 
 # ------------------------------------------------------------------ V3: innocent explanations
-def double_electronics(con):
-    """Traffic moves toward electronics for 8 hours: every count of the category doubles, every cell's rate stays."""
-    from sim.schema import MEASURES
-    sets = ", ".join(f'"{c}" = "{c}" * 2' for c in MEASURES)
-    con.execute(f"UPDATE facts_hourly SET {sets} WHERE category = 'electronics' AND ts >= ? AND ts < ?",
-                (ts(FAULT), ts(FAULT + 8 * H)))
-    con.commit()
+def records_after(clean_db, tmp_path, step, last=7):
+    """Every record the book writes (incidents and explained ones) after `step` changed a copy of the data."""
+    import json
+    import shutil
+    path = tmp_path / "s.db"
+    shutil.copy(clean_db, path)
+    con = simdb.connect(path)
+    try:
+        step(con)
+    finally:
+        con.close()
+    monitor = Monitor(MetricGraph.load(), Store(path))
+    book = Book(monitor, tmp_path / "incidents", fresh=True)
+    for k in range(0, last + 1):
+        book.update(monitor.tick(as_of=FAULT + k * H))
+    return [json.loads(p.read_text(encoding="utf-8")) for p in sorted(book.folder.glob("*.json"))]
 
 
-def test_a_mix_shift_that_explains_the_change_is_supported_and_innocent(run):
-    incidents = run(double_electronics)
-    assert incidents
-    for inc in incidents:
-        lead = inc["hypotheses"][0]
-        assert "shift in the mix" in lead["cause"] and lead["status"] == "supported"
-        assert inc["innocent"]["kind"] == "mix"
-        assert "%" in inc["innocent"]["reason"] and "mix" in inc["innocent"]["reason"]
-        assert inc["metric"] and inc["trail"] and inc["report"]     # every other field is still filled
+def shift_to_electronics(con):
+    """Traffic moves toward electronics for 8 hours (the simulator's innocent mix shift): the total stays the same and
+    every category's own rates stay the same, so only the market-wide rates move."""
+    inject.mix_shift(con, "electronics", FAULT, FAULT + 8 * H, share=0.5)
+
+
+def test_a_mix_shift_that_explains_the_change_is_supported_and_innocent(clean_db, tmp_path):
+    records = records_after(clean_db, tmp_path, shift_to_electronics)
+    live = [r for r in records if r.get("status") in ("open", "ongoing", "resolved")]
+    innocent = [r for r in records if r.get("status") == "explained" and (r.get("innocent") or {}).get("kind") == "mix"]
+    assert not live, [(r["id"], r["metric"], r["segment"]) for r in live]      # no alert for an innocent change
+    assert innocent
+    for rec in innocent:
+        assert "%" in rec["innocent"]["reason"] and "mix" in rec["innocent"]["reason"]
+        assert rec["metric"] and rec["trail"] and rec["report"]     # every other field is still filled
 
 
 def test_a_real_fault_is_not_called_innocent(run):
@@ -254,3 +269,18 @@ def test_each_release_says_what_supported_requires_and_which_parts_held(run):
     assert lead["evidence"][-1].endswith("linked yes, scope exact, timing yes")
     wide = next(h for h in inc["hypotheses"] if h["cause"].endswith("rollout (DE)"))
     assert "scope wider" in wide["evidence"][-1]
+
+
+def test_an_event_the_monitor_did_not_accept_never_makes_the_incident_innocent(clean_db, tmp_path):
+    """The monitor raised the alert although a promo covers it (partial_explanation): its verdict stands,
+    even when the rise would fit the investigator's own size rule."""
+    import dataclasses
+    db = promo_db(clean_db, tmp_path)
+    alerts = promo_alerts(db, FAULT + 4 * H)
+    why = "it rose more than twice what earlier promos gave"
+    raised = [dataclasses.replace(a, observed=1.5 * a.expected, episode_observed=1.5 * a.expected, explained_by=None,
+                                  partial_explanation=dict(a.explained_by, why=why)) for a in alerts]
+    _, _, body = investigate_by_hand(db, raised, FAULT + 4 * H)
+    event = next(h for h in body["hypotheses"] if h["kind"] == "calendar")
+    assert event["status"] == "rejected" and any(why in e for e in event["evidence"])
+    assert "innocent" not in body

@@ -514,6 +514,9 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
         if (eur != null) line.push(el('span', 'chg ' + euroTone(i, eur), [eurText(eur)]));
         var sub = [segText(i.segment)];
         if (moved !== str(i.metric)) sub.push(' · ', el('span', 'mono', [str(i.metric) + (num(ch.delta_pct) != null ? ' ' + pct(ch.delta_pct) : '')]));
+        if (!quiet && i.severity) sub.push(' · ', el('span', 'sev ' + str(i.severity), [str(i.severity)]));
+        if (i.recurrence_of) sub.push(' · ', el('span', 'muted', ['back again, see ' + str(i.recurrence_of)]));
+        if (st === 'explained' && obj(i.innocent).kind) sub.push(' · ', el('span', 'muted', ['innocent: ' + str(obj(i.innocent).kind)]));
         var row = el('div', 'inc ' + stOf(i) + (quiet ? ' quiet' : '') + (i.id === selInc && mode === 'incident' ? ' sel' : ''), [
           el('span', 'pill ' + st, [st]),
           el('span', 'inc-main', [
@@ -612,7 +615,16 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
   function renderIncident(d, i) {
     var t = $('detail-title'); t.textContent = 'Report: '; t.appendChild(el('span', 'head-id', [str(i.id)]));
     $('detail-status').appendChild(el('span', 'pill ' + status(i), [status(i)]));
+    if (i.severity && status(i) !== 'explained') $('detail-status').appendChild(el('span', 'sev ' + str(i.severity), [str(i.severity) + ' severity']));
     d.className = 'detail ' + stOf(i);
+    // an innocent change the investigation found (a mix shift): why there is no alert
+    if (obj(i.innocent).reason) d.appendChild(section('Why no alert', [el('p', 'summary', [str(obj(i.innocent).reason)])]));
+    // the same fault came back: the earlier, resolved incident is one click away
+    if (i.recurrence_of) {
+      var back = el('button', 'linkish', ['It is back: same metric and place as ' + str(i.recurrence_of) + '. Open it']);
+      back.addEventListener('click', function () { selInc = str(i.recurrence_of); mode = 'incident'; renderFeed(); renderDetail(); applyStyles(); });
+      d.appendChild(back);
+    }
     var ch = obj(i.change), w = obj(ch.window), imp = obj(i.impact);
     // four figures first: what was seen, what was expected, the change, and what it cost in euros
     var effect = euroOf(i);

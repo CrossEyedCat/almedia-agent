@@ -486,7 +486,11 @@ class Book:
         faulty = top.episode_observed
         if top.expected and abs(faulty / top.expected - 1) < self.monitor.config.min_effect:
             faulty = top.observed
-        w = self.monitor.window(top.metric, top.segment, inc.last_seen + HOUR, tick.newest + HOUR, as_rate=faulty)
+        if top.kind == "volume":   # a count follows the hour of the day: ask for the faulty share of the expected count
+            w = self.monitor.window(top.metric, top.segment, inc.last_seen + HOUR, tick.newest + HOUR,
+                                    as_ratio=faulty / top.expected if top.expected else None)
+        else:
+            w = self.monitor.window(top.metric, top.segment, inc.last_seen + HOUR, tick.newest + HOUR, as_rate=faulty)
         if w is None or w["telling"] < HEALTH_MIN_SURPRISE:
             return False
         same_way = (w["observed"] < w["expected"]) == (faulty < top.expected)

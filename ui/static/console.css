@@ -80,6 +80,10 @@ button:disabled:hover { border-color: var(--line); }
 .pill.open { color: var(--hot); } .pill.ongoing, .pill.plausible, .pill.example { color: var(--amber); }
 .pill.example { text-transform: none; letter-spacing: 0; font-size: 12px; white-space: normal; background: var(--amber-bg); border-radius: 6px; padding: 2px 8px; }
 .pill.resolved, .pill.supported { color: var(--ok); } .pill.rejected, .pill.explained, .pill.pending { color: var(--muted); }
+.sev { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin-left: 8px; }
+.sev.high { color: var(--hot); } .sev.medium { color: var(--amber); } .sev.low { color: var(--muted); }
+.linkish { background: none; border: 0; padding: 0; margin: 4px 0 12px; color: var(--accent); cursor: pointer; font: inherit; text-align: left; }
+.linkish:hover { text-decoration: underline; }
 /* the colour of a status, for rails, bars and the trace in the graph */
 .st-open { --st: var(--hot); --st-bg: var(--hot-bg); }
 .st-ongoing { --st: var(--amber); --st-bg: var(--amber-bg); }

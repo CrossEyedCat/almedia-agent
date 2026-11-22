@@ -725,7 +725,26 @@ class Investigator:
             if x is not None and not any(iso_hour(e["start"]) == x["start"] and e["country"] == x["country"] for e in covering):
                 covering.append({"start": pd.Timestamp(x["start"]), "end": pd.Timestamp(x["end"]), "country": x["country"],
                                  "kind": x["kind"], "description": x["description"]})
-        events = [(e, self.planned(e, alerts)) for e in covering]
+        # the monitor already judged a covering event that does not fit (direction or size): its verdict stands,
+        # so an event the monitor did not accept can never make the incident innocent here
+        partial = {}
+        for a in alerts:
+            x = getattr(a, "partial_explanation", None)
+            if not x:
+                continue
+            key = (iso_hour(pd.Timestamp(x["start"])), x.get("country"))
+            partial[key] = x.get("why") or "the change does not fit the event in direction or size"
+            if not any(iso_hour(e["start"]) == key[0] and e["country"] == key[1] for e in covering):
+                covering.append({"start": pd.Timestamp(x["start"]), "end": pd.Timestamp(x["end"]), "country": x.get("country"),
+                                 "kind": x.get("kind"), "description": x.get("description")})
+
+        def fit_of(e):
+            why = partial.get((iso_hour(e["start"]), e["country"]))
+            if why is None:
+                return self.planned(e, alerts)
+            return {"status": "rejected", "score": 0.1, "reason": why,
+                    "evidence": [f"the monitor raised this change although the event covers it: {why}"]}
+        events = [(e, fit_of(e)) for e in covering]
         trail.append({"action": "check", "target": "calendar", "result": (
             f"no planned event covers {where} in these hours" if not events else
             "; ".join(f"{e['description'] or e['kind']} ({when(e['start'])} to {when(e['end'])}) overlaps: "
@@ -820,6 +839,12 @@ class Investigator:
         for h in hypotheses:
             h.pop("_ts", None)
             h.pop("_lag", None)
+        # a mix shift that explains the change outranks "the moved metric itself": that hypothesis only restates the
+        # change, and the links it follows move with the mix too. A supported release still comes first.
+        if mix_h is not None and mix_h["status"] == "supported" and \
+                not any(h["kind"] == "release" and h["status"] == "supported" for h in hypotheses):
+            hypotheses.remove(mix_h)
+            hypotheses.insert(0, mix_h)
         lead = hypotheses[0]
         # innocent: the leading supported explanation is a mix shift or a planned event, and no release fits
         innocent = None

@@ -110,6 +110,22 @@ def _read_incident(path: Path) -> dict | None:
     return data
 
 
+FEED_STATUS = {"open": 0, "ongoing": 0, "resolved": 1, "explained": 2, "pending": 3}
+SEVERITIES = ("high", "medium", "low")
+
+
+def feed_order(record: dict) -> tuple:
+    """The feed's order, the same as brain.incidents.feed_rank: live first, then resolved, explained, pending;
+    within a status the severe ones first, then the newest."""
+    try:
+        newest_first = -pd.Timestamp(record.get("last_seen")).value
+    except (TypeError, ValueError):
+        newest_first = 0
+    sev = record.get("severity")
+    return (FEED_STATUS.get(record.get("status"), 4), SEVERITIES.index(sev) if sev in SEVERITIES else len(SEVERITIES),
+            newest_first)
+
+
 def _incidents() -> tuple[list[dict], bool, int]:
     """(incidents, is_example, number of files ignored). The contract example is shown only when the folder does not
     exist; once the monitor has made it, an empty folder means "nothing found". Non-alert status notes are included."""
@@ -124,7 +140,7 @@ def _incidents() -> tuple[list[dict], bool, int]:
                 skipped += 1
             elif p.parent == INCIDENTS_DIR or d.get("status") in ("explained", "pending"):
                 items.append(d)
-        return sorted(items, key=lambda i: str(i.get("last_seen") or ""), reverse=True), False, skipped
+        return sorted(items, key=feed_order), False, skipped
     if EXAMPLE_INCIDENT.exists():
         return [json.loads(EXAMPLE_INCIDENT.read_text(encoding="utf-8"))], True, 0
     return [], False, 0
