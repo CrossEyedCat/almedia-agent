@@ -46,6 +46,10 @@ NORMAL_MAX_SURPRISE = 2.0     # below this a window is "normal" for the purpose 
 MIX_MAX_SHARE = 0.2           # a mix shift that explains less than this share of the change is rejected
 MIX_EXPLAINS_SHARE = 0.8      # ... and one that explains at least this share is supported: an innocent change
 PLANNED_MAX_LIFT = 1.0        # a planned event is taken to lift a metric linked to the calendar by at most +100 %
+PACED_SYSTEMS = ("pacing",)   # systems that spend a budget on a schedule: a rise, then a fall, is the budget spent early
+# What would show a first cause behind a system's metric, and is not in the data. A metric of these
+# systems that moved without a release is reported as the last cause the data can show.
+UPSTREAM_RECORDS = {"inventory": "supplier deliveries", "purchasing": "purchase orders"}
 INSIDE_MIN_SHARE = 0.5        # a release that covers only part of the place must hold at least this much of the change
 MAX_REJECTED_RELEASES = 4     # rejected releases kept in the report (the best scoring ones)
 CHECK_MIN_SURPRISE = 3.0      # a factor of the checked chain "moved": p below 0.001 over the hours checked,
@@ -128,21 +132,29 @@ class Investigator:
         return out
 
     # ---------------------------------------------------------------- 2. where
-    def phase_start(self, metric: str, segment: dict, start, end, skip=()) -> pd.Timestamp:
-        """The first hour of the phase the metric is in now. A rate that first rose and then fell
-        (an ad budget spent early, then gone) cancels itself out over the whole incident: where it
-        happened can only be read from hours in which it moved one way. The phase begins after the
-        last hour that moved clearly the other way."""
+    def phases(self, metric: str, segment: dict, start, end, skip=()) -> dict:
+        """The first hour of the phase the metric is in now, and the earlier phase if there was one. A rate
+        that first rose and then fell (an ad budget spent early, then gone) cancels itself out over the
+        whole incident: where it happened can only be read from hours in which it moved one way. The phase
+        begins after the last hour that moved clearly the other way. `before`: those hours of the other way,
+        with `factor` (observed over expected, on average) and `hours` (from the first to the last of them)."""
         floor = self.monitor.config.min_effect
         clear = [h for h in self.monitor.hourly(metric, segment, start, end, skip)
                  if h["score"] >= NORMAL_MAX_SURPRISE and h["expected"] and abs(h["observed"] / h["expected"] - 1) >= floor]
-        begin = pd.Timestamp(start)
+        begin, before = pd.Timestamp(start), []
         if clear:
             rising = clear[-1]["z"] > 0
-            for h in clear:
-                if (h["z"] > 0) != rising:
-                    begin = h["hour"] + HOUR
-        return begin
+            before = [h for h in clear if (h["z"] > 0) != rising]
+            if before:
+                begin = before[-1]["hour"] + HOUR
+        out = {"begin": begin, "rising": bool(clear) and clear[-1]["z"] > 0, "before": before}
+        if before:
+            out["factor"] = float(np.mean([h["observed"] / h["expected"] for h in before]))
+            out["hours"] = int((before[-1]["hour"] - before[0]["hour"]) / HOUR) + 1
+        return out
+
+    def phase_start(self, metric: str, segment: dict, start, end, skip=()) -> pd.Timestamp:
+        return self.phases(metric, segment, start, end, skip)["begin"]
 
     def localize(self, metric: str, anchor: dict, start, end, skip=()):
         """(choice, places by segment, cells) for the metric, or (None, {}, None) without cell data."""
@@ -555,7 +567,14 @@ class Investigator:
                           f"; weaker in {', '.join(diluted[:6])}" if diluted else "; no other series of this metric moved")})
 
         # 2. where
-        since = self.phase_start(primary.metric, inc.segment, inc.onset, end, held)
+        phase = self.phases(primary.metric, inc.segment, inc.onset, end, held)
+        since = phase["begin"]
+        turned = ""     # a rise, then a fall (or the reverse): said in the report
+        if phase["before"] and not phase["rising"]:
+            spec = graph.specs[primary.metric]
+            name = (spec.description.split(" - ")[0].rstrip(".") or primary.metric) if spec.description else primary.metric
+            turned = f" Over the incident, {name[0].lower() + name[1:]} first rose (x{phase['factor']:.1f} for {phase['hours']} h), then fell"
+            turned += (": spending ran ahead of schedule and the budget ran out." if set(spec.systems) & set(PACED_SYSTEMS) else ".")
         choice, places, cells = self.localize(primary.metric, inc.segment, since, end, held)
         place = dict(choice.place.segment) if choice is not None else dict(inc.segment)
         segment = place if mon.has_series(primary.metric, place) else dict(inc.segment)   # where rates can be compared
@@ -670,6 +689,8 @@ class Investigator:
                                  "the amount, even its sign, can still change.")
             also = "".join(f", {d:+,.0f} {m}" for m, d in cost["counted"].items())
             loss = f" Effect on {outcome} in {seg_text(segment)} so far: {effect:+,.0f} {unit}{also}."
+            if turned.endswith("ran out."):
+                loss += " The extra ad revenue of the first phase is budget spent early, not earned: the hours after it go without."
         elif any(m in tree_metrics(graph, o) for o in graph.top_outcomes()[:1] for m in inc.metrics):
             uncertain.append("The effect on the outcome could not be computed for this window: a factor of the formulas "
                              "has no value or no baseline there.")
@@ -734,9 +755,21 @@ class Investigator:
             else:
                 # a planned event that fits explains the follow-on movement too: the metric is then no first cause
                 confirmed_here = bool(inc.confirmed) and not any(fit["status"] == "supported" for _, fit in events)
+                records = [UPSTREAM_RECORDS[s] for s in graph.specs[primary.metric].systems if s in UPSTREAM_RECORDS]
+                if records:
+                    # the last cause the data can show: say so, and say what would show the one before it
+                    level = next((n for n in self._origins(primary.metric)[1:] if self.graph.out_edges(n, "may_affect")),
+                                 primary.metric)
+                    cause = (f"{level} {direction} in {where} ({primary.metric} {num(primary.observed)} against "
+                             f"{num(primary.expected)}); no first cause beyond them is in the data "
+                             f"(the simulator has no {' or '.join(records)})")
+                    uncertain.append(f"What made {level} {'fall' if direction == 'fell' else 'rise'} cannot be told: "
+                                     f"{' and '.join(records)} are not in the data, so a late delivery cannot be told "
+                                     "from too small an order.")
+                else:
+                    cause = f"{primary.metric} {direction} in {where} without a matching release" + ("" if covering else " or planned event")
                 hypotheses.append({
-                    "cause": f"{primary.metric} {direction} in {where} without a matching release"
-                             + ("" if covering else " or planned event"),
+                    "cause": cause,
                     "kind": "metric", "status": "supported" if confirmed_here else "plausible",
                     "score": 0.7 if confirmed_here else 0.4,
                     "evidence": [f"{num(primary.observed)} against {num(primary.expected)} expected{seen_in}, z {primary.z:+.1f}"]
@@ -839,7 +872,7 @@ class Investigator:
             verdict_text = "No cause is confirmed yet."
         body["report"] = (
             f"{primary.metric} {'fell' if obs < exp else 'rose'} to {num(obs)}{per} from an expected {num(exp)}{per} in "
-            f"{where}, starting {when(inc.onset)}.{loss}{check_sentence} "
+            f"{where}, starting {when(inc.onset)}.{turned}{loss}{check_sentence} "
             + verdict_text
             + (f" {sum(h['status'] == 'rejected' for h in hypotheses)} other explanation(s) were tested and rejected."
                if any(h["status"] == "rejected" for h in hypotheses) else ""))

@@ -185,3 +185,30 @@ def test_a_planned_event_that_does_not_fit_stays_a_rival_and_is_not_innocent(cle
     event = next(h for h in body["hypotheses"] if h["kind"] == "calendar")
     assert event["status"] == "rejected" and any("more than" in e for e in event["evidence"])
     assert "innocent" not in body
+
+
+# ------------------------------------------------------------------ V4: stock-out and ad-pacing wording
+def test_a_stockout_cause_says_no_first_cause_beyond_it_is_in_the_data(run):
+    (inc,) = run(lambda con: inject.stockout_surge(con, "electronics", FAULT), last=8)
+    lead = inc["hypotheses"][0]
+    assert lead["kind"] == "metric" and lead["status"] == "supported"
+    assert lead["cause"].startswith("stockouts rose in electronics")
+    assert "no first cause beyond them is in the data (the simulator has no supplier deliveries or purchase orders)" in lead["cause"]
+    assert "stockout" in lead["cause"].lower()       # what the scorer looks for
+    assert any("supplier deliveries" in u and "purchase orders" in u for u in inc["uncertain"])
+
+
+def test_an_ad_budget_spent_early_is_told_as_spent_early(run):
+    (inc,) = run(lambda con: inject.ad_budget_exhausted(con, "PL", FAULT, FAULT + 10 * H, boost_hours=3), last=8)
+    report = inc["report"]
+    assert "sponsored impressions per session first rose (x" in report and "for 3 h), then fell" in report
+    assert "spending ran ahead of schedule and the budget ran out" in report
+    assert "spent early, not earned" in report
+    check = step_of(inc, "check", "factors of ad_clicks")["result"]
+    for m in ("sessions", "ad_load", "ad_ctr", "ad_cpc"):
+        assert m in check
+
+
+def test_an_ad_budget_still_in_its_first_phase_has_no_such_sentence(run):
+    (inc,) = run(lambda con: inject.ad_budget_exhausted(con, "PL", FAULT, FAULT + 10 * H, boost_hours=3), last=2)
+    assert "then fell" not in inc["report"]
