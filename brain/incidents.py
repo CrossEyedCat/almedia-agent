@@ -46,6 +46,7 @@ RESOLVE_AFTER_HOURS = 3      # normal, judged hours before an incident is closed
 HEALTH_MIN_SURPRISE = 2.0    # "back to normal" needs data that would show the fault, and does not show it
 
 
+
 def clean(value):
     """Plain JSON types only: no NaN or infinity, no numpy scalars, timestamps as hour strings."""
     if isinstance(value, dict):
@@ -104,6 +105,7 @@ class Incident:
     body: dict = field(default_factory=dict)
     siblings: list = field(default_factory=list)    # (metric, series) of the same fault outside its own series,
                                                     # joined through the localized place or the cause (Book._match)
+    recurrence: Incident | None = None              # the resolved incident this one repeats (Book._recurrence)
 
     def lead(self) -> Alert:
         """The strongest alert: the metric the incident is about."""
@@ -199,6 +201,7 @@ class Book:
             if any(i is inc for i in self.innocent):
                 self._revive(inc, born)
             touched.add(inc.id)
+            self._decorate(inc)
             self._write(inc)
             written[inc.id] = inc.body
 
@@ -222,8 +225,38 @@ class Book:
     def _keep(self, inc: Incident, born: set) -> None:
         inc.id = f"inc-{self._next:04d}"
         self._next += 1
+        inc.recurrence = self._recurrence(inc)
         self.incidents.append(inc)
         born.add(inc.id)
+
+    def _recurrence(self, inc: Incident) -> Incident | None:
+        """The newest resolved incident with the same lead metric in a nested place (its series or the place
+        the investigation localized): the problem is back, and the new incident says so."""
+        if not inc.metrics:
+            return None
+        lead = inc.lead().metric
+
+        def where(i: Incident) -> list[dict]:
+            return [i.segment] + ([i.body["segment"]] if isinstance(i.body.get("segment"), dict) else [])
+        found = None
+        for old in self.incidents:
+            if old is inc or old.status != "resolved" or old.resolved_at is None or not old.metrics \
+                    or old.lead().metric != lead:
+                continue
+            # the whole market is a place of its own here, not one that holds every other
+            if any(nested(a, b) and bool(a) == bool(b) for a in where(inc) for b in where(old)):
+                if found is None or old.resolved_at > found.resolved_at:
+                    found = old
+        return found
+
+    def _decorate(self, inc: Incident) -> None:
+        """What the book adds to the investigator's body: the link to the incident it repeats."""
+        old = inc.recurrence
+        if old is not None:
+            line = f"It is back: same metric and place as {old.id}, resolved {self._when(old.resolved_at)}."
+            report = str(inc.body.get("report", ""))
+            inc.body = dict(inc.body, recurrence_of=old.id,
+                            report=report if line in report else f"{report} {line}".strip())
 
     # ------------------------------------------------- innocent changes the investigation found
     def _explain(self, inc: Incident, recent: list) -> None:

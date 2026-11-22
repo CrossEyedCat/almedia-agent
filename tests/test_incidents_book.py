@@ -213,3 +213,54 @@ def test_an_explained_group_that_stops_looking_innocent_becomes_an_incident(stub
     feed(book, alert("take_rate", DE, 40, hour=FAULT + H), hour=FAULT + H)
     (inc,) = records(book.folder)        # the incident's file replaces the explained record
     assert inc["id"] == "inc-0001" and inc["status"] == "open" and inc["first_seen"] == iso_hour(FAULT)
+
+
+# ------------------------------------------------------------------ I3: recurrence
+def resolve_quietly(book, start, hours=4):
+    """Hours without alerts; the book is told the data looks healthy."""
+    book._healthy = lambda inc, tick: True
+    for k in range(hours):
+        feed(book, hour=start + k * H)
+
+
+def test_a_fault_that_comes_back_names_the_resolved_incident(stub_book):
+    book = stub_book()
+    feed(book, alert("take_rate", DE_EL, 30))
+    resolve_quietly(book, FAULT + H)
+    (old,) = alerts_in(book.folder)
+    assert old["status"] == "resolved"
+    back = FAULT + 8 * H
+    feed(book, alert("take_rate", DE, 40, hour=back), hour=back)       # a nested place: the whole country
+    new = next(i for i in alerts_in(book.folder) if i["id"] == "inc-0002")
+    assert new["recurrence_of"] == "inc-0001"
+    assert f"It is back: same metric and place as inc-0001, resolved {old['resolved_at'][:10]}" in new["report"]
+    feed(book, alert("take_rate", DE, 41, hour=back + H), hour=back + H)  # still said on the next tick
+    new = next(i for i in alerts_in(book.folder) if i["id"] == "inc-0002")
+    assert new["recurrence_of"] == "inc-0001" and new["report"].count("It is back") == 1
+
+
+def test_another_metric_or_place_is_no_recurrence(stub_book):
+    book = stub_book()
+    feed(book, alert("take_rate", DE_EL, 30))
+    resolve_quietly(book, FAULT + H)
+    back = FAULT + 8 * H
+    feed(book, alert("search_ctr", DE_EL, 40, hour=back, observed=0.05), alert("take_rate", FR_EL, 40, hour=back), hour=back)
+    assert all("recurrence_of" not in i and "It is back" not in i["report"] for i in alerts_in(book.folder))
+
+
+def test_a_real_payment_fault_that_returns_is_linked_to_the_first(clean_db, tmp_path):
+    from sim import db as simdb
+    from sim import inject
+    path = tmp_path / "r.db"
+    shutil.copy(clean_db, path)
+    con = simdb.connect(path)
+    inject.payment_failure(con, "DE", "Android", FAULT, 0.4, end=FAULT + 3 * H)
+    inject.payment_failure(con, "DE", "Android", FAULT + 8 * H, 0.4)   # the data ends at FAULT + 12 h
+    con.close()
+    monitor = Monitor(MetricGraph.load(), Store(path))
+    book = Book(monitor, tmp_path / "incidents", fresh=True)
+    for k in range(0, 11):
+        book.update(monitor.tick(as_of=FAULT + k * H))
+    first, second = alerts_in(book.folder)
+    assert first["status"] == "resolved" and "recurrence_of" not in first
+    assert second["recurrence_of"] == first["id"] and "It is back" in second["report"]
