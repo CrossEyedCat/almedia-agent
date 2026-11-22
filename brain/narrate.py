@@ -15,7 +15,10 @@ extra field, `narrative`, that arrives on a later tick. The rules:
   share). A text with a number the evidence does not hold is dropped, not repaired (`numbers_backed`).
 - Failures say why and cost nothing more: a refused key or no credit turns narration off for the run; a
   timeout, a rate limit or a server error waits COOLDOWN_S before the milestone is tried again.
-- The key comes from the environment or the repository's .env; it never appears in a reason or a status.
+- The key comes from the repository's .env, read again whenever a Narrator is built (dotenv_values, never
+  load_dotenv: os.environ is left as the shell gave it, so a key replaced or removed from the console is not
+  shadowed by an old copy), then from the environment. It never appears in a reason or a status; outside this
+  module it is described only as set or not (`key_set`).
 """
 from __future__ import annotations
 
@@ -115,13 +118,41 @@ def _api_message(e) -> str:
     return str(getattr(e, "message", "") or type(e).__name__)
 
 
-def _clean(message: str) -> str:
+def _clean(message: str, secrets=()) -> str:
     message = KEY.sub("[key]", str(message))
-    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
-        secret = os.environ.get(name)
+    for secret in [os.environ.get(n) for n in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")] + list(secrets):
         if secret:
             message = message.replace(secret, "[key]")
     return " ".join(message.split())[:300]
+
+
+def read_env(env_file) -> dict:
+    """The values of a .env file, read now (an empty dict when there is no file). os.environ is not touched."""
+    if env_file is None or not Path(env_file).is_file():
+        return {}
+    try:
+        from dotenv import dotenv_values
+        return {k: v for k, v in dotenv_values(env_file).items() if v}
+    except ImportError:                       # the plain KEY=value lines are enough here
+        out = {}
+        for line in Path(env_file).read_text(encoding="utf-8-sig").splitlines():
+            name, sep, value = line.strip().removeprefix("export ").partition("=")
+            if sep and not name.startswith("#") and value.strip().strip("'\""):
+                out[name.strip()] = value.strip().strip("'\"")
+        return out
+    except Exception:                         # an unreadable file is a file without a key
+        return {}
+
+
+def _credentials(env_file) -> tuple[str | None, str | None]:
+    """(API key, auth token): the .env file's first, then the environment's."""
+    from_file = read_env(env_file)
+    return tuple(from_file.get(n) or os.environ.get(n) or None for n in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"))
+
+
+def key_set(env_file=ENV_FILE) -> bool:
+    """Is ANTHROPIC_API_KEY in the environment or in the .env file? The only thing said about the key."""
+    return bool(os.environ.get("ANTHROPIC_API_KEY") or read_env(env_file).get("ANTHROPIC_API_KEY"))
 
 
 class Narrator:
@@ -136,18 +167,15 @@ class Narrator:
         self._waiting: dict[str, tuple[tuple, dict]] = {}            # incident -> newest milestone not yet sent
         self._done: dict[str, tuple] = {}                            # incident -> milestone answered for good
         self._until = 0.0                                            # no new request before this (cooldown)
+        self._secrets: tuple[str, ...] = ()                          # scrubbed from every reason
         if self._client is None:
             self._client = self._connect(env_file)
 
     def _connect(self, env_file):
-        if env_file is not None and Path(env_file).is_file():
-            try:
-                from dotenv import load_dotenv
-                load_dotenv(env_file)
-            except ImportError:
-                pass
-        if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
-            self.status = "off: no API key (ANTHROPIC_API_KEY) in the environment or .env"
+        key, token = _credentials(env_file)      # read from the file now: a key replaced since the start is used
+        self._secrets = tuple(s for s in (key, token) if s)
+        if not (key or token):
+            self.status = "off: no key (ANTHROPIC_API_KEY is not in the environment or .env)"
             return None
         try:
             import anthropic
@@ -155,9 +183,9 @@ class Narrator:
             self.status = "off: the anthropic package is not installed"
             return None
         try:
-            return anthropic.Anthropic(timeout=TIMEOUT_S, max_retries=0)
+            return anthropic.Anthropic(api_key=key, auth_token=token, timeout=TIMEOUT_S, max_retries=0)
         except Exception as e:    # the SDK reads credential files and the home folder: none of it may stop the monitor
-            self.status = "off: the API client could not be set up: " + _clean(str(e))
+            self.status = "off: the API client could not be set up: " + _clean(str(e), self._secrets)
             return None
 
     # ------------------------------------------------------------------ the main thread's side
@@ -230,7 +258,8 @@ class Narrator:
             )
         except (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.NotFoundError,
                 anthropic.BadRequestError) as e:
-            return self._story(body, None, "none", "the API refused the request: " + _clean(_api_message(e))), "off"
+            return self._story(body, None, "none",
+                               "the API refused the request: " + _clean(_api_message(e), self._secrets)), "off"
         except anthropic.APITimeoutError:
             return self._story(body, None, "none", f"the request timed out after {TIMEOUT_S:.0f} s"), "later"
         except anthropic.RateLimitError:
@@ -240,7 +269,7 @@ class Narrator:
         except anthropic.APIConnectionError:
             return self._story(body, None, "none", "the API could not be reached"), "later"
         except Exception as e:       # whatever else happens here must not reach the monitor
-            return self._story(body, None, "none", "narration failed: " + _clean(type(e).__name__)), "later"
+            return self._story(body, None, "none", "narration failed: " + _clean(type(e).__name__, self._secrets)), "later"
 
         if r.stop_reason == "refusal":
             return self._story(body, None, "none", "the model declined to write it"), "final"
@@ -259,4 +288,5 @@ def describe(narrator: Narrator | None) -> str:
     return "narration: off" if narrator is None else f"narration: {narrator.status} ({narrator.model})"
 
 
-__all__ = ["Narrator", "evidence", "numbers_backed", "milestone", "describe", "MODEL", "COOLDOWN_S", "TIMEOUT_S"]
+__all__ = ["Narrator", "evidence", "numbers_backed", "milestone", "describe", "key_set", "read_env", "MODEL",
+           "COOLDOWN_S", "TIMEOUT_S", "ENV_FILE"]
