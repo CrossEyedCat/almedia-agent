@@ -28,10 +28,16 @@ ROOT = Path(__file__).resolve().parents[1]
 GRAIN = "ts, country, platform, category, channel"
 
 
-def page_yaml() -> str:
-    """The definition the console's "Add refund_rate" button posts, taken from the page itself."""
+def page_yaml(var: str = "y") -> str:
+    """The definition the console's "Add refund_rate" button posts (var y), or its "Add a duplicate metric"
+    button (var dup), taken from the page itself."""
     html = (ROOT / "ui/static/index.html").read_text(encoding="utf-8")
-    return re.search(r"var y = '([^']+)';", html).group(1).replace("\\n", "\n")
+    return re.search(rf"var {var} = '([^']+)';", html).group(1).replace("\\n", "\n")
+
+
+def with_formula(formula: str = "refunds / orders") -> str:
+    """The page's refund_rate with a formula line: the page posts the query only, so the agent finds the formula."""
+    return page_yaml() + f"formula: {formula}\n"
 
 
 def definition(name: str, value_sql: str | None = None, where: str = "", **fields) -> str:
@@ -106,7 +112,11 @@ def test_the_pages_own_definition_with_crlf_is_accepted_and_validated(ext, count
     for sentence in (r["placed"], r["message"]):
         assert sentence and "\n" not in sentence
     assert r["message"].startswith("refund_rate")
-    assert r["formula"] == "refunds / orders" and r["formula_source"] == "given"
+    # the page posts the query only: the agent finds the formula itself, and says so in the message
+    assert "formula:" not in text and "sql:" in text
+    assert r["formula"] == "refunds / orders" and r["formula_source"] == "inferred"
+    assert re.search(r"formula refunds / orders found from the SQL, the only one of \d+ candidates", r["message"]), \
+        r["message"]
     checks = by_check(r)
     # the SQL was compared with the formula on the rows that have a value, and the number is in the answer
     assert checks["definition"]["status"] == "pass" and str(counts["with_orders"]) in checks["definition"]["detail"]
@@ -165,6 +175,24 @@ def test_an_alias_of_an_existing_metric_is_reported_and_not_added(ext):
         assert "alias" in r["message"] and "aov" in r["message"]
         assert by_check(r)["alias"]["status"] == "fail"
         assert name not in ext.graph.specs
+
+
+def test_the_pages_duplicate_metric_is_refused_as_an_alias_with_the_reason(ext):
+    """The console's second button: a query that is payment_success_rate under another name. The agent finds its
+    formula, sees that it is the same definition as an existing metric, and says so instead of adding a node."""
+    text = page_yaml("dup")
+    assert "formula:" not in text and "sql:" in text
+    name = re.search(r"^name: (\w+)$", text, flags=re.M).group(1)
+    drop(ext.incoming, name, text)
+    [r] = look(ext)
+    assert r["status"] == "rejected" and r["alias_of"] == "payment_success_rate", r
+    assert r["message"].startswith(f"{name} rejected: it is an alias of payment_success_rate"), r["message"]
+    assert "payment_successes / payment_attempts" in r["message"] and "no new node was added" in r["message"]
+    checks = by_check(r)
+    assert checks["alias"]["status"] == "fail" and checks["formula"]["status"] == "pass"
+    assert "found payment_successes / payment_attempts" in checks["formula"]["detail"]
+    assert [c["check"] for c in r["checks"]][:3] == ["read", "sql", "formula"]
+    assert name not in ext.graph.specs and r["placed"].startswith("not placed")
 
 
 # ------------------------------------------------------------------------------------------- rejections
@@ -269,7 +297,7 @@ def test_a_file_changed_into_a_bad_definition_withdraws_its_metric(ext):
     drop(ext.incoming, "refund_rate", page_yaml())
     look(ext)
     assert "refund_rate" in ext.graph.specs
-    drop(ext.incoming, "refund_rate", page_yaml().replace("refunds / orders", "refunds / sessions"))
+    drop(ext.incoming, "refund_rate", with_formula("refunds / sessions"))
     [r] = look(ext)
     assert r["status"] == "rejected" and "disagree" in r["message"]
     assert "refund_rate" not in ext.graph.specs and ext.graph.out_edges("refunds", "formula") == []
@@ -366,7 +394,7 @@ def test_an_ambiguous_place_is_said_so(market, tmp_path):
         {"name": "refunds", "column": "refunds", "unit": "count", "source": "orders"})]
     store = Store(market)
     ext = Extension(MetricGraph.from_specs(core), store, tmp_path / "incoming", graph_out=tmp_path / "graph.json", quiet=True)
-    drop(ext.incoming, "refund_rate", page_yaml())
+    drop(ext.incoming, "refund_rate", with_formula())   # the query alone would fit refunds / purchases too
     [r] = look(ext)
     store.conn.close()
     assert r["status"] == "tentative" and "ambiguous" in r["message"] and "ambiguous" in r["placed"]
@@ -543,7 +571,7 @@ def test_the_new_rate_is_judged_from_the_next_tick(market, tmp_path):
     assert monitor.expected_rate("payment_success_rate", {}) is not None      # the rates it had are still judged
     assert not [a for a in tick.alerts if a.metric == "refund_rate"]           # clean data: nothing to report
     # the file is changed into a bad definition: the rate leaves the graph and the watch list with it
-    drop(ext.incoming, "refund_rate", page_yaml().replace("refunds / orders", "refunds / sessions"))
+    drop(ext.incoming, "refund_rate", with_formula("refunds / sessions"))
     [r] = look(ext)
     assert r["status"] == "rejected" and "refund_rate" not in {w.metric for w in monitor.watched}
     assert monitor.tick().judged_series == judged_before
@@ -887,9 +915,9 @@ def test_two_definitions_that_would_both_be_tentative_do_not_take_each_others_pl
         {"name": "refunds", "column": "refunds", "unit": "count", "source": "orders"})]
     store = Store(market)
     ext = Extension(MetricGraph.from_specs(core), store, tmp_path / "incoming", graph_out=tmp_path / "graph.json", quiet=True)
-    drop(ext.incoming, "refund_rate", page_yaml())
+    drop(ext.incoming, "refund_rate", with_formula())
     [first] = look(ext)
-    drop(ext.incoming, "refund_share", page_yaml().replace("name: refund_rate", "name: refund_share"))
+    drop(ext.incoming, "refund_share", with_formula().replace("name: refund_rate", "name: refund_share"))
     [second] = look(ext)
     later = look(ext, 6)
     store.conn.close()

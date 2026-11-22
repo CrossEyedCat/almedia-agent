@@ -173,6 +173,13 @@ svg text { font-family: var(--mono); }
 .verdict { justify-self: start; align-self: start; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; line-height: 18px; padding: 0 6px; border-radius: 4px; white-space: nowrap; color: var(--muted); border: 1px solid var(--line); }
 .verdict.supported { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-bg); }
 .verdict.plausible { color: var(--amber); background: var(--amber-bg); border-color: var(--amber-bg); }
+/* the checks of the extension agent: pass, warn (a caveat), fail (the reason it was refused), skip */
+.verdict.pass { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-bg); }
+.verdict.warn { color: var(--amber); background: var(--amber-bg); border-color: var(--amber-bg); }
+.verdict.fail { color: var(--hot); background: var(--hot-bg); border-color: var(--hot-bg); }
+.check .small { overflow-wrap: anywhere; }
+/* a link inside the bench's message: opens the checks behind the answer in the details panel */
+button.linkish { border: 0; background: none; padding: 0; min-height: 0; font: inherit; font-weight: 600; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .hyp-cause { font-size: 14px; line-height: 20px; }
 .hyp.rejected .hyp-cause { color: var(--muted); }
 .hyp-meta { font: 400 11px/16px var(--mono); color: var(--muted); }
@@ -242,7 +249,7 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
       <div><select id="pr-country"></select><button id="pr-go">Promo (12 h)</button></div></div>
     <div class="grp"><label>Data</label>
       <div><select id="dd-source"></select><button id="dd-go">Arrives 2 h late</button></div></div>
-    <div class="grp"><label>New metric</label><div><button id="nm-go">Add refund_rate</button></div></div>
+    <div class="grp"><label>New metric</label><div><button id="nm-go">Add refund_rate</button><button id="nm-dup" title="payment_rate: the query of payment_success_rate under another name">Add a duplicate metric</button></div></div>
     <div id="toast" role="status"></div>
   </div>
 </details>
@@ -528,10 +535,41 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     if (affected.length) out.push(['May be affected by', affected.join('; ')]);
     return out;
   }
+  // the extension agent's answer to a contributed metric (<name>.result.json): its message and every check it ran
+  var answers = {};
+  function checksSection(a) {
+    var rows = list(a.checks).map(function (c) {
+      c = obj(c); var s = str(c.status);
+      return el('div', 'hyp check', [el('span', 'verdict ' + s, [s || '-']),
+        el('div', null, [el('div', 'hyp-cause', [str(c.check)]), el('div', 'small muted', [str(c.detail)])])]);
+    });
+    return section('Checks of the extension agent', [el('p', 'about', [str(a.message)])].concat(rows.length ? rows : [el('div', 'empty', ['The answer lists no checks.'])]));
+  }
+  function loadAnswer(name) {
+    return get('/api/metric/' + encodeURIComponent(name)).then(function (r) {
+      answers[name] = r; if (mode === 'node' && selNode === name) renderDetail(); return r;
+    });
+  }
+  function showChecks(name) { selNode = name; mode = 'node'; renderDetail(); applyStyles(); }
+  // the bench's message after adding a metric: the answer, and a link to the checks behind it
+  function answerToast(res) {
+    res = obj(res); var name = str(res.name), t = $('toast');
+    if (name) answers[name] = res;
+    t.textContent = str(res.message) || ('Monitor: ' + str(res.status));
+    if (name && list(res.checks).length) {
+      var b = el('button', 'linkish', ['Show checks']); b.onclick = function () { showChecks(name); };
+      t.appendChild(text(' ')); t.appendChild(b);
+    }
+  }
   function renderNode(d) {
-    var m = meta[selNode] || {};
+    var m = meta[selNode], a = answers[selNode];
     var t = $('detail-title'); t.textContent = 'Metric: '; t.appendChild(el('span', 'head-id', [str(selNode)]));
-    var pairs = [['Domain', domainLabel(domainOf(selNode))], ['Status', m.status || '-'], ['Origin', m.origin || '-'], ['Unit', m.unit || '-'], ['Direction', m.direction || '-']];
+    if (!m) {      // not in the graph: the answer that refused it (an alias, a failed check), when there is one
+      if (a) { $('detail-status').appendChild(el('span', 'pill ' + str(a.status), [str(a.status)])); d.appendChild(checksSection(a)); }
+      else { d.appendChild(el('div', 'empty', ['This metric is not in the graph.'])); loadAnswer(selNode).catch(function () {}); }
+      return;
+    }
+    var pairs =[['Domain', domainLabel(domainOf(selNode))], ['Status', m.status || '-'], ['Origin', m.origin || '-'], ['Unit', m.unit || '-'], ['Direction', m.direction || '-']];
     if (m.formula) pairs.push(['Formula', mono(m.formula)]);
     if (m.decomposition) pairs.push(['Made of', mono(m.decomposition)]);
     if (m.column) pairs.push(['Column', mono(m.column)]);
@@ -541,6 +579,8 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
     d.appendChild(section('About', [el('p', 'about', [m.description || 'No description.']), kv(pairs)]));
     var links = linksOf(selNode);
     d.appendChild(section('Links', links.length ? [kv(links)] : [el('div', 'empty', ['No links recorded for this metric.'])]));
+    if (a) d.appendChild(checksSection(a));
+    else if (m.origin === 'contributed') loadAnswer(selNode).catch(function () {});
     var inc = incidents.filter(function (i) { return incidentNodes(i).indexOf(selNode) >= 0; });
     var box = inc.length ? inc.map(function (i) {
       var b = el('button', 'involved', [str(i.id) + ' ' + str(i.metric) + ' (' + status(i) + ')']);
@@ -627,7 +667,7 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
 
   // ----------------------------------------------------------- loading
   function takeGraph(g) {
-    graph = g; meta = {}; domOf = {};
+    graph = g; meta = {}; domOf = {}; answers = {};      // a changed graph may hold a metric judged again: its checks are read anew
     list(g.nodes).forEach(function (n) { if (n.kind === 'metric') meta[n.id] = n; });
     domains.forEach(function (d) { d.metrics.forEach(function (m) { domOf[m] = d.id; }); });
   }
@@ -731,18 +771,28 @@ ol.trail li:last-child::after { background: var(--st, var(--ink)); border-color:
   };
   $('pr-go').onclick = function () { act({ kind: 'promo', country: $('pr-country').value, hours: 12, when: 'now' }, 'Promo started'); };
   $('dd-go').onclick = function () { act({ kind: 'data_delay', source: $('dd-source').value, hours: 3, delay_hours: 2, when: 'now' }, 'Late data scheduled'); };
-  // adding a metric: hand it over, then wait for the monitor's answer (<name>.result.json)
-  $('nm-go').onclick = function () {
-    var y = 'name: refund_rate\ndescription: Share of orders refunded\nformula: refunds / orders\nsql: >\n  SELECT ts, country, platform, category, channel,\n         SUM(refunds) * 1.0 / NULLIF(SUM(orders), 0) AS value\n  FROM facts_hourly GROUP BY ts, country, platform, category, channel\ndimensions: [country, platform, category, channel]\nunit: ratio\n';
-    post('/api/metric', { yaml_text: y }).then(function (r) {
+  // adding a metric: hand it over, then wait for the monitor's answer (<name>.result.json). The bench shows the
+  // answer's message with a link to its checks
+  function handOver(yamlText) {
+    post('/api/metric', { yaml_text: yamlText }).then(function (r) {
       toast('Handed to the monitor: ' + r.saved + '. Waiting for its answer...');
       var tries = 0;
       var poll = function () {
-        get('/api/metric/' + encodeURIComponent(r.name)).then(function (res) { toast(str(res.message) || ('Monitor: ' + str(res.status))); refresh(); })
+        get('/api/metric/' + encodeURIComponent(r.name)).then(function (res) { answerToast(res); refresh(); })
           .catch(function () { if (++tries < 20) setTimeout(poll, 2000); else toast('Handed to the monitor; it has not answered yet.'); });
       };
       setTimeout(poll, 1500);
     }).catch(function (e) { toast('Failed: ' + e.message); });
+  }
+  // a definition and a query, no formula: the agent finds the formula itself, checks it and places the metric
+  $('nm-go').onclick = function () {
+    var y = 'name: refund_rate\ndescription: Share of orders refunded\nsql: >\n  SELECT ts, country, platform, category, channel,\n         SUM(refunds) * 1.0 / NULLIF(SUM(orders), 0) AS value\n  FROM facts_hourly GROUP BY ts, country, platform, category, channel\ndimensions: [country, platform, category, channel]\nunit: ratio\n';
+    handOver(y);
+  };
+  // an existing rate (payment_success_rate) under another name: the agent refuses it as an alias and says of what
+  $('nm-dup').onclick = function () {
+    var dup = 'name: payment_rate\ndescription: Successful payments per payment attempt\nsql: >\n  SELECT ts, country, platform, category, channel,\n         SUM(payment_successes) * 1.0 / NULLIF(SUM(payment_attempts), 0) AS value\n  FROM facts_hourly GROUP BY ts, country, platform, category, channel\ndimensions: [country, platform, category, channel]\nunit: ratio\n';
+    handOver(dup);
   };
 
   // ------------------------------------------------------------ the trace

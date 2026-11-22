@@ -706,7 +706,8 @@ class Extension:
 
         links = self._links(name, found)
         placed = self._placed_sentence(final, found, applied)
-        message = self._message(name, status, spec, source, stats, reading, checks, found, applied, watch)
+        message = self._message(name, status, spec, source, stats, reading, checks, found, applied, watch,
+                                len(fits), tried)
         return self._result(name, status, checks, message, placed=placed, links=links, **extra)
 
     @staticmethod
@@ -1083,12 +1084,15 @@ class Extension:
 
     @staticmethod
     def _message(name: str, status: str, spec: MetricSpec, source: str, stats: dict, reading: Reading,
-                 checks: list[dict], found: list[dict], applied: dict | None, watch: str) -> str:
+                 checks: list[dict], found: list[dict], applied: dict | None, watch: str,
+                 fits: int = 1, tried: int = 0) -> str:
         f = spec.formula.text
         if not spec.sql:
             evidence = f"formula {f}, no SQL to compare"
         elif source == "inferred":
-            evidence = f"formula {f} found from the SQL, equal on {stats['compared']} rows"
+            among = (f"the only one of {tried} candidates" if fits == 1 else
+                     f"the first of {fits} of {tried} candidates that fit")
+            evidence = f"formula {f} found from the SQL, {among}, equal on {stats['compared']} rows"
         else:
             evidence = f"the SQL equals {f} on {stats['compared']} rows"
         if status == "validated":
