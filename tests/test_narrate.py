@@ -131,6 +131,20 @@ def test_the_same_milestone_is_narrated_once_and_a_new_one_again():
     assert len(client.calls) == 2
 
 
+def test_a_cost_that_doubles_is_a_new_milestone_so_the_story_keeps_up_with_the_figures():
+    """The figures above the narration grow every tick; the narration is asked again only when the cost in
+    euros has doubled since (one request per power of two), so a long incident costs a few requests."""
+    client = FakeClient(reply(GOOD))
+    n = Narrator(client=client)
+    n.submit("inc-0001", dict(BODY, impact={"contribution_eur": -345.0, "orders": -68.0}))
+    wait(n)
+    n.submit("inc-0001", dict(BODY, impact={"contribution_eur": -500.0, "orders": -99.0}))
+    assert len(client.calls) == 1                                     # 345 and 500: the same power of two
+    n.submit("inc-0001", dict(BODY, impact={"contribution_eur": -700.0, "orders": -140.0}))
+    wait(n)
+    assert len(client.calls) == 2                                     # doubled: told again
+
+
 def test_no_credit_turns_narration_off_for_the_run_with_the_reason():
     err = anthropic.BadRequestError("Your credit balance is too low to access the Anthropic API.",
                                     response=httpx2.Response(400, request=REQ), body=None)
@@ -304,7 +318,8 @@ def incident_file(book):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_the_book_writes_the_narration_on_a_later_tick_and_keeps_the_template_report(faulty_db, tmp_path):
+def test_the_book_writes_the_narration_on_a_later_tick_and_keeps_the_template_report(faulty_db, tmp_path, monkeypatch):
+    monkeypatch.setattr(narrate, "cost_scale", lambda body: None)   # the cost's growth has its own test above
     gate = threading.Event()
 
     class Held(Echo):
@@ -325,7 +340,8 @@ def test_the_book_writes_the_narration_on_a_later_tick_and_keeps_the_template_re
     assert len(client.calls) == 1                                     # one milestone, one request
 
 
-def test_a_resolved_incident_is_narrated_again_and_the_file_says_so(faulty_db, tmp_path):
+def test_a_resolved_incident_is_narrated_again_and_the_file_says_so(faulty_db, tmp_path, monkeypatch):
+    monkeypatch.setattr(narrate, "cost_scale", lambda body: None)
     client = Echo(reply(""))
     n = Narrator(client=client)
     book = run_book(faulty_db, tmp_path, n, range(0, 13))
@@ -348,3 +364,14 @@ def test_replay_never_narrates(faulty_db, tmp_path, capsys, monkeypatch):
     assert run_main(["--replay", "--db", str(faulty_db), "--incidents", str(tmp_path / "inc"), "--fresh", "--quiet",
                      "--narrate", "--from", "2026-11-03T12:00:00Z", "--to", "2026-11-03T14:00:00Z"]) == 0
     assert "narration is for the live loop" in capsys.readouterr().out
+
+
+def test_in_the_book_a_growing_cost_asks_again_a_few_times_not_every_tick(faulty_db, tmp_path):
+    """Thirteen ticks of a fault that grows and then resolves: a handful of requests, never one per tick."""
+    client = Echo(reply(""))
+    n = Narrator(client=client)
+    book = run_book(faulty_db, tmp_path, n, range(0, 13))
+    settle(n)
+    book.update(book.monitor.tick(as_of=FAULT + 13 * H))
+    assert 2 <= len(client.calls) <= 6
+

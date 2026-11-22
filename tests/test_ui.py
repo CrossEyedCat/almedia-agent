@@ -336,6 +336,36 @@ def test_page_metric_yaml_is_accepted_by_brain(client, tmp_path):
     assert len(specs) == 1 and specs[0].name == 'refund_rate'
 
 
+def test_the_report_opens_with_the_model_narrative_only_when_it_passed_the_check():
+    """brain/narrate.py writes `narrative` into the incident: a text from the model whose numbers were all checked
+    against the evidence (source 'model'), or a failure with source 'none'. Only the first is shown, as "In brief",
+    before "What changed", and the page says who wrote it, from what, when, and what was checked."""
+    from tests.test_ui_runtime import run_ui
+    run_ui(r"""
+const story = 'Payment success in DE x Android fell to 0.662 from an expected 0.938.';
+const base = {id:'inc-9',metric:'contribution',status:'open',change:{observed:607.9,expected:849.1,delta_pct:-28.4},
+  report:'template report'};
+const shown = narrative => {
+  incidents = [Object.assign({}, base, narrative === undefined ? {} : {narrative})]; selInc = 'inc-9'; mode = 'incident';
+  renderDetail(); return $('detail').textContent;
+};
+let page = shown({text:story,source:'model',model:'claude-opus-5-5',as_of:'2026-11-22T23:00:00Z',status:'open',
+                  checked:'every number appears in the evidence',reason:null});
+assert.ok(page.includes('In brief'), page);
+assert.ok(page.includes(story));
+assert.ok(page.indexOf('In brief') < page.indexOf('What changed'), 'In brief comes first');
+assert.ok(page.includes('Written by claude-opus-5-5 from this report'));
+assert.ok(page.includes('every number in it was checked against the evidence'));
+assert.ok(page.includes('template report'));                       // the template summary stays
+for (const failed of [{text:null,source:'none',model:'claude-opus-5-5',reason:'timeout after 20 s'},
+                      {text:'',source:'model',model:'claude-opus-5-5'}, {text:story,source:'none'}, 'odd', null, undefined]) {
+  page = shown(failed);
+  assert.ok(!page.includes('In brief'), JSON.stringify(failed));
+  assert.ok(page.includes('What changed'));
+}
+""")
+
+
 def test_metrics_the_monitor_also_watched_move_count_for_their_domain(client):
     """A watched metric in the investigation trail (stockout_rate next to an ad fault that began in the same hour) lights its own domain."""
     html = client.get("/").text

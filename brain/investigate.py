@@ -15,7 +15,8 @@ and its answer in the trail:
    with the reason: releases around the onset (is the system linked to what moved, does the scope
    fit the place, did the change start with the release), the moved metric itself, a planned event,
    late data, and a shift in the mix of segments with unchanged rates.
-5. Stop when the leading explanation is supported and clearly ahead, or nothing is left to test.
+5. Stop: every candidate is tested; the last step of the trail says whether the leading explanation is
+   supported and how far ahead of the next one it is.
 
 Nothing here is specific to a metric, a country or a kind of fault: the candidates come from the
 graph's links and system tags and from the rows of the context tables.
