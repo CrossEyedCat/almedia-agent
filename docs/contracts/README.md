@@ -61,8 +61,8 @@ It is generated from the code: `python docs/build_system_overview.py`.
    `release <system>: <description>`. A row whose description says rollback ends that release; it is not a new cause.
 4. **Statuses `explained` and `pending`**, same folder, same file shape. `explained` carries the metric, segment, change and
    one hypothesis of kind `calendar`. `pending` carries the sources and the held hours. The scorer skips both; the console
-   shows them in grey and keeps them out of the open count and the node colours. Until the console and scorer ship this,
-   the brain keeps them in `incidents/notes/`, which both ignore.
+   shows them in grey and keeps them out of the open count and the node colours. The brain writes them in the incidents
+   folder as `explained-*.json` and `pending-*.json`.
 5. **Result of adding a metric**: the brain writes `<name>.result.json` next to the YAML in `$INCOMING_METRICS_DIR`
    and re-exports the graph to `$GRAPH_JSON`. The console reads it with `GET /api/metric/{name}`. Fields: `name`,
    `status` (`validated`, `tentative` or `rejected`), `message` (one sentence for a person), `placed` (where it sits in

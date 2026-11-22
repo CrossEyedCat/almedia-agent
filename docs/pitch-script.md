@@ -5,15 +5,16 @@ of implying it. Numbers come from `docs/results.md`. Read the whole page once be
 
 ## Before you start (5 minutes)
 
-1. Clean state, accelerated clock. In four terminals, from a clean clone, in this order:
-   `python -m sim.run --backfill 28d --db data/market.db --force`, then
+1. Clean state, accelerated clock, from a clean clone: run `python -m sim.run --backfill 28d --db data/market.db --force`
+   once, then start these three in their own terminals, in this order:
    `python -m brain.run --db data/market.db --incidents incidents --graph-out data/graph.json --fresh`, then
    `python -m sim.live --speed 2 --db data/market.db`, then `uvicorn ui.app:app --port 8000`. Open http://127.0.0.1:8000.
    Start the console with the four environment variables of `docs/demo.md`, step 4, and with an empty `incoming_metrics/`
    folder: without `GRAPH_JSON=data/graph.json` the console shows the tracked example graph and a metric added on stage never appears.
 2. Wait until the clock in the header moves and the incident list reads "No incidents. The monitor is watching."
 3. Open the folded DEMO controls once so you know where the buttons are, then fold them again. Dark or light theme: add `?theme=light` or `?theme=dark`.
-4. Inject the faults in different places or an hour apart. Faults that begin in the same hour are folded into one or two incidents by design.
+4. Two faults of one metric that begin in the same hour in places sharing a country or a platform can be reported as one
+   incident (a known limit, README 3.5); inject them an hour apart or in places that share neither a country nor a platform.
 
 ## The 3-minute script (about 420 words)
 
@@ -23,7 +24,7 @@ payments fail for Android users in Germany and orders quietly fall. We built a s
 change, finds where and why, and explains it. No one asks it questions."
 
 **0:25 How it understands the business.** (Point at the graph, then click one box.)
-"It starts from a graph of how the business works: profit is fees plus ads minus discounts, orders are sessions times conversion,
+"It starts from a graph of how the business works: contribution is fees plus ad spend minus discounts, orders are sessions times conversion,
 conversion is a chain of step rates. Lines have meanings: exact formulas, breakdowns, possible causes, and context such as releases and promos.
 That graph is what lets it trace a change instead of just flagging it."
 
@@ -77,7 +78,7 @@ false alarm was a one-hour jump in ad click-through in Poland on the web that cl
 
 - No incident after 20 seconds: say "it is still collecting evidence" and move on to the promo; or play the recording.
 - A fault in a small segment at night needs more hours of evidence; use Germany, Android or iOS payments, or a category such as electronics.
-- To start over: stop the four processes, run the first command again, empty `incidents/`, start them in the same order.
+- To start over: stop the three processes, run the first command again, empty `incidents/`, start them in the same order.
 
 ## The 5-minute slides
 

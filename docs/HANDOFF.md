@@ -1,7 +1,8 @@
 # Handoff: A is away from Saturday 21 Nov, about 17:10 CET
 
-Written for B (Artem) and his agent. A (Yuli) leaves the keyboard; the agents on A's side only run while A is in a session, so
-when A is away nobody on A's side answers. Updated at 18:45 CET; everything below was checked against GitHub and the running demo. The lines about `docs/results.md` were rewritten by B on 21 Nov, about 22:30 CET, from the replays behind that page; the line about new metrics at 21:07 (`3069a60`).
+Handover of 21 Nov, 18:45 CET, kept for the record (a few stale lines were corrected on 22 Nov). For the current state
+read the README ("At a glance") and `docs/results.md`; the status lines below (pull requests, issues, the running demo)
+are as of 21 Nov and are not updated.
 
 ## Where things are
 
@@ -20,12 +21,13 @@ when A is away nobody on A's side answers. Updated at 18:45 CET; everything belo
 
 Three processes (monitor, wall clock, console on http://127.0.0.1:8000) from an older commit; they stop when that Mac sleeps.
 Do not rely on them. To run the demo yourself from a clean clone, the commands are in `docs/demo.md`
-(`python -m sim.run --backfill 28d --db data/market.db --force`, `python -m brain.run --db data/market.db --incidents incidents --graph-out data/graph.json`,
+(`python -m sim.run --backfill 28d --db data/market.db --force`, `python -m brain.run --db data/market.db --incidents incidents --incoming incoming_metrics --graph-out data/graph.json --fresh`,
 `python -m sim.live --speed 2 --db data/market.db`, `uvicorn ui.app:app --port 8000`; the console also needs `GRAPH_JSON=data/graph.json`
 (`docs/demo.md`, step 4), or it shows the tracked example graph). Use the accelerated clock (`--speed 2`) for a talk:
 the wall-clock mode moves one data hour per real hour. Stop every process that has the database open before you rebuild it.
-Faults that begin in the same hour are folded into one or two incidents by design; for separate incidents inject them in different
-countries or an hour apart. `docs/pitch-script.md` has a 3-minute script and a slide outline.
+Two faults of one metric that begin in the same hour in places sharing a country or a platform can be reported as one incident
+(a known limit, README 3.5); inject them an hour apart or in places that share neither a country nor a platform.
+`docs/pitch-script.md` has a 3-minute script and a slide outline.
 
 ## What still has to be done, and only people can do it
 
@@ -34,9 +36,10 @@ countries or an hour apart. `docs/pitch-script.md` has a 3-minute script and a s
    Check it in a private window.
 3. A 5-minute slide deck: problem, graph, the autonomous loop, a demo screenshot, results (`docs/results.md`, with its caveat), what failed, what next.
 4. Make the repository public (only the owner can): `gh repo edit CrossEyedCat/almedia-agent --visibility public --accept-visibility-change-consequences`;
-   check it from a logged-out browser. Complete the library list in README section 10.
+   check it from a logged-out browser.
 5. Submit the form https://tally.so/r/GexoxQ with the email used for registration, and keep a screenshot of the confirmation.
-   Deadlines: the event page says Sunday 22 Nov 16:30; the README's internal target is 14:30; the old Luma page says 17:45 (ignore it).
+   Deadlines: the event T&C says Sunday 22 Nov 15:00, the submission page 16:30; use 15:00 (the README's internal target is
+   14:30). The old Luma page says 17:45 (ignore it).
    Whose registration email to use is not settled: A registered as Yuli Fang; ask the organisers if B submits.
 6. Be at the venue for the 18:00 pitches. A planned to be at home on Sunday until about 17:30 (not confirmed); do not count on A.
 
@@ -46,7 +49,7 @@ countries or an hour apart. `docs/pitch-script.md` has a 3-minute script and a s
 - Cause confirmed in 236 of 240 faults; the four misses are stockout surges where the report names the stockouts as the candidate but does not confirm it (the add-to-cart rate had not moved visibly). One false alarm in 913 watched days: a one-hour rise of ad click-through in PL on the web, closed by itself. One report (holdout) supports a routine release beside the right one.
 - New metrics: built on B's side since `54ef95b` (`brain/extension.py`, README 3.3). The search covers one or two column metrics without constants; cause links for a new metric are not proposed.
 - Low-traffic hours are noisy by nature (`docs/data-granularity.md`); a fault that lasts one night hour can be missed.
-- The demo clock is wall-clock based in the running version; a multi-hour recovery cannot be compressed into seconds there.
+- The wall-clock mode (`sim.live --wall-clock`) cannot compress a multi-hour recovery into seconds; the demo uses the accelerated clock (`--speed 2`).
 - Open issues are the honest to-do list: #2, #3, #5, #6, #8, #9, #10, #11, #13, #14 (many are fixed in open pull requests; do not close an issue before its pull request is merged).
 
 ## Where to read first
