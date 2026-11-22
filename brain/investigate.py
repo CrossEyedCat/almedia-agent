@@ -494,6 +494,9 @@ class Investigator:
                 timing = 0.0
                 evidence.append(f"released {when(ts)}, {-lag} h after the change began")
 
+            evidence.append("supported needs the system linked, the scope exactly the place and the timing at the onset: "
+                            f"linked {'yes' if link == 1.0 else 'partly' if link else 'no'}, scope {relation}, "
+                            f"timing {'yes' if timing >= 0.8 else 'no'}")
             score = 0.35 * link + 0.35 * fit + 0.30 * timing
             if link == 0.0 or relation == "conflict" or timing <= 0.1 or \
                     (relation == "narrower" and (inside_share is None or inside_share < INSIDE_MIN_SHARE)):

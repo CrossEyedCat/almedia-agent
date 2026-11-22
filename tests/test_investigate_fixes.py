@@ -243,3 +243,14 @@ def test_a_recommendations_release_does_not_explain_a_change_in_another_channel(
     rec = next(h for h in inc["hypotheses"] if "recommendations model 3.1" in h["cause"])
     assert rec["status"] == "rejected" and any("organic" in e for e in rec["evidence"])
 
+
+# ------------------------------------------------------------------ what "supported" requires
+def test_each_release_says_what_supported_requires_and_which_parts_held(run):
+    (inc,) = run(payment, release(FAULT, "payments-sdk", "DE", None, "payments-sdk rollout (DE)"))
+    for h in inc["hypotheses"]:
+        if h["kind"] == "release":
+            assert h["evidence"][-1].startswith("supported needs the system linked, the scope exactly the place and the timing at the onset")
+    lead = inc["hypotheses"][0]
+    assert lead["evidence"][-1].endswith("linked yes, scope exact, timing yes")
+    wide = next(h for h in inc["hypotheses"] if h["cause"].endswith("rollout (DE)"))
+    assert "scope wider" in wide["evidence"][-1]
