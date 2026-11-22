@@ -199,10 +199,29 @@
     rest = rest.filter(function (m) { return !(shown && shown[m]) && meta[m]; });
     if (!rest.length) return;
     x.appendChild(text(dom === 'all' ? 'Off the formula tree:' : 'Also in this domain, off the tree:'));
-    rest.forEach(function (m) { var b = el('button', null, [m]); b.dataset.m = m; b.onclick = function () { pickNode(m); }; x.appendChild(b); });
-    renderExtraSel();
+    rest.forEach(function (m, k) { var b = el('button', null, [m]); b.dataset.m = m; b.dataset.k = k; b.onclick = function () { pickNode(m); }; x.appendChild(b); });
+    renderExtraSel(); extraMore();
   }
-  function renderExtraSel() { Array.prototype.forEach.call($('extra').querySelectorAll('button'), function (b) { b.classList.toggle('picked', mode === 'node' && b.dataset.m === selNode); }); }
+  // a fade at the right edge says the row of off-tree metrics scrolls on
+  function extraMore() { var x = $('extra'); x.classList.toggle('more', x.scrollLeft + x.clientWidth < x.scrollWidth - 2); }
+  $('extra').addEventListener('scroll', extraMore);
+  // an off-tree metric the selected incident moved (search_ctr, say) is lit in its status colour and comes first in the row
+  function renderExtraSel() {
+    var x = $('extra'), inc = mode === 'incident' ? byId(selInc) : null, lit = {};
+    if (inc) { incidentNodes(inc).forEach(function (m) { lit[m] = true; }); list(inc.drivers).forEach(function (d) { d = obj(d); if (d.metric) lit[str(d.metric)] = true; }); }
+    var bs = Array.prototype.slice.call(x.querySelectorAll('button'));
+    bs.forEach(function (b) {
+      b.className = '';
+      if (mode === 'node' && b.dataset.m === selNode) b.classList.add('picked');
+      if (lit[b.dataset.m]) { b.classList.add('lit'); b.classList.add(stOf(inc)); }
+    });
+    var want = bs.slice().sort(function (a, b) { return (lit[b.dataset.m] ? 1 : 0) - (lit[a.dataset.m] ? 1 : 0) || a.dataset.k - b.dataset.k; });
+    if (want.some(function (b, k) { return b !== bs[k]; })) {          // re-order only when it changes, so focus stays put
+      want.forEach(function (b) { x.appendChild(b); });
+      if (want.length && lit[want[0].dataset.m]) x.scrollLeft = 0;
+      extraMore();
+    }
+  }
   function applyStyles() {
     if (!drawn || !drawn.layer) return;
     var h = health(), inc = byId(selInc), on = {};
@@ -235,6 +254,7 @@
     drawn.edges.forEach(function (e) { e.el.classList.toggle('on', !!(on[e.from] && on[e.to])); });
     markMoved(lit ? inc : null);
     trace(lit ? inc : null);
+    renderExtraSel();
   }
   function movedOf(inc) {
     var at = {}, best = null;
@@ -277,11 +297,20 @@
     s = Math.max(0.66, s);
     g.style.width = Math.floor(v.width * s) + 'px';
   }
+  // on a narrow screen the graph scrolls; a newly selected incident brings its moved box into view
+  function revealMoved() {
+    var wrap = $('graphwrap'), m = drawn && drawn.nodes.filter(function (n) { return n.el.classList.contains('moved'); })[0];
+    if (!m || (wrap.scrollWidth <= wrap.clientWidth + 2 && wrap.scrollHeight <= wrap.clientHeight + 2)) return;
+    var r = m.el.getBoundingClientRect(), w = wrap.getBoundingClientRect();
+    if (r.left < w.left || r.right > w.right) wrap.scrollLeft += (r.left + r.right) / 2 - (w.left + w.right) / 2;
+    if (r.top < w.top || r.bottom > w.bottom) wrap.scrollTop += (r.top + r.bottom) / 2 - (w.top + w.bottom) / 2;
+  }
   var traceKey = '', tracing = null;
   function trace(inc) {
     var key = inc ? str(inc.id) + '|' + dom : '';
     if (key === traceKey) return;
     traceKey = key;
+    revealMoved();
     var g = $('g'), layer = drawn.layer;
     tracing = null; layer.textContent = ''; g.classList.remove('tracing');
     var lit = drawn.edges.filter(function (e) { return e.el.classList.contains('on'); });
@@ -357,14 +386,15 @@
         if (num(dp) != null) line.push(el('span', 'chg ' + toneIn(i, moved, dp), [pct(dp)]));
         var sub = [el('span', null, [segText(i.segment) + (moved !== str(i.metric) ? ' · ' + str(i.metric) + (num(ch.delta_pct) != null ? ' ' + pct(ch.delta_pct) : '') : '')])];
         if (eur != null) sub.push(el('span', 'chg eur ' + euroTone(i, eur), [eurText(eur)]));
-        var foot = [el('span', null, [str(i.id)]), el('span', null, [st === 'resolved' && i.resolved_at ? shortHour(i.first_seen) + ' to ' + shortHour(i.resolved_at)
+        // the foot: when (never cut), then the id, which gives way; a quiet record's long id is left to the case file
+        var foot = [el('span', 'when', [st === 'resolved' && i.resolved_at ? shortHour(i.first_seen) + ' to ' + shortHour(i.resolved_at)
           : (LIVE.indexOf(st) >= 0 ? st + ' since ' : '') + shortHour(i.first_seen)])];
-        if (i.recurrence_of) foot.push(el('span', 'tag again', ['back again']));
+        if (!quiet) foot.push(el('span', 'id', [str(i.id)]));
         if (st === 'explained' && obj(i.innocent).kind) foot.push(el('span', 'tag innocent', ['innocent: ' + str(obj(i.innocent).kind)]));
         if (st === 'pending') foot.push(el('span', 'tag innocent', ['data late']));
-        var row = el('div', 'inc ' + stOf(i) + (quiet ? ' quiet' : '') + (i.id === selInc && mode === 'incident' ? ' sel' : '') + (isFresh(i) ? ' fresh' : ''), [
-          sevMeter(quiet ? null : i.severity),
-          el('div', 'inc-line', line), el('div', 'inc-sub', sub), el('div', 'inc-foot', foot)]);
+        var kids = [sevMeter(quiet ? null : i.severity), el('div', 'inc-line', line), el('div', 'inc-sub', sub), el('div', 'inc-foot', foot)];
+        if (i.recurrence_of) kids.push(el('div', 'inc-tags', [el('span', 'tag again', ['back again']), el('span', null, ['of ' + str(i.recurrence_of)])]));
+        var row = el('div', 'inc ' + stOf(i) + (quiet ? ' quiet' : '') + (i.id === selInc && mode === 'incident' ? ' sel' : '') + (isFresh(i) ? ' fresh' : ''), kids);
         row.tabIndex = 0; row.dataset.id = i.id; row.setAttribute('role', 'listitem');
         row.setAttribute('aria-label', st + ' ' + (i.severity && !quiet ? i.severity + ' severity ' : '') + moved + ' ' + segText(i.segment) + ', ' + i.id);
         row.title = 'First seen ' + when(i.first_seen) + ' UTC';
@@ -400,17 +430,23 @@
   function sweep(map) { Object.keys(map).forEach(function (k) { if (!map[k]._seen) { map[k].remove(); delete map[k]; } else map[k]._seen = false; }); }
   // Every item on the ribbon is a mark in time plus its label: inside the bar when it fits, else after it, else (near
   // "now") before it. Items are packed into lanes by the room their mark and label take, so no two labels collide.
+  // When the lanes run out, an item keeps its mark but drops its outside label (the tooltip and the queue still name it),
+  // so two labels are never drawn over each other.
   function pack(items, W, maxLanes) {
     var ends = [];
+    var free = function (x0) { for (var k = 0; k < ends.length; k++) if (ends[k] + 10 <= x0) return k; return ends.length; };
     items.forEach(function (s) {
-      s.lw = Math.min(260, Math.ceil(s.label.length * 6.7) + 10);
+      s.lw = Math.min(260, Math.ceil(s.label.length * 6.7) + 10); s.bare = false; s.inside = false;
       if (s.bw >= Math.min(s.lw, 120) + 4) { s.lx = s.xb; s.inside = true; }      // a long enough bar holds its label, cut if need be
       else if (s.xb + s.bw + 6 + s.lw <= W) s.lx = s.xb + s.bw + 6;
       else s.lx = Math.max(0, s.x0 - 6 - s.lw);
       s.e0 = Math.min(s.x0, s.lx); s.e1 = Math.max(s.x1, s.inside ? s.x1 : s.lx + s.lw);
-      var k = 0;
-      while (k < ends.length && ends[k] + 10 > s.e0) k++;
-      if (k >= maxLanes) { k = 0; for (var j = 1; j < ends.length; j++) if (ends[j] < ends[k]) k = j; }
+      var k = free(s.e0);
+      if (k >= maxLanes) {
+        s.bare = !s.inside; s.e0 = s.x0; s.e1 = s.x1; s.lx = s.xb;
+        k = free(s.e0);
+        if (k >= maxLanes) { k = 0; for (var j = 1; j < ends.length; j++) if (ends[j] < ends[k]) k = j; }
+      }
       s.lane = k; ends[k] = Math.max(ends[k] || 0, s.e1);
     });
     return Math.max(ends.length, 0);
@@ -418,8 +454,18 @@
   function renderRibbon() {
     var now = nowTs(), lanesEl = $('rb-lanes'), axis = $('rb-axis'), body = $('rb-body');
     if (now == null) return;
-    var W = body.clientWidth || 1000, t0 = now - WINDOW_H * HOUR;
-    var X = function (t) { return Math.max(0, Math.min(W, (t - t0) / (WINDOW_H * HOUR) * W)); };
+    // the window fits what happened: 24 hours at the least, in 6-hour steps, up to 48 hours
+    var far = now - WINDOW_H * HOUR, first = now;
+    inScope().forEach(function (i) { var s = spanOf(i, now); if (s && s.end > far) first = Math.min(first, s.onset); });
+    list(state.injected).forEach(function (j) {
+      var sc = obj(j.scope), s = Date.parse(str(sc.start)), e = Date.parse(str(sc.end));
+      if (isFinite(s) && (isFinite(e) ? Math.min(e, now) : now) > far) first = Math.min(first, s);
+    });
+    var winH = Math.max(24, Math.min(WINDOW_H, Math.ceil(((now - Math.max(first, far)) / HOUR + 3) / 6) * 6));
+    $('rb-title').textContent = 'Last ' + winH + ' simulated hours';
+    $('ribbon').setAttribute('aria-label', 'The last ' + winH + ' simulated hours');
+    var W = body.clientWidth || 1000, t0 = now - winH * HOUR;
+    var X = function (t) { return Math.max(0, Math.min(W, (t - t0) / (winH * HOUR) * W)); };
     var P = function (x) { return x / W * 100; };
     // ticks every 6 hours of Berlin time; midnight carries the day
     for (var t = Math.ceil(t0 / HOUR) * HOUR; t <= now; t += HOUR) {
@@ -440,7 +486,7 @@
       var x0 = X(s), x1 = Math.max(x0 + 4, X(e));
       return { j: j, s: s, e: e, x0: x0, x1: x1, xb: x0, bw: x1 - x0, label: str(j.kind).replace(/_/g, ' ') + (where ? ' ' + where : '') };
     }).filter(function (x) { return isFinite(x.s) && x.e > t0; }).sort(function (a, b) { return a.s - b.s; });
-    var benchLanes = Math.min(2, pack(inj, W, 2)), INJ = 13;
+    var benchLanes = Math.min(3, pack(inj, W, 3)), INJ = 13;
     inj.forEach(function (x) {
       var e = keyed(injEls, 'j' + x.j.id, function () { return el('div', 'inj', [el('i'), el('span')]); }, lanesEl);
       e.className = 'inj' + (x.j.active ? '' : ' ended');
@@ -448,7 +494,7 @@
       e.style.left = P(x.e0) + '%'; e.style.width = P(x.e1 - x.e0) + '%'; e.style.top = (x.lane * INJ) + 'px';
       var line = e.firstChild, lab = e.lastChild;
       line.style.left = (x.x0 - x.e0) + 'px'; line.style.width = (x.x1 - x.x0) + 'px';
-      lab.textContent = x.label; lab.style.left = (x.lx - x.e0) + 'px'; lab.style.maxWidth = x.lw + 'px';
+      lab.textContent = x.label; lab.style.left = (x.lx - x.e0) + 'px'; lab.style.maxWidth = x.lw + 'px'; lab.hidden = x.bare;
     });
     sweep(injEls);
     var benchH = benchLanes ? benchLanes * INJ + 4 : 0;
@@ -478,14 +524,16 @@
       lag.style.left = (s.x0 - s.e0) + 'px'; lag.style.width = Math.max(0, s.xb - s.x0) + 'px'; lag.hidden = s.xb - s.x0 < 1;
       bar.style.left = (s.xb - s.e0) + 'px'; bar.style.width = s.bw + 'px';
       lbl.style.left = (s.lx - s.e0 + (s.inside ? 7 : 0)) + 'px'; lbl.style.maxWidth = (s.inside ? s.bw - 10 : s.lw) + 'px';
-      lbl.textContent = s.moved; lbl.appendChild(el('em', null, [segText(i.segment)]));
+      lbl.textContent = s.moved; lbl.appendChild(el('em', null, [segText(i.segment)])); lbl.hidden = s.bare;
       b.setAttribute('aria-label', i.id + ', ' + st + ', ' + s.moved + ' ' + segText(i.segment) + ', first seen ' + shortHour(s.seen) + (s.running ? ', still running' : ', ended ' + shortHour(s.end)));
       b.title = i.id + ' · ' + st + '\n' + s.label + (s.onset < s.seen ? '\nchange began ' + shortHour(s.onset) : '') + '\nfirst seen ' + shortHour(s.seen) + (s.running ? ', still running' : '\nended ' + shortHour(s.end));
     });
     sweep(spanEls);
     var empty = lanesEl.querySelector('.rb-empty');
-    if (!spans.length && !inj.length) { if (!empty) lanesEl.appendChild(el('div', 'rb-empty', ['Nothing in the last 48 hours' + (dom === 'all' ? '' : ' in ' + domainLabel(dom)) + '. New incidents appear here as spans.'])); }
-    else if (empty) empty.remove();
+    if (!spans.length && !inj.length) {
+      if (!empty) empty = lanesEl.appendChild(el('div', 'rb-empty'));
+      empty.textContent = 'Nothing in the last ' + winH + ' simulated hours' + (dom === 'all' ? '' : ' in ' + domainLabel(dom)) + '. A new incident appears here as a span, from the hour it was first seen.';
+    } else if (empty) empty.remove();
     body.style.height = (18 + benchH + lanes * LANE) + 'px';
     $('rb-earlier').textContent = before ? before + ' earlier, before the window' : '';
     var np = clockParts(now - HOUR);
@@ -704,8 +752,15 @@
     get('/api/incidents').then(function (r) {
       var before = incidentSignature();
       incidents = list(r.incidents); skipped = r.skipped || 0;
-      incidents.forEach(function (i) { if (!(i.id in arrived)) arrived[i.id] = firstLoad ? 0 : Date.now(); });
+      var fresh = [];
+      incidents.forEach(function (i) { if (!(i.id in arrived)) { arrived[i.id] = firstLoad ? 0 : Date.now(); if (!firstLoad) fresh.push(i.id); } });
       firstLoad = false;
+      // a new live incident opens by itself unless a live one is already being read: fault in, report up, no hunting
+      var cur = byId(selInc);
+      if (fresh.length && mode === 'incident' && (!cur || LIVE.indexOf(status(cur)) < 0)) {
+        var nl = ordered().filter(function (i) { return fresh.indexOf(i.id) >= 0 && LIVE.indexOf(status(i)) >= 0; })[0];
+        if (nl) { selInc = nl.id; syncUrl(); }
+      }
       var flipped = example && !r.example; example = !!r.example;
       $('exbadge').textContent = '';
       if (example) $('exbadge').appendChild(el('span', 'example', ['Showing the contract example: no live incident yet']));
@@ -809,7 +864,7 @@
     res = obj(res); var name = str(res.name);
     if (name) answers[name] = res;
     var link = name && list(res.checks).length ? function () { var b = el('button', 'linkish', [' Show checks']); b.style.marginLeft = '6px'; b.onclick = function () { showChecks(name); }; return b; } : null;
-    toast(str(res.message) || ('Monitor: ' + str(res.status)), { link: link, float: true, title: 'The monitor answered: ' + name, replace: 'metric', ms: 15000 });
+    toast(str(res.message) || ('Monitor: ' + str(res.status)), { link: link, title: 'The monitor answered: ' + name, replace: 'metric', ms: 15000 });
   }
   function handOver(yamlText) {
     post('/api/metric', { yaml_text: yamlText }).then(function (r) {
@@ -944,7 +999,7 @@
   }
 
   if (window.ResizeObserver) new ResizeObserver(function () { fitGraph(); }).observe($('graphwrap'));
-  window.addEventListener('resize', function () { fitGraph(); renderRibbon(); if (!$('bench').hidden) document.documentElement.style.setProperty('--bench-h', ($('bench').offsetHeight + 8) + 'px'); });
+  window.addEventListener('resize', function () { fitGraph(); renderRibbon(); extraMore(); if (!$('bench').hidden) document.documentElement.style.setProperty('--bench-h', ($('bench').offsetHeight + 8) + 'px'); });
 
   // ?incident=inc-0001 opens that report at load; ?bench=1 opens the test bench; ?commands=<text> opens the palette
   var q = new URLSearchParams(location.search), asked = q.get('incident');
