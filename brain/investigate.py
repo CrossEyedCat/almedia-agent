@@ -44,6 +44,8 @@ RELEASE_LOOKBACK_HOURS = 12   # older ones count only if the hours in between al
 FOLLOW_MIN_SURPRISE = 1.3     # one targeted question along a link, direction predicted: p below 0.05
 NORMAL_MAX_SURPRISE = 2.0     # below this a window is "normal" for the purpose of a comparison
 MIX_MAX_SHARE = 0.2           # a mix shift that explains less than this share of the change is rejected
+MIX_EXPLAINS_SHARE = 0.8      # ... and one that explains at least this share is supported: an innocent change
+PLANNED_MAX_LIFT = 1.0        # a planned event is taken to lift a metric linked to the calendar by at most +100 %
 INSIDE_MIN_SHARE = 0.5        # a release that covers only part of the place must hold at least this much of the change
 MAX_REJECTED_RELEASES = 4     # rejected releases kept in the report (the best scoring ones)
 CHECK_MIN_SURPRISE = 3.0      # a factor of the checked chain "moved": p below 0.001 over the hours checked,
@@ -489,6 +491,39 @@ class Investigator:
                 best[key] = h
         return list(best.values())
 
+    def planned(self, event: dict, alerts: list[Alert]) -> dict:
+        """Does a planned event explain what moved? A calendar entry (a promotion) predicts a rise in every
+        metric the graph links to the calendar (visits, add-to-cart, platform-funded discounts), by at most
+        PLANNED_MAX_LIFT; it predicts nothing for the other metrics. Supported only when every moved metric
+        is linked and rose within that size; plausible when it fits the linked ones but others moved too."""
+        what = event["description"] or event["kind"]
+        evidence, fit, rose, unlinked = [], [], [], []
+        for a in alerts:
+            if not any(n.id == "calendar" for n in self.graph.context_of(a.metric)):
+                unlinked.append(a.metric)
+                continue
+            effect = a.effect
+            if not math.isfinite(effect) or effect <= 0:
+                evidence.append(f"{what} predicts a rise in {a.metric}; it fell ({100 * effect:+.0f} %): the wrong direction")
+                fit.append(False)
+            elif effect > PLANNED_MAX_LIFT:
+                evidence.append(f"{what} predicts a rise in {a.metric}; it rose {100 * effect:+.0f} %, more than the "
+                                f"{100 * PLANNED_MAX_LIFT:+.0f} % a planned event is taken to give")
+                fit.append(False)
+            else:
+                evidence.append(f"{what} predicts a rise in {a.metric}; it rose {100 * effect:+.0f} %, which fits in direction and size")
+                fit.append(True)
+                rose.append(f"{a.metric} {100 * effect:+.0f} %")
+        if unlinked:
+            evidence.append(f"the graph does not link the calendar to {', '.join(unlinked)}: the event predicts nothing there")
+        if fit and all(fit):
+            status, score = ("supported", 0.8) if not unlinked else ("plausible", 0.4)
+        else:
+            status, score = "rejected", 0.1
+        reason = (f"{what} ({when(event['start'])} to {when(event['end'])}) predicts a rise in what moved and it rose "
+                  f"within the {100 * PLANNED_MAX_LIFT:+.0f} % a planned event is taken to give: {', '.join(rose)}.")
+        return {"status": status, "score": score, "evidence": evidence, "reason": reason}
+
     # --------------------------------------------------------------- the report
     def report(self, inc, tick: Tick) -> dict:
         graph, mon = self.graph, self.monitor
@@ -648,13 +683,16 @@ class Investigator:
         covering = [e for e in tick.events
                     if e["start"] < end and inc.onset < e["end"]
                     and (e["country"] is None or place.get("country") in (None, e["country"]))]
-        linked = sorted(m for m in inc.metrics if any(n.id == "calendar" for n in graph.context_of(m)))
+        for a in alerts:   # the monitor's own cover, which also takes the hours just after an event
+            x = a.explained_by
+            if x is not None and not any(iso_hour(e["start"]) == x["start"] and e["country"] == x["country"] for e in covering):
+                covering.append({"start": pd.Timestamp(x["start"]), "end": pd.Timestamp(x["end"]), "country": x["country"],
+                                 "kind": x["kind"], "description": x["description"]})
+        events = [(e, self.planned(e, alerts)) for e in covering]
         trail.append({"action": "check", "target": "calendar", "result": (
-            f"no planned event covers {where} in these hours" if not covering else
-            "; ".join(f"{e['description'] or e['kind']} ({when(e['start'])} to {when(e['end'])})" for e in covering)
-            + " overlaps, but the graph links the calendar to "
-            + (f"only {', '.join(linked)} of the moved metrics" if linked else "none of the moved metrics")
-            + ": it does not explain this change")})
+            f"no planned event covers {where} in these hours" if not events else
+            "; ".join(f"{e['description'] or e['kind']} ({when(e['start'])} to {when(e['end'])}) overlaps: "
+                      + "; ".join(fit["evidence"]) + f" ({fit['status']})" for e, fit in events))})
 
         moved = list(inc.metrics) + [f["metric"] for f in followed if f["shown"] and f["metric"] not in inc.metrics]
         candidates = self.releases(inc, tick, primary, moved, place, segment, end, places, held)
@@ -694,39 +732,58 @@ class Investigator:
                                  + ", ".join(f"{r['metric']} ({100 * r['effect']:+.0f} %)" for r in chain_moved) + " moved",
                                  "no release, planned event or late source fits"]})
             else:
+                # a planned event that fits explains the follow-on movement too: the metric is then no first cause
+                confirmed_here = bool(inc.confirmed) and not any(fit["status"] == "supported" for _, fit in events)
                 hypotheses.append({
                     "cause": f"{primary.metric} {direction} in {where} without a matching release"
                              + ("" if covering else " or planned event"),
-                    "kind": "metric", "status": "supported" if inc.confirmed else "plausible",
-                    "score": 0.7 if inc.confirmed else 0.4,
+                    "kind": "metric", "status": "supported" if confirmed_here else "plausible",
+                    "score": 0.7 if confirmed_here else 0.4,
                     "evidence": [f"{num(primary.observed)} against {num(primary.expected)} expected{seen_in}, z {primary.z:+.1f}"]
                     + inc.confirmed})
 
-        for e in covering:
+        for e, fit in events:
             hypotheses.append({
-                "cause": f"planned event: {e['description'] or e['kind']}", "kind": "calendar", "status": "rejected", "score": 0.1,
-                "evidence": [f"{when(e['start'])} to {when(e['end'])} overlaps the incident",
-                             "the graph links the calendar to "
-                             + (f"only {', '.join(linked)} of the moved metrics" if linked else "none of the moved metrics")]})
+                "cause": f"planned event: {e['description'] or e['kind']}", "kind": "calendar", "status": fit["status"],
+                "score": fit["score"], "_fit": fit,
+                "evidence": [f"{when(e['start'])} to {when(e['end'])} overlaps the incident in {where}"] + fit["evidence"]})
         hypotheses.append({
             "cause": "late or missing data", "kind": "freshness", "status": "rejected", "score": 0.0,
             "evidence": ["every source these metrics depend on had arrived for the hours of the incident" if not held else
                          f"{len(held)} hour(s) are still waiting for data and are left out of every comparison above; "
                          "the incident rests on the hours that have arrived"]})
         split = self.mix(cells, segment) if cells is not None else None
+        mix_h = None
         if split is not None:
-            hypotheses.append({
+            mix_h = {
                 "cause": f"a shift in the mix of segments inside {seg_text(segment)}, with unchanged rates", "kind": "metric",
-                "status": "rejected" if split["share"] < MIX_MAX_SHARE else "plausible", "score": round(0.5 * split["share"], 2),
+                "status": "rejected" if split["share"] < MIX_MAX_SHARE else
+                "supported" if split["share"] >= MIX_EXPLAINS_SHARE else "plausible",
+                "score": round(0.5 * split["share"], 2),
                 "evidence": [f"{primary.metric}: the cells' own rates account for {split['rate']:+.4f}, "
-                             f"the changed weights of the cells for {split['mix']:+.4f} ({split['share']:.0%} of the change)"]})
+                             f"the changed weights of the cells for {split['mix']:+.4f} ({split['share']:.0%} of the change)",
+                             f"supported when the weights explain at least {MIX_EXPLAINS_SHARE:.0%} of the change"]}
+            hypotheses.append(mix_h)
 
         rank = {"supported": 0, "plausible": 1, "rejected": 2}
         hypotheses.sort(key=lambda h: (rank[h["status"]], -h["score"], h.get("_lag", 0)))
+        fits = {id(h): h.pop("_fit", None) for h in hypotheses}
         for h in hypotheses:
             h.pop("_ts", None)
             h.pop("_lag", None)
         lead = hypotheses[0]
+        # innocent: the leading supported explanation is a mix shift or a planned event, and no release fits
+        innocent = None
+        if lead["status"] == "supported" and not any(h["kind"] == "release" and h["status"] == "supported" for h in hypotheses):
+            if lead is mix_h:
+                innocent = {"kind": "mix", "reason": (
+                    f"A shift in the mix of segments inside {seg_text(segment)} explains {split['share']:.0%} of the change "
+                    f"in {primary.metric}: the changed weights of the cells account for {split['mix']:+.4f}, the cells' own "
+                    f"rates for {split['rate']:+.4f}.")}
+            elif lead["kind"] == "calendar" and fits.get(id(lead)) is not None:
+                innocent = {"kind": "calendar", "reason": fits[id(lead)]["reason"]}
+        if innocent is not None:
+            body["innocent"] = innocent
         second = hypotheses[1] if len(hypotheses) > 1 else None
         trail.append({"action": "compare", "target": "explanations", "result": (
             f"{len(hypotheses)} tested: " + "; ".join(f"{h['cause']} - {h['status']} ({h['score']:.2f})" for h in hypotheses[:6])
@@ -771,7 +828,9 @@ class Investigator:
         body["hypotheses"] = hypotheses
         body["trail"] = trail
         body["uncertain"] = uncertain
-        if lead["status"] == "supported":
+        if innocent is not None:
+            verdict_text = f"Most likely cause: {lead['cause']}. {innocent['reason']} An innocent change, not a fault."
+        elif lead["status"] == "supported":
             verdict_text = f"Most likely cause: {lead['cause']}."
         elif is_volume and traffic_moved:
             verdict_text = (f"No cause is confirmed: traffic {'fell' if traffic_moved[0]['effect'] < 0 else 'rose'} in {where}; "

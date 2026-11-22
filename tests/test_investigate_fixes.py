@@ -116,3 +116,72 @@ def test_a_volume_alert_gets_the_same_release_check(traffic_drop):
     _, _, body = investigate_by_hand(traffic_drop, [alert], FAULT + 5 * H)
     lead = body["hypotheses"][0]
     assert lead["kind"] == "release" and lead["status"] == "supported" and "app store" in lead["cause"]
+
+
+# ------------------------------------------------------------------ V3: innocent explanations
+def double_electronics(con):
+    """Traffic moves toward electronics for 8 hours: every count of the category doubles, every cell's rate stays."""
+    from sim.schema import MEASURES
+    sets = ", ".join(f'"{c}" = "{c}" * 2' for c in MEASURES)
+    con.execute(f"UPDATE facts_hourly SET {sets} WHERE category = 'electronics' AND ts >= ? AND ts < ?",
+                (ts(FAULT), ts(FAULT + 8 * H)))
+    con.commit()
+
+
+def test_a_mix_shift_that_explains_the_change_is_supported_and_innocent(run):
+    incidents = run(double_electronics)
+    assert incidents
+    for inc in incidents:
+        lead = inc["hypotheses"][0]
+        assert "shift in the mix" in lead["cause"] and lead["status"] == "supported"
+        assert inc["innocent"]["kind"] == "mix"
+        assert "%" in inc["innocent"]["reason"] and "mix" in inc["innocent"]["reason"]
+        assert inc["metric"] and inc["trail"] and inc["report"]     # every other field is still filled
+
+
+def test_a_real_fault_is_not_called_innocent(run):
+    (inc,) = run(payment)
+    assert "innocent" not in inc
+
+
+def promo_alerts(db, as_of):
+    monitor = Monitor(MetricGraph.load(), Store(db))
+    tick = monitor.tick(as_of=as_of)
+    return [a for a in tick.alerts if a.explained_by is not None and a.segment == {"country": "FR"}]
+
+
+def promo_db(clean_db, tmp_path, **kw):
+    import shutil
+    path = tmp_path / "promo.db"
+    shutil.copy(clean_db, path)
+    con = simdb.connect(path)
+    inject.promo(con, "FR", FAULT - 2 * H, FAULT + 10 * H, **kw)
+    con.close()
+    return path
+
+
+def test_a_planned_event_that_fits_in_direction_and_size_is_innocent(clean_db, tmp_path):
+    db = promo_db(clean_db, tmp_path)
+    alerts = promo_alerts(db, FAULT + 4 * H)
+    assert alerts and all(a.observed > a.expected for a in alerts)
+    _, _, body = investigate_by_hand(db, alerts, FAULT + 4 * H)
+    event = next(h for h in body["hypotheses"] if h["kind"] == "calendar")
+    assert event["status"] == "supported" and body["hypotheses"][0] is event
+    assert any("predicts a rise" in e and "fits" in e for e in event["evidence"])
+    assert body["innocent"]["kind"] == "calendar" and "FR promo" in body["innocent"]["reason"]
+
+
+def test_a_planned_event_that_does_not_fit_stays_a_rival_and_is_not_innocent(clean_db, tmp_path):
+    import dataclasses
+    db = promo_db(clean_db, tmp_path)
+    alerts = promo_alerts(db, FAULT + 4 * H)
+    fell = [dataclasses.replace(a, observed=0.7 * a.expected, episode_observed=0.7 * a.expected) for a in alerts]
+    _, _, body = investigate_by_hand(db, fell, FAULT + 4 * H)
+    event = next(h for h in body["hypotheses"] if h["kind"] == "calendar")
+    assert event["status"] == "rejected" and any("predicts a rise" in e and "fell" in e for e in event["evidence"])
+    assert "innocent" not in body
+    too_big = [dataclasses.replace(a, observed=3.5 * a.expected, episode_observed=3.5 * a.expected) for a in alerts]
+    _, _, body = investigate_by_hand(db, too_big, FAULT + 4 * H)
+    event = next(h for h in body["hypotheses"] if h["kind"] == "calendar")
+    assert event["status"] == "rejected" and any("more than" in e for e in event["evidence"])
+    assert "innocent" not in body
