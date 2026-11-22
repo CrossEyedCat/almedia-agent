@@ -51,6 +51,10 @@ What is done with a definition, in this order; every step leaves a check with it
               ambiguous, none is applied, the status is tentative. x inside the outcome tree, or m
               itself tentative: proposed, left to a person. A difference (x = y - m, x = m - y) and
               an x that already decomposes are kept as alternatives with the reason
+  context     the metric takes the context of the metrics its validated formula is built from: the union
+              of their release systems joins its own (so a release of one of them is a candidate cause of
+              a change in it, and a calendar system brings the calendar link that explains a planned event);
+              their data sources reach it through the formula (freshness). The check names each and its origin
   monitoring  a ratio of two column metrics is registered as an atomic rate, the shape the monitor
               watches. The monitor builds its watch list and its columns once, at start; when it has
               a `rewatch()` it is called after every change of the graph and the message says
@@ -81,7 +85,7 @@ from brain.clock import HOUR
 from brain.data import READABLE_TABLES, TS_FORMAT, Store, iso_hour
 from brain.evaluator import Evaluator, NotComputable
 from brain.formula import parse
-from brain.graph import GraphError, MetricGraph, tree_dict
+from brain.graph import CALENDAR_SYSTEMS, GraphError, MetricGraph, tree_dict
 from brain.incidents import write_json
 from brain.metric_spec import DIMENSIONS, NAME_RE, MetricSpec, SpecError, spec_from_dict
 from brain.monitor import watch_list
@@ -651,7 +655,8 @@ class Extension:
         # ---- placement, then the whole graph with the metric in it
         settled = not any(c["status"] == "warn" for c in checks)
         final, found, applied = self._place(base, base_specs, others, spec, raw, sig, settled)
-        status = "validated" if settled and not any(c["status"] == "ambiguous" for c in found) else "tentative"
+        final, context = self._inherit(base, final)
+        status ="validated" if settled and not any(c["status"] == "ambiguous" for c in found) else "tentative"
         if gave_way is not None and status != "validated":
             # it would be tentative as well: the one that was there first stays (and two such definitions
             # would otherwise take each other's place for ever)
@@ -671,6 +676,7 @@ class Extension:
                 checks.append(_check(c.check, c.status, f"{c.detail} (last {VALIDATE_DAYS} days, all segments together)"))
         proven = next((c.detail for c in validation if applied and c.metric == applied["parent"] and c.check == "identity"), "")
         checks.append(self._placement_check(found, applied, proven))
+        checks.append(context)
 
         # ---- it is in: publish, and see whether the monitor takes it
         watching = self._publish(accepted, trial)
@@ -957,6 +963,50 @@ class Extension:
         return spec, found, None
 
     @staticmethod
+    def _inherit(base: MetricGraph, spec: MetricSpec) -> tuple[MetricSpec, dict]:
+        """The context of the metrics the validated formula is built from. Their release systems join the
+        metric's own (the graph draws a release link for each and the calendar link for a calendar system);
+        their data sources reach it through the formula, so its freshness is theirs. Returns the spec with
+        the systems and the check that says what came from where."""
+        names = list(dict.fromkeys(spec.formula.names))
+        own = list(dict.fromkeys(spec.systems))
+        origin: dict[str, list[str]] = {}
+        for n in names:
+            for system in base.specs[n].systems:
+                origin.setdefault(system, [])
+                if n not in origin[system]:
+                    origin[system].append(n)
+        inherited = [s for s in origin if s not in own]
+        systems = tuple(own + inherited)
+        sources: dict[str, list[str]] = {}
+        for n in names:
+            for src in base.sources(n):
+                sources.setdefault(src, []).append(n)
+        parts = []
+        if inherited:
+            by_metric: dict[str, list[str]] = {}
+            for s in inherited:
+                by_metric.setdefault(_words(origin[s]), []).append(s)
+            parts.append("releases of " + "; ".join(f"{_words(s)} (from {m})" for m, s in by_metric.items()))
+            calendar = [s for s in systems if s in CALENDAR_SYSTEMS]
+            if calendar:
+                parts.append(f"the promo and holiday calendar (through {_words(calendar)})")
+        if sources:
+            parts.append("freshness of " + "; ".join(f"{src} (from {_words(ms)})" for src, ms in sorted(sources.items())))
+        whose, carry = _words(names), "carries" if len(names) == 1 else "carry"
+        if inherited:
+            detail = f"it takes the context of {whose}: {'; '.join(parts)}"
+        elif own:
+            detail = f"{whose} {carry} no release system beyond the ones it declares, so no other release link is inherited"
+        else:
+            detail = f"{whose} {carry} no release system, so no release or calendar link is inherited"
+        if sources and not inherited:
+            detail += f"; it inherits the {parts[-1]}"
+        if own:
+            detail += f"; declared by the definition: {_words(own)}"
+        return replace(spec, systems=systems), _check("context", "pass", detail)
+
+    @staticmethod
     def _placement_check(found: list[dict], applied: dict | None, proven: str) -> dict:
         others = [c for c in found if c is not applied]
         kept = f"; {len(others)} more kept as alternatives or proposals" if others else ""
@@ -1020,6 +1070,10 @@ class Extension:
         parts.append(f"it is linked to {_words(final.formula.names)} by {kind}"
                      + (f", breaks down by {_words(final.dimensions)}" if final.dimensions else "")
                      + (f" and is as fresh as the source {_words(g.sources(name))}" if g.sources(name) else ""))
+        if final.systems:
+            calendar = any(s in CALENDAR_SYSTEMS for s in final.systems)
+            parts.append(f"it is linked to the releases of {_words(final.systems)}"
+                         + (" and to the promo and holiday calendar" if calendar else ""))
         return "; ".join(parts) + "."
 
     @staticmethod
