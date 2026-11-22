@@ -148,3 +148,162 @@ def test_a_discount_bug_across_a_country_is_one_incident(clean_db, tmp_path):
     (inc,) = got
     assert inc["segment"] == {"country": "FR"}
     assert {d["metric"] for d in inc["drivers"]} >= {"discount_rate"}
+
+
+# ------------------------------------------------------------------ I2: innocent explanations found by the investigation
+MIX = {"innocent": {"kind": "mix", "reason": "Traffic moved toward electronics: the mix explains 96 % of the change "
+                                              "in take_rate, the cells' own rates did not move."}}
+DE = {"country": "DE"}
+
+
+def assert_readable(record):
+    """What the console and the scorer need from any record, alert or not."""
+    for k in ("id", "status", "metric", "first_seen", "last_seen", "report"):
+        assert isinstance(record[k], str) and record[k], k
+    assert isinstance(record["segment"], dict)
+    assert all(isinstance(h["cause"], str) and h["kind"] and h["status"] and
+               all(isinstance(e, str) for e in h["evidence"]) for h in record["hypotheses"])
+    assert all(isinstance(s["target"], str) and s["target"] and isinstance(s["result"], str) for s in record["trail"])
+
+
+def test_an_innocent_change_is_written_as_explained_and_not_as_an_incident(stub_book):
+    book = stub_book(extra={key(DE): MIX})
+    feed(book, alert("take_rate", DE, 30))
+    feed(book, alert("take_rate", DE, 35, hour=FAULT + H), hour=FAULT + H)
+    assert alerts_in(book.folder) == []
+    (note,) = records(book.folder)
+    assert_readable(note)
+    assert note["id"].startswith("explained-mix-") and note["status"] == "explained"
+    assert note["innocent"] == MIX["innocent"]
+    assert MIX["innocent"]["reason"] in note["report"]
+    assert note["hypotheses"][0]["status"] == "supported" and MIX["innocent"]["reason"] in note["hypotheses"][0]["evidence"]
+    assert note["first_seen"] == iso_hour(FAULT) and note["last_seen"] == iso_hour(FAULT + H)
+    assert not [i for i in book.incidents if i.status in ("open", "ongoing")]   # nothing live
+    assert book._next == 1                                                        # no incident number spent
+    assert book.monitor.open_episodes == []
+
+
+def test_an_open_incident_found_innocent_later_turns_explained_in_place(stub_book):
+    book = stub_book()
+    feed(book, alert("take_rate", DE, 30))
+    (inc,) = alerts_in(book.folder)
+    book.investigator.extra = {key(DE): MIX}
+    feed(book, alert("take_rate", DE, 35, hour=FAULT + H), hour=FAULT + H)
+    feed(book, alert("take_rate", DE, 36, hour=FAULT + 2 * H), hour=FAULT + 2 * H)
+    (note,) = records(book.folder)       # no duplicate beside it
+    assert_readable(note)
+    assert note["id"] == inc["id"] and note["status"] == "explained"
+    assert note["first_seen"] == inc["first_seen"] and note["innocent"]["kind"] == "mix"
+    assert not [i for i in book.incidents if i.status in ("open", "ongoing")]
+
+
+def test_a_calendar_innocence_names_its_kind(stub_book):
+    cal = {"innocent": {"kind": "calendar", "reason": "Black Friday in DE (2026-11-03 10:00 to 22:00 UTC) fits: "
+                                                       "traffic +38 % against +40 % planned."}}
+    book = stub_book(extra={key(DE): cal})
+    feed(book, alert("take_rate", DE, 30))
+    (note,) = records(book.folder)
+    assert note["id"].startswith("explained-calendar-") and note["hypotheses"][0]["kind"] == "calendar"
+
+
+def test_an_explained_group_that_stops_looking_innocent_becomes_an_incident(stub_book):
+    book = stub_book(extra={key(DE): MIX})
+    feed(book, alert("take_rate", DE, 30))
+    book.investigator.extra = {}
+    feed(book, alert("take_rate", DE, 40, hour=FAULT + H), hour=FAULT + H)
+    (inc,) = records(book.folder)        # the incident's file replaces the explained record
+    assert inc["id"] == "inc-0001" and inc["status"] == "open" and inc["first_seen"] == iso_hour(FAULT)
+
+
+# ------------------------------------------------------------------ I3: recurrence
+def resolve_quietly(book, start, hours=4):
+    """Hours without alerts; the book is told the data looks healthy."""
+    book._healthy = lambda inc, tick: True
+    for k in range(hours):
+        feed(book, hour=start + k * H)
+
+
+def test_a_fault_that_comes_back_names_the_resolved_incident(stub_book):
+    book = stub_book()
+    feed(book, alert("take_rate", DE_EL, 30))
+    resolve_quietly(book, FAULT + H)
+    (old,) = alerts_in(book.folder)
+    assert old["status"] == "resolved"
+    back = FAULT + 8 * H
+    feed(book, alert("take_rate", DE, 40, hour=back), hour=back)       # a nested place: the whole country
+    new = next(i for i in alerts_in(book.folder) if i["id"] == "inc-0002")
+    assert new["recurrence_of"] == "inc-0001"
+    assert f"It is back: same metric and place as inc-0001, resolved {old['resolved_at'][:10]}" in new["report"]
+    feed(book, alert("take_rate", DE, 41, hour=back + H), hour=back + H)  # still said on the next tick
+    new = next(i for i in alerts_in(book.folder) if i["id"] == "inc-0002")
+    assert new["recurrence_of"] == "inc-0001" and new["report"].count("It is back") == 1
+
+
+def test_another_metric_or_place_is_no_recurrence(stub_book):
+    book = stub_book()
+    feed(book, alert("take_rate", DE_EL, 30))
+    resolve_quietly(book, FAULT + H)
+    back = FAULT + 8 * H
+    feed(book, alert("search_ctr", DE_EL, 40, hour=back, observed=0.05), alert("take_rate", FR_EL, 40, hour=back), hour=back)
+    assert all("recurrence_of" not in i and "It is back" not in i["report"] for i in alerts_in(book.folder))
+
+
+def test_a_real_payment_fault_that_returns_is_linked_to_the_first(clean_db, tmp_path):
+    from sim import db as simdb
+    from sim import inject
+    path = tmp_path / "r.db"
+    shutil.copy(clean_db, path)
+    con = simdb.connect(path)
+    inject.payment_failure(con, "DE", "Android", FAULT, 0.4, end=FAULT + 3 * H)
+    inject.payment_failure(con, "DE", "Android", FAULT + 8 * H, 0.4)   # the data ends at FAULT + 12 h
+    con.close()
+    monitor = Monitor(MetricGraph.load(), Store(path))
+    book = Book(monitor, tmp_path / "incidents", fresh=True)
+    for k in range(0, 11):
+        book.update(monitor.tick(as_of=FAULT + k * H))
+    first, second = alerts_in(book.folder)
+    assert first["status"] == "resolved" and "recurrence_of" not in first
+    assert second["recurrence_of"] == first["id"] and "It is back" in second["report"]
+
+
+# ------------------------------------------------------------------ I4: severity and the feed's order
+from brain.incidents import HIGH_EUR, LONG_HOURS, MEDIUM_EUR, feed_rank  # noqa: E402
+
+
+def severity_of(stub_book, eur, hours=1, impact_key="contribution_eur"):
+    book = stub_book(extra={key(DE): {"impact": {} if eur is None else {impact_key: eur, "orders": -50}}})
+    feed(book, Alert(**{**alert("take_rate", DE, 30).__dict__, "onset": FAULT - (hours - 1) * H}))
+    (inc,) = alerts_in(book.folder)
+    return inc["severity"]
+
+
+@pytest.mark.parametrize("eur, hours, expected", [
+    (-HIGH_EUR, 1, "high"), (HIGH_EUR + 1, 1, "high"),       # a gain counts by its size too (an ad overspend)
+    (-MEDIUM_EUR, 1, "medium"), (-(MEDIUM_EUR - 1), 1, "low"), (None, 1, "low"),
+    (-MEDIUM_EUR, LONG_HOURS, "high"), (-10, LONG_HOURS, "medium"), (None, LONG_HOURS, "medium"),
+])
+def test_severity_comes_from_the_euro_impact_and_the_hours(stub_book, eur, hours, expected):
+    assert severity_of(stub_book, eur, hours) == expected
+
+
+def test_only_euro_keys_count_for_severity(stub_book):
+    assert severity_of(stub_book, -5000, impact_key="orders_lost") == "low"
+
+
+def test_the_feed_shows_live_incidents_first_and_the_severe_ones_on_top():
+    rows = [{"id": "a", "status": "resolved", "severity": "high", "last_seen": "2026-11-03T15:00:00Z"},
+            {"id": "b", "status": "open", "severity": "low", "last_seen": "2026-11-03T16:00:00Z"},
+            {"id": "c", "status": "ongoing", "severity": "high", "last_seen": "2026-11-03T12:00:00Z"},
+            {"id": "d", "status": "open", "severity": "medium", "last_seen": "2026-11-03T13:00:00Z"},
+            {"id": "e", "status": "explained", "last_seen": "2026-11-03T17:00:00Z"},
+            {"id": "f", "status": "ongoing", "severity": "high", "last_seen": "2026-11-03T14:00:00Z"}]
+    assert [r["id"] for r in sorted(rows, key=feed_rank)] == ["f", "c", "d", "b", "a", "e"]
+
+
+def test_the_book_keeps_its_feed_sorted(stub_book):
+    fr, es = {"country": "FR"}, {"country": "ES"}
+    book = stub_book(extra={key(DE): {"impact": {"contribution_eur": -20}},
+                            key(fr): {"impact": {"contribution_eur": -5 * HIGH_EUR}},
+                            key(es): {"impact": {"contribution_eur": -MEDIUM_EUR}}})
+    feed(book, alert("take_rate", DE, 30), alert("take_rate", fr, 20), alert("take_rate", es, 10))
+    assert [b["severity"] for b in book.feed()] == ["high", "medium", "low"]
