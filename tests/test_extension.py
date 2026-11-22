@@ -28,11 +28,24 @@ ROOT = Path(__file__).resolve().parents[1]
 GRAIN = "ts, country, platform, category, channel"
 
 
+MAIN_CONSOLE_JS = ROOT / "ui/static/v3/app.js"          # the main console, served at /
+CLASSIC_CONSOLE = ROOT / "ui/static/index.html"          # the classic console, served at /classic
+
+
+def _posted(path: Path, var: str) -> str:
+    text = path.read_text(encoding="utf-8")
+    return re.search(rf"var {var} = '([^']+)';", text).group(1).replace("\\n", "\n")
+
+
 def page_yaml(var: str = "y") -> str:
-    """The definition the console's "Add refund_rate" button posts (var y), or its "Add a duplicate metric"
-    button (var dup), taken from the page itself."""
-    html = (ROOT / "ui/static/index.html").read_text(encoding="utf-8")
-    return re.search(rf"var {var} = '([^']+)';", html).group(1).replace("\\n", "\n")
+    """The definition the main console's "Add refund_rate" button posts (var y), or its "Add a duplicate metric"
+    button (var dup), taken from the console's own script, so these tests check what the demo sends."""
+    return _posted(MAIN_CONSOLE_JS, var)
+
+
+def test_the_classic_console_posts_the_same_definitions_as_the_main_one():
+    for var in ("y", "dup"):
+        assert _posted(CLASSIC_CONSOLE, var) == page_yaml(var), var
 
 
 def with_formula(formula: str = "refunds / orders") -> str:

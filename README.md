@@ -77,7 +77,13 @@ and [`docs/system-overview.html`](docs/system-overview.html) the pictures):
    Every step goes into the incident's trail.
 4. **Incidents** ([`brain/incidents.py`](brain/incidents.py)): one file per problem, also when the fault shows in sibling
    or crossing series, updated in place, resolved only when the data would show the fault and does not; a fault that comes
-   back is linked to the resolved one, and each incident has a severity from its euro effect. The console ([`ui/`](ui)) draws the graph, the incidents and the reports.
+   back is linked to the resolved one, and each incident has a severity from its euro effect. The console ([`ui/`](ui))
+   is a canvas with the metric graph (drag to move, scroll to zoom, click a metric for its definition). The incidents sit
+   in a dock along the bottom, live ones first; a click on one lights its path on the graph and opens its report in a
+   panel on the right. **Replay the investigation** walks the incident's trail on the graph one step at a time, with a
+   numbered pin on each metric a step touched. The **Test bench** (marked DEMO) opens from the header and holds the
+   simulated faults, the rollback and the new-metric buttons. The earlier console, graph and incidents side by side with a
+   folded DEMO bar, stays at `/classic`.
 5. **New metrics** ([`brain/extension.py`](brain/extension.py)): a definition and its SQL dropped into a folder are run
    in a sandbox, checked against its formula (the given one, or one found by search when the definition has none),
    placed in the graph, given the release, calendar and freshness context of what it is built from, and watched from the
@@ -97,7 +103,7 @@ py -3.13 -m venv .venv; .venv\Scripts\python -m pip install -r requirements.txt
 $env:GRAPH_JSON="data/graph.json"; .venv\Scripts\python -m uvicorn ui.app:app --port 8000
 ```
 
-Run the last three in three terminals, then open http://127.0.0.1:8000 and use the DEMO bar.
+Run the last three in three terminals, then open http://127.0.0.1:8000 and use the **Test bench** in the header.
 
 On macOS or Linux (Python 3.13): `python3 -m venv .venv`, use `.venv/bin/python` in place of `.venv\Scripts\python`,
 and start the console with `GRAPH_JSON=data/graph.json .venv/bin/python -m uvicorn ui.app:app --port 8000`.
@@ -224,7 +230,7 @@ Rules for an incident file (agreed in the review of 21 Nov, issue 14; details in
   `release <system>: <description>`; a rollback row ends a release, it is not a new cause.
 - `explained` (a calendar event covers the deviation) and `pending` (hours held because a source has not arrived) use the same
   file shape and are written beside the incidents as `explained-*.json` and `pending-*.json`. The scorer skips both; the
-  console shows them in grey.
+  console draws their cards quiet, grey with a dashed edge.
 
 ### 3.2 Metric graph
 
@@ -492,7 +498,7 @@ Submit at https://tally.so/r/GexoxQ with the email used for registration.
 ```
 sim/         marketplace simulator, injections, ground truth, scorer
 brain/       graph, monitor, investigator, incidents, new-metric agent, narration
-ui/          console (graph, incidents, reports, DEMO bar) and data browser
+ui/          console (graph canvas, incident dock, report panel, replay, DEMO test bench; the classic console at /classic) and data browser
 scripts/     results page from many runs, plain-ranking baseline, unattended live check, core rehearsal, guardrails
 docs/        results, demo and pitch scripts, contracts, architecture pages
 tests/       tests

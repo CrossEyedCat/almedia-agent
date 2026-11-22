@@ -37,8 +37,12 @@ INCOMING_METRICS_DIR=incoming_metrics GRAPH_JSON=data/graph.json` (on one line).
 PowerShell: set each as `$env:NAME="value"` in the UI terminal before running uvicorn.
 The sim commands use `--db`, not MARKET_DB. UI variables are read once at import: restart after changing them.
 
-Check http://127.0.0.1:8000: the clock moves, the exported graph shows and no previous incidents remain.
+Check http://127.0.0.1:8000: the clock in the header moves, the exported graph shows on the canvas and the incident dock
+along the bottom reads "No incidents. The monitor is watching every hour of data."
 The contract example may appear before the monitor starts; it is marked as an example, not a result.
+The console at / is a canvas: the graph fills the page, the incidents are cards in the dock at the bottom, a report opens
+in a panel on the right, and the **Test bench** (marked DEMO) opens from the header and holds every button below. The
+earlier console, with the same data and buttons, is at http://127.0.0.1:8000/classic.
 Do not start the accelerated clock five minutes early: launch it immediately before the presentation.
 At speed 2, a day passes in 48 seconds. Read the header clock before injecting; night-time counts are smaller.
 
@@ -53,28 +57,29 @@ Never point the live UI at eval_incidents. Missing or empty scoring output is an
 
 | Time | Say | Do | Must be visible |
 |---|---|---|---|
-| 0:00 | "A marketplace has thousands of metrics and nobody can watch them all. This system watches by itself." | Header and graph on screen | Moving clock, formula tree |
-| 0:20 | "It knows how the business works: orders are sessions times a chain of step rates, and payment success is one of them. Each line has a meaning." | Point at the tree; formula lines are solid, possible causes dashed with a sign; a click on a box lists its breakdown and context links | Tree from contribution down |
-| 0:45 | "Fault: a payment release breaks Android payments in Germany." | Choose **Payment failure** (DE, Android) in the DEMO bar, click **Inject fault** | Toast "Payment failure injected from ..." |
-| 1:00 | "It notices, follows the graph, and tells us where and why." | Wait for the incident (about 5 to 6 s at `--speed 2`) | Incident appears; path orders to payment success lit in red |
-| 1:20 | Read the report: traffic and the other steps normal, payment success down in DE x Android; the impact in euros; the supported cause and the rejected ones; what is still uncertain | Click the incident | The top-down check line (sessions ... order_rate, each normal or moved), impact, hypotheses with evidence, trail; a severity badge; with `--narrate`, "In brief" above them a few seconds later |
-| 1:35 | "Someone rolls the release back. The incident should close by itself." | Pick the fault in **In progress**, click **End it (rollback)** | Toast "Ended from ..."; after a few normal hours the incident turns resolved (the rollback row is under Data, table releases) |
-| 1:45 | "Not everything unusual is a problem: a planned French promo lifts orders." | Click **Promo (12 h)** (FR) | No new incident; the calendar explains it; the record says the rise has the promo's direction and size |
-| 2:00 | "If data arrives late, it waits instead of crying wolf." | Click **Arrives 2 h late** (payments) | No incident for those hours |
-| 2:15 | "A new metric arrives as a query only. The agent finds the formula itself, places the metric in the graph, takes the context of what it is built from and starts watching it. A duplicate is refused." | Click **Add refund_rate**, then **Add a duplicate metric** | Toast naming the formula found (refunds / orders, the only one of the candidates) and "watched from the next tick" (2 to 10 s: it validates the query on all the data so far); a new tree `refunds` = `orders` x `refund_rate`; the checks listed on the metric's box; the duplicate answered as an alias of payment_success_rate |
+| 0:00 | "A marketplace has thousands of metrics and nobody can watch them all. This system watches by itself." | Header, graph canvas and the empty incident dock on screen | Moving clock in the header, formula tree on the canvas |
+| 0:20 | "It knows how the business works: orders are sessions times a chain of step rates, and payment success is one of them. Each line has a meaning." | Point at the tree; formula lines are solid, possible causes dashed with a sign (**Legend**, bottom left of the canvas); a click on a box opens its definition, breakdown and context links in the panel on the right; close it with the x | Tree from contribution down |
+| 0:45 | "Fault: a payment release breaks Android payments in Germany." | Click **Test bench** in the header; choose **Payment failure** (DE, Android), click **Inject fault**; then **Close** the bench | The bench's line "Payment failure injected from ..." |
+| 1:00 | "It notices, follows the graph, and tells us where and why." | Wait for the incident (about 5 to 6 s at `--speed 2`) | A card slides into the dock (**open** in red, then **ongoing** in amber once the next hours confirm it); its report opens on the right and the view flies to its path, orders down to payment success lit in the card's colour, payment success marked with its change and the steps that stayed normal marked "held" |
+| 1:20 | Read the report: traffic and the other steps normal, payment success down in DE x Android; the impact in euros; the supported cause and the rejected ones; what is still uncertain. Then the replay: "This is what it did, step by step." | The report is open (click the card in the dock if the panel shows something else). Click **Replay the investigation** (in the report, or on the canvas) and press **Next** (or the right arrow key) a few times; **Stop replay** or Esc ends it | The readout (observed, expected, change, effect in EUR) and the severity; Summary, hypotheses with evidence, investigation trail; with `--narrate`, "In brief" above them a few seconds later. In the replay: "Step k of N" with the step's result over the canvas, the metrics of the step ringed with a numbered pin, the same step lit in the report's trail |
+| 1:35 | "Someone rolls the release back. The incident should close by itself." | Open **Test bench**, pick the fault in **In progress**, click **End it (rollback)**, close the bench | The bench's line "Ended from ..."; after a few normal hours the card turns **resolved** (the rollback row is in the Data browser, table releases) |
+| 1:45 | "Not everything unusual is a problem: a planned French promo lifts orders." | In the bench, click **Promo (12 h)** (FR) | No new red card; an **explained** card, drawn quiet (grey, dashed edge); its report says the rise has the promo's direction and size |
+| 2:00 | "If data arrives late, it waits instead of crying wolf." | In the bench, click **Arrives 2 h late** (payments) | No incident for those hours; a quiet **pending** card while they are held |
+| 2:15 | "A new metric arrives as a query only. The agent finds the formula itself, places the metric in the graph, takes the context of what it is built from and starts watching it. A duplicate is refused." | In the bench, under New metric, click **Add refund_rate**, then **Add a duplicate metric** | The answer in the bench (on the canvas when the bench is closed) naming the formula found (refunds / orders, the only one of the candidates) and "watched from the next tick" (2 to 10 s: it validates the query on all the data so far); a new tree `refunds` = `orders` x `refund_rate` on the canvas; a click on `refund_rate` lists "Checks of the extension agent" in the report panel; the duplicate answered as an alias of payment_success_rate |
 | 2:40 | "We scored it on 240 injected faults and 160 innocent events in twenty runs, ten of them never seen before: detection, place, cause, false alarms." | Show `docs/results.md` | The table with the holdout line; numbers from `python -m scripts.summarize_evaluation`, not hand-picked |
 | 2:55 | One-line close: "It watches the business, not the servers." | | |
 
 ## If something hangs
 
 1. The simulator or UI is unresponsive: restart it (`Ctrl+C`, run the command again). Data is in `data/market.db`; the
-   history stays.
+   history stays. If the canvas itself misbehaves, open http://127.0.0.1:8000/classic: the same data and buttons, graph
+   and incidents side by side, the DEMO bar folded at the top.
 2. In accelerated replay only, if the brain does not report within 20 s: state that it has not produced a report. A recording is a fallback only
    after we have recorded and checked one; no recording exists in this snapshot.
 3. Network or API problem: the core loop does not use the language model; the report falls back to a template.
 4. Use a checked recording if available; otherwise show the graph and data and explain the live failure.
 
-## Other faults the DEMO bar can inject
+## Other faults the Test bench can inject
 
 | Fault | What changes in the data | Where a monitor should end up |
 |---|---|---|

@@ -2,7 +2,9 @@
 
 Handover of 21 Nov, 18:45 CET, kept for the record (a few stale lines were corrected on 22 Nov). For the current state
 read the README ("At a glance") and `docs/results.md`; the status lines below (pull requests, issues, the running demo)
-are as of 21 Nov and are not updated.
+are as of 21 Nov and are not updated. Since 22 Nov the console at http://127.0.0.1:8000 is design 3, the investigation
+canvas (graph canvas, incident dock, report panel, replay, Test bench in the header; `docs/demo.md` has the clicks); the
+console described on 21 Nov is at `/classic`.
 
 ## Where things are
 

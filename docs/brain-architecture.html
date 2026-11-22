@@ -98,13 +98,13 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
 <body style="margin:0">
 <main class="wrap">
 <header>
-  <div class="eyebrow">Eye of the System · brain · HackLab #2 Berlin · state of 22 Nov 2026, 08:40</div>
+  <div class="eyebrow">Eye of the System · brain · HackLab #2 Berlin · state of 22 Nov 2026, 10:30</div>
   <h1>Monitoring Brain Architecture</h1>
   <p class="lede">The brain is the part of the system that understands the marketplace. It keeps a graph of metrics and how they depend on each other, and computes any metric for any segment from the simulator's data. For every new hour of data it uses both to notice a change, find where it happened and what caused it, and write a report without being asked. It also takes in new metric definitions while it runs.</p>
   <ul class="facts">
     <li><b>36</b> metrics, <b>299</b> typed edges</li>
     <li><b>19</b> modules, <b>6,273</b> lines</li>
-    <li><b>380</b> test functions in the <b>27</b> test files that import <code>brain/</code></li>
+    <li><b>387</b> test functions in the <b>27</b> test files that import <code>brain/</code></li>
     <li>holdout: <b>120/120</b> faults detected, <b>120/120</b> localized, <b>116/120</b> with the cause, <b>0</b> false alarms in <b>457</b> watched days, <b>80/80</b> innocent events silent (<a href="results.md">results.md</a>)</li>
   </ul>
 </header>
@@ -635,7 +635,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
   <p>What is not perfect:</p>
   <ul class="read">
     <li><b>Causes not confirmed.</b> In 6 of the 240 detected faults (4 of them on holdout seeds) the report does not name the injected cause as supported. All 6 are <code>stockout_surge</code> faults: sports, seed 4; electronics, seed 10; beauty, seed 112 (holdout); home, seed 115 (holdout); sports, seed 118 (holdout); home, seed 119 (holdout). Each is detected and localized, and its report says that no cause is confirmed yet. Without a release to point at, a moved rate counts as the cause only when the second movement that a cause link of the graph predicts shows in the data.</li>
-    <li><b>What the runs do not test.</b> Holdout means new random seeds of the same simulator: the same four kinds of fault (<code>ad_budget_exhausted</code>, <code>payment_failure</code>, <code>search_regression</code>, <code>stockout_surge</code>) and the same scorer. No two events overlap in these schedules, and data that never arrives is not in them. The hand-over of a new metric is not part of the runs; it has its own tests (<code>tests/test_extension.py</code>, 49 test functions).</li>
+    <li><b>What the runs do not test.</b> Holdout means new random seeds of the same simulator: the same four kinds of fault (<code>ad_budget_exhausted</code>, <code>payment_failure</code>, <code>search_regression</code>, <code>stockout_surge</code>) and the same scorer. No two events overlap in these schedules, and data that never arrives is not in them. The hand-over of a new metric is not part of the runs; it has its own tests (<code>tests/test_extension.py</code>, 50 test functions).</li>
   </ul>
   <p>The results per run and per kind of fault and the full list of limits are in <a href="results.md">docs/results.md</a>. That page and <code>docs/results.json</code> are written by <code>scripts/summarize_evaluation.py</code>; <code>python -m sim.score score</code> reports one run.</p>
 </section>
