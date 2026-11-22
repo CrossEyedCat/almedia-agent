@@ -92,8 +92,8 @@ def test_fault_kinds_are_tallied_over_all_runs(reports):
 
 def test_every_run_has_its_row_and_holdout_runs_are_marked(reports):
     text = section(page(reports, holdout={101, 102}), "Per run")
-    assert "| Seed 4, 49 days | 3/3 | 2/3 detected | 0 | 8/8 |" in text
-    assert "| Seed 102, 49 days, holdout | 1/2 | 1/1 detected | 1 | 7/8 |" in text
+    assert "| Seed 4, 49 days | 3/3 | 2 of 3 | 0 | 8/8 |" in text
+    assert "| Seed 102, 49 days, holdout | 1/2 | 1 of 1 | 1 | 7/8 |" in text
 
 
 # ------------------------------------------------------------------------------------ the lists of failures
@@ -245,8 +245,8 @@ def test_two_runs_are_scored_from_their_own_files_and_the_json_rebuilds_the_page
     assert se.main(["--runs", str(runs), "--seeds", "3,5", "--holdout", "5", "--commit", "abc1234", "--warmup-hours", "80",
                     "--out", str(out)]) == 0
     text = out.read_text(encoding="utf-8")
-    assert "| Seed 3, 49 days | 4/4 | 0/4 detected | 0 |" in text
-    assert "| Seed 5, 49 days, holdout | 2/4 | 0/2 detected | 0 |" in text
+    assert "| Seed 3, 49 days | 4/4 | 0 of 4 | 0 |" in text
+    assert "| Seed 5, 49 days, holdout | 2/4 | 0 of 2 | 0 |" in text
     saved = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
     assert (saved["holdout"], saved["commit"], saved["warmup_hours"]) == ([5], "abc1234", 80)
     assert se.from_json(out.with_suffix(".json")) == text.splitlines()

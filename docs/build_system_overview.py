@@ -394,7 +394,7 @@ shows what the brain found. Around them: a way to put faults into the world, and
 truth. This page covers the world, the console and the scoring; the brain has its own page:
 <a href="brain-architecture.html">brain-architecture.html</a>.</p>
 <div class="stats"><span><b>{f['segments']}</b>segments per hour</span><span><b>{f['rows']:,}</b>rows in 28 days</span>
-<span><b>{len(SCENARIOS)}</b>scenarios</span><span><b>{total_tests}</b>test functions</span></div>
+<span><b>{len(SCENARIOS)}</b>kinds of injection</span><span><b>{total_tests}</b>test functions</span></div>
 
 <h2>The parts</h2>
 <div class="dia">

@@ -352,12 +352,12 @@ def render(reports: list[dict], holdout=(), commit: str | None = None, warmup_ho
                      f"{sum(bool(p.get('correct_cause')) for p in found)}/{len(found)} | {_mean([p['delay_h'] for p in found])} |")
 
     lines += ['', '## Per run', '',
-              '| Run | Faults detected | Correct supported cause | False alarms | Innocent events silent |',
+              '| Run | Faults detected | Correct supported cause (of detected) | False alarms | Innocent events silent |',
               '|---|---:|---:|---:|---:|']
     for r in reports:
         correct = sum(bool(p.get('correct_cause')) for p in r['per_fault'])
         lines.append(f"| Seed {r['seed']}, {r['days']:.0f} days{', holdout' if r['seed'] in holdout else ''} | "
-                     f"{r['detected']}/{r['faults']} | {correct}/{r['detected']} detected | {r['false_alarms']} | "
+                     f"{r['detected']}/{r['faults']} | {correct} of {r['detected']} | {r['false_alarms']} | "
                      f"{r['innocents_silent']}/{r['innocents']} |")
 
     lines += ['', '## Misses and unsupported causes', '']

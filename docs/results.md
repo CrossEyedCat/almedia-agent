@@ -58,28 +58,28 @@ The plain ranking (`scripts/baseline_ranking.py`) is what an analyst could build
 
 ## Per run
 
-| Run | Faults detected | Correct supported cause | False alarms | Innocent events silent |
+| Run | Faults detected | Correct supported cause (of detected) | False alarms | Innocent events silent |
 |---|---:|---:|---:|---:|
-| Seed 101, 49 days, holdout | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 102, 49 days, holdout | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 103, 49 days, holdout | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 104, 49 days, holdout | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 105, 49 days, holdout | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 106, 49 days, holdout | 12/12 | 11/12 detected | 0 | 8/8 |
-| Seed 107, 49 days, holdout | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 108, 49 days, holdout | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 109, 49 days, holdout | 12/12 | 11/12 detected | 0 | 8/8 |
-| Seed 110, 49 days, holdout | 12/12 | 12/12 detected | 1 | 8/8 |
-| Seed 4, 49 days | 12/12 | 11/12 detected | 0 | 8/8 |
-| Seed 8, 49 days | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 9, 49 days | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 10, 49 days | 12/12 | 11/12 detected | 0 | 8/8 |
-| Seed 11, 49 days | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 12, 49 days | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 13, 49 days | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 22, 49 days | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 71, 49 days | 12/12 | 12/12 detected | 0 | 8/8 |
-| Seed 80, 49 days | 12/12 | 12/12 detected | 0 | 8/8 |
+| Seed 101, 49 days, holdout | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 102, 49 days, holdout | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 103, 49 days, holdout | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 104, 49 days, holdout | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 105, 49 days, holdout | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 106, 49 days, holdout | 12/12 | 11 of 12 | 0 | 8/8 |
+| Seed 107, 49 days, holdout | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 108, 49 days, holdout | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 109, 49 days, holdout | 12/12 | 11 of 12 | 0 | 8/8 |
+| Seed 110, 49 days, holdout | 12/12 | 12 of 12 | 1 | 8/8 |
+| Seed 4, 49 days | 12/12 | 11 of 12 | 0 | 8/8 |
+| Seed 8, 49 days | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 9, 49 days | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 10, 49 days | 12/12 | 11 of 12 | 0 | 8/8 |
+| Seed 11, 49 days | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 12, 49 days | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 13, 49 days | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 22, 49 days | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 71, 49 days | 12/12 | 12 of 12 | 0 | 8/8 |
+| Seed 80, 49 days | 12/12 | 12 of 12 | 0 | 8/8 |
 
 ## Misses and unsupported causes
 
