@@ -15,7 +15,7 @@ Status: rehearsed on 22 Nov, 01:00 CET with all open pull requests merged locall
 python -m sim.run --backfill 28d --db data/market.db --force
 python -m brain.run --db data/market.db --incidents incidents --incoming incoming_metrics --graph-out data/graph.json --fresh
 # Add --narrate to show "In brief" above each report: needs ANTHROPIC_API_KEY in .env, one request per milestone
-# (new incident, new leading cause, cost doubled, resolved). Without it, or without credit, the report is the template only.
+# (new incident, new leading cause, a cost past a power of two, resolved). Without it, or without credit, the report is the template only.
 # --fresh empties incidents/ (archive it first, step 2, if the run is worth keeping). Without it a restarted
 # monitor leaves the previous run's incident and pending files as they were and opens duplicates beside them.
 # It also removes old answers in incoming_metrics/. A definition left there is taken again at start, so the
@@ -58,10 +58,10 @@ Never point the live UI at eval_incidents. Missing or empty scoring output is an
 | 0:45 | "Fault: a payment release breaks Android payments in Germany." | Choose **Payment failure** (DE, Android) in the DEMO bar, click **Inject fault** | Toast "Payment failure injected from ..." |
 | 1:00 | "It notices, follows the graph, and tells us where and why." | Wait for the incident (about 5 to 6 s at `--speed 2`) | Incident appears; path orders to payment success lit in red |
 | 1:20 | Read the report: the actual impact in euros, measured contribution, affected country/platform and supported cause; what is still uncertain | Click the incident | Impact, hypotheses with evidence, trail; with `--narrate`, "In brief" above them a few seconds later |
-| 1:35 | "Someone rolls the release back. The incident should close by itself." | Pick the fault in **In progress**, click **End it (rollback)** | A rollback release appears; after a few normal hours the incident turns resolved |
+| 1:35 | "Someone rolls the release back. The incident should close by itself." | Pick the fault in **In progress**, click **End it (rollback)** | Toast "Ended from ..."; after a few normal hours the incident turns resolved (the rollback row is under Data, table releases) |
 | 1:45 | "Not everything unusual is a problem: a planned French promo lifts orders." | Click **Promo (12 h)** (FR) | No new incident; the calendar explains it |
 | 2:00 | "If data arrives late, it waits instead of crying wolf." | Click **Arrives 2 h late** (payments) | No incident for those hours |
-| 2:15 | "A new metric arrives as a definition and a query. The system checks the query against the formula, finds the metric's place in the graph and starts watching it." | Click **Add refund_rate** | Message "refund_rate added: validated on 28 days of data ... placed as a factor of refunds ... watched from the next tick" (2 to 10 s: it validates the definition on all the data so far); a new tree `refunds` = `orders` x `refund_rate` in the graph |
+| 2:15 | "A new metric arrives as a definition and a query. The system checks the query against the formula, finds the metric's place in the graph and starts watching it." | Click **Add refund_rate** | Message "refund_rate added: validated on about 30 days of data ... placed as a factor of refunds ... watched from the next tick" (2 to 10 s: it validates the definition on all the data so far); a new tree `refunds` = `orders` x `refund_rate` in the graph |
 | 2:40 | "We scored it on 240 injected faults and 160 innocent events in twenty runs, ten of them never seen before: detection, place, cause, false alarms." | Show `docs/results.md` | The table with the holdout line; numbers from `python -m scripts.summarize_evaluation`, not hand-picked |
 | 2:55 | One-line close: "It watches the business, not the servers." | | |
 
@@ -89,4 +89,4 @@ The scoring script (`python -m sim.score generate`) mixes all four with promos a
 
 - Inject at a chosen header-clock hour and record it in each rehearsal. `--now` affects the latest data hour; it does not fix the hour of day.
 - Reset between rehearsals with the full stop/archive/backfill/restart list above.
-- Fault severity in the button is 0.4 (payment success falls by 40%), a fault from the page lasts 72 simulated hours (the ad-budget fault 12) unless rolled back, promo is 12 hours, late data is 2 hours.
+- The page sends severity 0.4, which only the payment failure uses (payment success falls by 40%; a search regression from the page is 0.5); a fault from the page lasts 72 simulated hours (the ad-budget fault 12) unless rolled back; promo is 12 hours; late data delays three hours of one source, each by 2 h.

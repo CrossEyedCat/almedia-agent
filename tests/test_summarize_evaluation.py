@@ -157,7 +157,7 @@ def test_the_limits_say_what_a_holdout_of_the_same_simulator_does_not_test(repor
     assert "new random seeds of the same simulator" in limits and "does not test other kinds of fault" in limits
     assert "for every fault" not in limits                 # routine deployments are not near every fault
     assert "only move the arrival time of a source" in limits and "Data that never arrives is not tested" in limits
-    assert "does not check which release of that kind" in limits
+    assert "does not check a payment release" in limits and "any system for payment" in limits   # the scorer's leniency, named
 
 
 # ------------------------------------------------------------------------------------ files and arguments

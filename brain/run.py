@@ -78,6 +78,8 @@ def replay(monitor: Monitor, book: Book, start=None, end=None, quiet: bool = Fal
 def live(monitor: Monitor, book: Book, poll: float, max_ticks: int | None = None, quiet: bool = False,
          extension: Extension | None = None) -> None:
     last_seen, idle, ticks = None, 0, 0
+    narrator = book.narrator
+    said = narrator.status if narrator is not None else None   # what the start line already told
     print("monitor is watching; Ctrl+C stops it", flush=True)
     while max_ticks is None or ticks < max_ticks:
         try:
@@ -99,6 +101,9 @@ def live(monitor: Monitor, book: Book, poll: float, max_ticks: int | None = None
         except Exception:   # a locked file or a busy database must not end the monitor: say so and try again
             traceback.print_exc()
             print("tick failed; trying again", file=sys.stderr, flush=True)
+        if narrator is not None and narrator.status != said:   # a refused key shows only on a request,
+            said = narrator.status                               # so say it here, even when the tick failed
+            print(describe_narrator(narrator), flush=True)
         time.sleep(poll)
 
 

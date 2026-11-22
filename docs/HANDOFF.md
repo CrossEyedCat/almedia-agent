@@ -50,7 +50,7 @@ Two faults of one metric that begin in the same hour in places sharing a country
 - New metrics: built on B's side since `54ef95b` (`brain/extension.py`, README 3.3). The search covers one or two column metrics without constants; cause links for a new metric are not proposed.
 - Low-traffic hours are noisy by nature (`docs/data-granularity.md`); a fault that lasts one night hour can be missed.
 - The wall-clock mode (`sim.live --wall-clock`) cannot compress a multi-hour recovery into seconds; the demo uses the accelerated clock (`--speed 2`).
-- Open issues are the honest to-do list: #2, #3, #5, #6, #8, #9, #10, #11, #13, #14 (many are fixed in open pull requests; do not close an issue before its pull request is merged).
+- Open issues are the honest to-do list: #2, #3, #5, #6, #8, #9, #10, #11, #13, #14 (most are fixed on main by the merged pull requests; close an issue once you have checked it).
 
 ## Where to read first
 
