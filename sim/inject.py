@@ -73,6 +73,35 @@ RELEASE_SYSTEM = {"payment_failure": "payments-sdk", "search_regression": "searc
                   "feed_unavailable": "recommendations", "discount_push": "recommendations"}
 
 
+RELEASE_MODES = ("exact", "none", "late", "wide")
+LATE_RELEASE = pd.Timedelta(hours=3)
+
+
+def _release_params(params: dict, release: str) -> dict:
+    """The injection's parameters, with the release mode recorded only when it is not the usual exact one (so the
+    ground_truth row of an exact fault stays what it always was)."""
+    if release not in RELEASE_MODES:
+        raise ValueError(f"unknown release mode {release!r}; use one of {', '.join(RELEASE_MODES)}")
+    return params if release == "exact" else {**params, "release": release}
+
+
+def _write_release(con, release: str, start: pd.Timestamp, system: str, country, platform, description: str) -> None:
+    """The fault's own deployment row. exact: at the fault's first hour, in its scope. none: no row. late: three hours
+    after the fault began. wide: wider than the fault, for the whole country (a payment release drops its platform; a
+    release that already names only a country names none)."""
+    if release == "none":
+        return
+    ts = start + LATE_RELEASE if release == "late" else start
+    if release == "wide":
+        if platform is not None:
+            platform = None
+        else:
+            country = None
+        where = ", ".join(str(v) for v in (country, platform) if v)
+        description = description.split(" (")[0] + (f" ({where})" if where else "")
+    con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)", (_fmt(ts), system, country, platform, description))
+
+
 class AlreadyInjected(ValueError):
     """The same injection (kind and parameters, same start) is already on record. Repeating it would stack."""
 
@@ -102,14 +131,15 @@ def _record(con, inj: Injection, description: str) -> None:
 
 
 def payment_failure(con, country: str, platform: str, start: pd.Timestamp, severity: float = 0.35,
-                    end: pd.Timestamp | None = None, replay_now: bool = True) -> int:
-    """A payment SDK release breaks payments for one country and platform (scenario S1)."""
+                    end: pd.Timestamp | None = None, replay_now: bool = True, release: str = "exact") -> int:
+    """A payment SDK release breaks payments for one country and platform (scenario S1). `release` (stress runs):
+    exact, none, late or wide, see _write_release."""
     _check(country=country, platform=platform)
     start, end = utc(start), None if end is None else utc(end)
-    inj = Injection("payment_failure", start, end, {"country": country, "platform": platform, "severity": severity})
+    inj = Injection("payment_failure", start, end,
+                    _release_params({"country": country, "platform": platform, "severity": severity}, release))
     _record(con, inj, f"payment success rate drops {severity:.0%} for {country} {platform} after a payments-sdk release")
-    con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
-                (_fmt(start), "payments-sdk", country, platform, f"payments-sdk 4.2 rollout ({country}, {platform})"))
+    _write_release(con, release, start, "payments-sdk", country, platform, f"payments-sdk 4.2 rollout ({country}, {platform})")
     con.commit()
     return replay(con, start) if replay_now else 0
 
@@ -153,29 +183,28 @@ def stockout_surge(con, category: str, start: pd.Timestamp, end: pd.Timestamp | 
 
 
 def search_regression(con, country: str, start: pd.Timestamp, severity: float = 0.4, end: pd.Timestamp | None = None,
-                      replay_now: bool = True) -> int:
+                      replay_now: bool = True, release: str = "exact") -> int:
     """A search release makes results less relevant in one country: fewer clicks per search, fewer product views."""
     _check(country=country)
     start, end = utc(start), None if end is None else utc(end)
-    inj = Injection("search_regression", start, end, {"country": country, "severity": severity})
+    inj = Injection("search_regression", start, end, _release_params({"country": country, "severity": severity}, release))
     _record(con, inj, f"search clicks per search drop {severity:.0%} in {country} after a search release")
-    con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
-                (_fmt(start), "search", country, None, f"search ranking v2 rollout ({country})"))
+    _write_release(con, release, start, "search", country, None, f"search ranking v2 rollout ({country})")
     con.commit()
     return replay(con, start) if replay_now else 0
 
 
 def ad_budget_exhausted(con, country: str, start: pd.Timestamp, end: pd.Timestamp, boost: float = 3.0,
-                        boost_hours: int = 10, after: float = 0.05, replay_now: bool = True) -> int:
+                        boost_hours: int = 10, after: float = 0.05, replay_now: bool = True, release: str = "exact") -> int:
     """The pacing controller ignores its schedule (scenario S6): sponsored impressions per session jump for the first
     `boost_hours` of the window, then the budget is spent and they almost stop. Traffic itself does not change.
     Start the window at local midnight (23:00 UTC) and use 10 hours to get "the budget is gone by 10:00"."""
     _check(country=country)
     start, end = utc(start), utc(end)
-    inj = Injection("ad_budget_exhausted", start, end, {"country": country, "boost": boost, "boost_hours": boost_hours, "after": after})
+    inj = Injection("ad_budget_exhausted", start, end, _release_params(
+        {"country": country, "boost": boost, "boost_hours": boost_hours, "after": after}, release))
     _record(con, inj, f"ad impressions per session x{boost:g} for {boost_hours} h, then budget spent, in {country}")
-    con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
-                (_fmt(start), "pacing", country, None, f"pacing controller 2.3 rollout ({country})"))
+    _write_release(con, release, start, "pacing", country, None, f"pacing controller 2.3 rollout ({country})")
     con.commit()
     return replay(con, start) if replay_now else 0
 
@@ -204,17 +233,16 @@ def traffic_drop(con, country: str, platform: str, start: pd.Timestamp, end: pd.
 
 
 def feed_unavailable(con, start: pd.Timestamp, end: pd.Timestamp | None = None, multiplier: float = 12.0,
-                     replay_now: bool = True) -> int:
+                     replay_now: bool = True, release: str = "exact") -> int:
     """A recommendations model rollout shows attractive but unavailable products (the brief's For You scenario):
     stock-outs (x`multiplier`) and feed clicks rise in channel=recommendations only, so add-to-cart falls there."""
     multiplier = _between("multiplier", multiplier, 1.0, 60.0, closed_high=True)
     start, end = _window(start, end)
-    inj = Injection("feed_unavailable", start, end, {"channel": "recommendations", "multiplier": multiplier,
-                                                     "feed_ctr_lift": 0.25})
+    inj = Injection("feed_unavailable", start, end, _release_params(
+        {"channel": "recommendations", "multiplier": multiplier, "feed_ctr_lift": 0.25}, release))
     _record(con, inj, f"recommendations show unavailable products: out-of-stock views x{multiplier:g} and feed clicks "
                       "up in channel=recommendations after a recommendations model release")
-    con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
-                (_fmt(start), "recommendations", None, None, "recommendations model 3.1 rollout"))
+    _write_release(con, release, start, "recommendations", None, None, "recommendations model 3.1 rollout")
     con.commit()
     return replay(con, start) if replay_now else 0
 
@@ -232,19 +260,18 @@ def mix_shift(con, category: str, start: pd.Timestamp, end: pd.Timestamp | None 
 
 
 def discount_push(con, start: pd.Timestamp, end: pd.Timestamp | None = None, lift: float = 0.6,
-                  conversion_lift: float = 0.15, replay_now: bool = True) -> int:
+                  conversion_lift: float = 0.15, replay_now: bool = True, release: str = "exact") -> int:
     """A recommendations ranking rollout pushes discounted products (the brief's 'where did the money go' case):
     in channel=recommendations the platform-funded discount per euro rises by `lift`, carts convert
     `conversion_lift` more often, so orders rise while contribution falls."""
     lift = _between("lift", lift, 0.0, 5.0, closed_high=True)
     conversion_lift = _between("conversion_lift", conversion_lift, -1.0, 1.0, closed_high=True)
     start, end = _window(start, end)
-    inj = Injection("discount_push", start, end, {"channel": "recommendations", "lift": lift,
-                                                  "conversion_lift": conversion_lift})
+    inj = Injection("discount_push", start, end, _release_params(
+        {"channel": "recommendations", "lift": lift, "conversion_lift": conversion_lift}, release))
     _record(con, inj, f"recommendations push discounted products: discount per euro +{lift:.0%} and orders up, "
                       "contribution down in channel=recommendations after a recommendations ranking release")
-    con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
-                (_fmt(start), "recommendations", None, None, "recommendations ranking 3.2 rollout"))
+    _write_release(con, release, start, "recommendations", None, None, "recommendations ranking 3.2 rollout")
     con.commit()
     return replay(con, start) if replay_now else 0
 
@@ -272,7 +299,7 @@ def end_injection(con, rowid: int, at: pd.Timestamp, replay_now: bool = True) ->
     ended = Injection(inj.kind, inj.start, at, inj.params)
     con.execute("UPDATE ground_truth SET scope = ? WHERE rowid = ?", (ended.to_scope_json(), rowid))
     system = RELEASE_SYSTEM.get(inj.kind)
-    if system and at >= inj.start:
+    if system and at >= inj.start and inj.params.get("release") != "none":    # no release on record: nothing to roll back
         where = ", ".join(str(inj.params[d]) for d in ("country", "platform") if inj.params.get(d))
         con.execute("INSERT INTO releases VALUES (?, ?, ?, ?, ?)",
                     (_fmt(at), system, inj.params.get("country"), inj.params.get("platform"),
@@ -301,6 +328,8 @@ def main(argv=None) -> int:
     ap.add_argument("--end", help="UTC hour; default: until the end of the simulation")
     ap.add_argument("--severity", type=float, help="payment_failure: default 0.35; traffic_drop: default 0.5")
     ap.add_argument("--delay-hours", type=float, default=2)
+    ap.add_argument("--release", choices=RELEASE_MODES, default="exact",
+                    help="stress runs: the fault's own release row is exact (default), none, 3 h late or wide")
     a = ap.parse_args(argv)
 
     con = db.connect(a.db)
@@ -324,19 +353,19 @@ def main(argv=None) -> int:
         if a.kind == "payment_failure":
             if not (a.country and a.platform):
                 ap.error("payment_failure needs --country and --platform")
-            n = payment_failure(con, a.country, a.platform, start, severity, end)
+            n = payment_failure(con, a.country, a.platform, start, severity, end, release=a.release)
         elif a.kind == "traffic_drop":
             if not (a.country and a.platform):
                 ap.error("traffic_drop needs --country and --platform")
             n = traffic_drop(con, a.country, a.platform, start, end, severity)
         elif a.kind == "feed_unavailable":
-            n = feed_unavailable(con, start, end, a.multiplier)
+            n = feed_unavailable(con, start, end, a.multiplier, release=a.release)
         elif a.kind == "mix_shift":
             if not a.category:
                 ap.error("mix_shift needs --category")
             n = mix_shift(con, a.category, start, end, a.share)
         elif a.kind == "discount_push":
-            n = discount_push(con, start, end, a.lift)
+            n = discount_push(con, start, end, a.lift, release=a.release)
         elif a.kind == "stockout_surge":
             if not a.category:
                 ap.error("stockout_surge needs --category")
@@ -344,11 +373,12 @@ def main(argv=None) -> int:
         elif a.kind == "search_regression":
             if not a.country:
                 ap.error("search_regression needs --country")
-            n = search_regression(con, a.country, start, severity, end)
+            n = search_regression(con, a.country, start, severity, end, release=a.release)
         elif a.kind == "ad_budget_exhausted":
             if not a.country:
                 ap.error("ad_budget_exhausted needs --country")
-            n = ad_budget_exhausted(con, a.country, start, end or start + pd.Timedelta(hours=24), a.boost, a.boost_hours)
+            n = ad_budget_exhausted(con, a.country, start, end or start + pd.Timedelta(hours=24), a.boost, a.boost_hours,
+                                    release=a.release)
         elif a.kind == "promo":
             if not (a.country and end):
                 ap.error("promo needs --country and --end")
