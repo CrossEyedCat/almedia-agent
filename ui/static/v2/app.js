@@ -66,6 +66,19 @@
     return p.weekday + ' ' + p.day + ' ' + p.month + ', ' + p.hour + ':' + p.minute;
   }
   function hourOnly(t) { var d = new Date(str(t)); return isFinite(d) ? ('0' + d.getUTCHours()).slice(-2) + ':00' : ''; }
+  // The polls redraw the chips, the rail and the brief every few seconds while the clock runs. Keyboard focus would
+  // fall to the page each time, so remember the focused control and focus its twin after the redraw.
+  function focusMemo() {
+    var a = document.activeElement; if (!a || a === document.body) return function () {};
+    var box = ['domains', 'feed', 'brief', 'metric', 'end-list', 'extra'].map($).filter(function (c) { return c && c.contains(a); })[0];
+    if (!box) return function () {};
+    var key = function (e) { return e.getAttribute('data-k') || e.textContent; }, k = key(a), tag = a.tagName;
+    return function () {
+      if (document.contains(a)) return;
+      var twin = Array.prototype.filter.call(box.querySelectorAll(tag), function (e) { return key(e) === k; })[0];
+      if (twin) try { twin.focus({ preventScroll: true }); } catch (e) { twin.focus(); }
+    };
+  }
   function svg(tag, attrs, parent) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
   function note(msg) { $('notice').textContent = msg || ''; }
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
@@ -104,9 +117,15 @@
   function byId(id) { return incidents.filter(function (x) { return x.id === id; })[0]; }
 
   // the moved metric and its change: the leading driver, else the incident's own metric
+  // When the chain check measured the same metric, its figure (since the onset, like the four big numbers) is used,
+  // so the headline, the rail and the chain check never show two different percentages for one metric.
   function lead(i) {
     var d = obj(list(i.drivers)[0]), ch = obj(i.change);
-    if (d.metric && num(d.delta_pct) != null) return { metric: str(d.metric), pct: num(d.delta_pct), seg: d.segment || i.segment };
+    if (d.metric && num(d.delta_pct) != null) {
+      var c = null; try { c = chainOf(i); } catch (e) { c = null; }
+      var row = c ? c.rows.filter(function (r) { return r.metric === str(d.metric) && r.moved && num(r.dev) != null; })[0] : null;
+      return { metric: str(d.metric), pct: row ? row.dev : num(d.delta_pct), seg: d.segment || i.segment };
+    }
     return { metric: str(i.metric), pct: num(ch.delta_pct), seg: i.segment };
   }
   function topHyp(i) {
@@ -137,7 +156,7 @@
     l.forEach(function (d) {
       var n = liveCount(d.id);
       var b = el('button', 'chip' + (d.id === dom ? ' on' : ''), [d.label, n ? el('span', 'n', [String(n)]) : null]);
-      b.type = 'button';
+      b.type = 'button'; b.setAttribute('data-k', 'chip:' + d.id);
       b.setAttribute('aria-pressed', d.id === dom ? 'true' : 'false');
       if (n) b.title = n + ' live incident' + (n > 1 ? 's' : '') + ' in ' + d.label;
       b.onclick = function () { dom = d.id; selNode = null; var s = inScope(); selInc = s.length ? s[0].id : null; renderAll(); syncURL(); };
@@ -157,7 +176,7 @@
 
   // ------------------------------------------------------------ the rail
   var GROUPS = [['Needs attention', ['open', 'ongoing']], ['Resolved', ['resolved']], ['Not alerts', ['explained', 'pending']]];
-  var seen = null, arrived = {};
+  var seen = null, arrived = {}, lastSt = {}, changedSt = {};
   function railItem(i) {
     var st = status(i), quiet = st === 'explained' || st === 'pending', eur = euroOf(i);
     var top = [el('span', 'inc-status', [st === 'explained' ? 'Explained' : st.charAt(0).toUpperCase() + st.slice(1)])];
@@ -168,11 +187,12 @@
     var L = lead(i);
     if (L.metric !== str(i.metric) && num(obj(i.change).delta_pct) != null && !quiet)
       foot.push(el('span', null, [human(i.metric) + ' ' + pct(obj(i.change).delta_pct)]));
-    if (st === 'explained') foot.push(el('span', null, [obj(i.innocent).kind ? 'innocent: ' + str(obj(i.innocent).kind) : 'no alert']));
+    var ik = str(obj(i.innocent).kind), IK = { mix: 'a mix shift', calendar: 'a planned event', freshness: 'late data' };
+    if (st === 'explained') foot.push(el('span', null, [ik ? 'Innocent: ' + (IK[ik] || ik) : (topHyp(i) && KIND[topHyp(i).kind] ? 'No alert: ' + KIND[topHyp(i).kind] : 'No alert')]));
     if (i.recurrence_of) foot.push(el('span', 'again', ['back again']));
     var b = el('button', 'inc ' + stOf(i) + (quiet ? ' quiet' : '') + (i.id === selInc ? ' sel' : '') + (arrived[i.id] ? ' arrived' : ''), [
       el('span', 'inc-top', top), el('span', 'inc-head', [headline(i)]), foot.length ? el('span', 'inc-foot', foot) : null]);
-    b.type = 'button';
+    b.type = 'button'; b.setAttribute('data-k', 'inc:' + str(i.id));
     b.setAttribute('aria-current', i.id === selInc ? 'true' : 'false');
     b.title = str(i.id) + ', first seen ' + when(i.first_seen) + ' UTC';
     b.onclick = function () { pickInc(i.id); };
@@ -297,10 +317,20 @@
     if (example) b.appendChild(el('p', 'example-banner', ['Showing the contract example: there is no live incident yet.']));
     if (!i) {
       var l = inScope();
-      b.appendChild(el('div', 'quiet-state', [
+      var q = el('div', 'quiet-state', [
         el('h1', 'headline', [l.length ? 'Pick an incident on the left' : dom === 'all' ? 'Nothing needs attention' : 'Nothing touches ' + domainLabel(dom)]),
         el('p', null, [l.length ? 'Its brief opens here: what moved, the cause, the cost and how the monitor found it.'
-          : 'The monitor reads every new hour of data. When a metric moves, the incident appears on the left and its brief opens here.'])]));
+          : 'The monitor reads every new hour of data. When a metric moves, the incident appears on the left and its brief opens here.'])]);
+      if (!l.length && dom !== 'all') {
+        var all = el('button', 'quiet-bench', ['Show all domains']); all.type = 'button';
+        all.onclick = function () { dom = 'all'; selNode = null; var s = inScope(); selInc = s.length ? s[0].id : null; renderAll(); syncURL(); };
+        q.appendChild(all);
+      } else if (!incidents.length && !benchOpen()) {
+        var ob = el('button', 'quiet-bench', ['Open the test bench to inject a fault']); ob.type = 'button';
+        ob.onclick = function () { setBench(true, true); renderBrief(); };
+        q.appendChild(ob);
+      }
+      b.appendChild(q);
       return;
     }
     try { briefOf(b, i); } catch (err) { b.appendChild(el('p', 'rail-empty', ['This report could not be shown: ' + err.message])); }
@@ -313,7 +343,7 @@
     var st = status(i), ch = obj(i.change), w = obj(ch.window), imp = obj(i.impact), h = topHyp(i);
     b.className = 'brief ' + stOf(i);
     // --- the hero: status line, the headline sentence, the cause
-    var metaLine = [el('span', 'status-tag', [st === 'explained' ? 'Explained' : st.charAt(0).toUpperCase() + st.slice(1)])];
+    var metaLine = [el('span', 'status-tag' + (changedSt[i.id] ? ' flash' : ''), [st === 'explained' ? 'Explained' : st.charAt(0).toUpperCase() + st.slice(1)])];
     if (i.severity && st !== 'explained' && st !== 'pending') metaLine.push(el('span', 'sev ' + str(i.severity), [str(i.severity).charAt(0).toUpperCase() + str(i.severity).slice(1) + ' severity']));
     metaLine.push(el('span', null, ['First seen ' + day(i.first_seen) + ' UTC']));
     if (i.last_seen && i.last_seen !== i.first_seen) metaLine.push(el('span', null, ['last ' + day(i.last_seen)]));
@@ -333,6 +363,14 @@
         el('span', 'cause-m', [(KIND[h.kind] ? KIND[h.kind] : str(h.kind)) + (num(h.score) != null ? ', score ' + h.score.toFixed(2) : '')])]));
     } else if (st !== 'pending') hero.appendChild(el('p', 'cause-line none', [el('span', 'cause-k', ['Cause']), el('span', 'cause-v', ['not found yet'])]));
     if (inn.reason) hero.appendChild(el('div', 'why-no-alert', [el('h2', null, ['Why no alert']), el('p', null, [str(inn.reason)])]));
+    // demo only: the bench injection behind a live incident can be ended right here, next to the cause it produced
+    var inj = LIVE.indexOf(st) >= 0 && !benchOpen() ? injectionFor(i) : null;      // with the bench open, its own list has the button
+    if (inj) {
+      var endB = el('button', 'end-go', ['End it (rollback)']); endB.type = 'button';
+      endB.onclick = function () { endInjection(inj, endB); };
+      hero.appendChild(el('div', 'demo-act', [el('span', 'demo-tag', ['Demo']),
+        el('p', null, ['This fault came from the test bench: ', el('span', 'mono', [str(inj.kind)]), ' ' + injWhere(inj) + '. End it and watch the incident resolve.']), endB]));
+    }
     b.appendChild(hero);
 
     // --- four big numbers, about the outcome the incident was measured on
@@ -378,7 +416,7 @@
         return el('div', 'loc' + (x.chosen ? ' chosen' : ''), [
           el('span', 'loc-place', [el('span', 'mono', [str(x.segment)]), x.chosen ? el('span', 'chosen-tag', ['chosen']) : null, el('span', 'loc-dim', [str(x.dimension)])]),
           el('span', 'loc-share', [bar, el('span', 'mono', [fmt(share, 0) + '%'])]),
-          el('span', 'mono loc-sur', [num(x.surprise) != null ? fmt(x.surprise, 2) : ''])]);
+          el('span', 'mono loc-sur', [num(x.surprise) != null ? signed(x.surprise.toLocaleString('en', { minimumFractionDigits: 1, maximumFractionDigits: 1 })) : ''])]);
       });
       steps.appendChild(stepSec(++n, 'Where it happened', 'Places ranked by how much of the change they hold. The chosen one is where the monitor looked for the cause.',
         [el('div', 'loc head', [el('span', null, ['Place']), el('span', null, ['Share of the change']), el('span', null, ['Surprise'])])].concat(rowsL)));
@@ -681,7 +719,7 @@
     var cs = getComputedStyle(wrap), w = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     var hh = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 2;
     if (hh > 120) w = Math.min(w, hh * v.width / v.height);
-    g.style.width = Math.floor(Math.max(v.width * 0.74, Math.min(w, v.width * 1.3))) + 'px';
+    g.style.width = Math.floor(Math.max(v.width * 0.68, Math.min(w, v.width * 1.3))) + 'px';
   }
   // The trace: when the graph is shown with an incident selected, its path is drawn once in the status colour, from
   // the moved rate up to the outcome. Polls and redraws do not replay it.
@@ -765,8 +803,13 @@
     }
     return accelerated ? 'Simulated, accelerated' : 'Replay';
   }
+  // bench times, in Berlin like the clock above: "Thu 26 Nov, 08:00 Berlin"
   function displayHour(ts) {
-    return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ts)) + ' Europe/Berlin';
+    var d = new Date(str(ts)); if (!isFinite(d)) return str(ts);
+    var p = {};
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(d).forEach(function (x) { p[x.type] = x.value; });
+    return p.weekday + ' ' + p.day + ' ' + p.month + ', ' + p.hour + ':' + p.minute + ' Berlin';
   }
   function clockParts(ts) {
     var p = {};
@@ -789,7 +832,7 @@
     }).catch(function (e) { $('clock').textContent = 'Clock unavailable: ' + e.message; });
     get('/api/graph').then(function (g) {
       var k = JSON.stringify(g);
-      if (k !== graphKey) { graphKey = k; takeGraph(g); try { renderAll(); } catch (e) { note('Could not draw the graph: ' + e.message); } }
+      if (k !== graphKey) { graphKey = k; takeGraph(g); var back = focusMemo(); try { renderAll(); } catch (e) { note('Could not draw the graph: ' + e.message); } back(); }
     }).catch(function () {});
     get('/api/incidents').then(function (r) {
       var before = incidentSignature();
@@ -800,16 +843,32 @@
       if (seen) ids.forEach(function (id) { if (!seen[id]) fresh.push(id); });
       seen = {}; ids.forEach(function (id) { seen[id] = true; });
       arrived = {}; fresh.forEach(function (id) { arrived[id] = true; });
+      // a live incident that the monitor closed: say so once, and wash its card and its status tag
+      var closed = [];
+      changedSt = {};
+      incidents.forEach(function (i) {
+        var was = lastSt[i.id];
+        if (was && was !== status(i)) { changedSt[i.id] = true; arrived[i.id] = true; if (LIVE.indexOf(was) >= 0 && status(i) === 'resolved') closed.push(i.id); }
+      });
+      lastSt = {}; incidents.forEach(function (i) { lastSt[i.id] = status(i); });
       $('exbadge').textContent = '';
       if (example) $('exbadge').appendChild(el('p', 'example-pill', ['Contract example: no live incident yet']));
       var scope = inScope();
       if (flipped || !incidents.some(function (i) { return i.id === selInc; })) selInc = scope.length ? scope[0].id : null;
       note('');
       if (before !== incidentSignature() || flipped) {
+        var back = focusMemo();
         try { renderChips(); renderFeed(); renderBrief(); renderMetricPane(); applyStyles(); } catch (e) { note('Could not draw the incidents: ' + e.message); }
+        back();
         fresh.forEach(function (id) {
           var i = byId(id); if (!i || LIVE.indexOf(status(i)) < 0) return;
           toast('New incident: ' + headline(i) + '.', [['Open it', function () { pickInc(id); setView('brief'); }]]);
+        });
+        closed.forEach(function (id) {
+          var i = byId(id); if (!i) return;
+          var msg = 'Resolved: ' + headline(i) + '. The rate is back to normal.';
+          logLine(msg, null, 'ok');
+          toast(msg, id === selInc ? null : [['Open it', function () { pickInc(id); setView('brief'); }]]);
         });
       }
     }).catch(function () { note('Could not read the incidents.'); });
@@ -864,23 +923,45 @@
   function say(msg, cls) { logLine(msg, null, cls); if (!benchOpen()) toast(msg); }
 
   // injections still in effect, so a demo can end one (the rollback)
-  var endKey = '';
+  var endKey = '', active = [];
+  function injWhere(i) {
+    var where = ['country', 'platform', 'category', 'source'].map(function (d) { return obj(i.scope)[d]; }).filter(Boolean).join(' · ');
+    return (where || 'everywhere') + ', from ' + displayHour(obj(i.scope).start);
+  }
+  function endInjection(i, b) {
+    b.disabled = true; say('Ending ' + i.kind + '…');
+    post('/api/end', { id: parseInt(i.id, 10) }).then(function (r) {
+      say('Ended ' + i.kind + ' from ' + displayHour(r.ended_from) + '. The monitor will see the rate come back and resolve the incident.', 'ok'); endKey = ''; refresh();
+    }).catch(function (e) { b.disabled = false; say('Failed: ' + e.message, 'bad'); });
+  }
+  // the bench fault behind a live incident: same place (no dimension in conflict, at least one shared), started before
+  // the incident was last seen; the closest match, newest first
+  function injectionFor(inc) {
+    var seg = obj(inc.segment), last = Date.parse(str(inc.last_seen)), best = null, bestN = -1;
+    active.forEach(function (j) {
+      if (!KINDS.some(function (k) { return k[0] === j.kind; })) return;
+      var sc = obj(j.scope), n = 0, clash = false;
+      ['country', 'platform', 'category'].forEach(function (d) { if (!sc[d]) return; if (seg[d] === sc[d]) n++; else if (seg[d]) clash = true; });
+      if (clash || isFinite(last) && Date.parse(str(sc.start)) > last) return;
+      if (!n && ['country', 'platform', 'category'].some(function (d) { return sc[d]; })) return;
+      if (n > bestN || (n === bestN && Date.parse(str(sc.start)) > Date.parse(str(obj(best.scope).start)))) { best = j; bestN = n; }
+    });
+    return best;
+  }
   function fillEnd(l) {
     var key = JSON.stringify(l.map(function (i) { return i.id; }));
     $('end-grp').hidden = !l.length;
     if (key === endKey) return;
-    endKey = key;
+    endKey = key; active = l;
     var ul = $('end-list'); ul.textContent = '';
     l.forEach(function (i) {
-      var where = ['country', 'platform', 'category', 'source'].map(function (d) { return obj(i.scope)[d]; }).filter(Boolean).join(' · ');
       var b = el('button', 'end-go', ['End it (rollback)']); b.type = 'button';
-      b.onclick = function () {
-        b.disabled = true; say('Ending ' + i.kind + '…');
-        post('/api/end', { id: parseInt(i.id, 10) }).then(function (r) { say('Ended ' + i.kind + ' from ' + displayHour(r.ended_from) + '.', 'ok'); endKey = ''; refresh(); })
-          .catch(function (e) { b.disabled = false; say('Failed: ' + e.message, 'bad'); });
-      };
-      ul.appendChild(el('li', null, [el('div', 'end-what', [el('span', 'mono', [str(i.kind)]), el('span', 'end-where', [(where || 'everywhere') + ', from ' + displayHour(obj(i.scope).start)])]), b]));
+      b.onclick = function () { endInjection(i, b); };
+      ul.appendChild(el('li', null, [el('div', 'end-what', [el('span', 'mono', [str(i.kind)]), el('span', 'end-where', [injWhere(i)])]), b]));
     });
+    var back = focusMemo();
+    try { renderBrief(); } catch (e) { /* the brief redraws on the next poll */ }
+    back();
   }
   function act(body, label) {
     say(label + '…');
@@ -903,8 +984,8 @@
       var det = el('details', 'log-checks', [el('summary', null, [list(res.checks).length + ' checks']), checksList(res)]);
       extra.push(det);
     }
-    if (name) { var b = el('button', 'linkish', ['Show ' + name + ' in the graph']); b.type = 'button'; b.onclick = function () { showMetric(name); }; extra.push(b); }
-    var ok = /accept|ok|added|placed/i.test(str(res.status));
+    var ok = /accept|ok|added|placed|valid/i.test(str(res.status));
+    if (name) { var b = el('button', 'linkish', [ok ? 'Show ' + name + ' in the graph' : 'Show why ' + name + ' was refused']); b.type = 'button'; b.onclick = function () { showMetric(name); }; extra.push(b); }
     logLine(el('span', null, [el('span', 'verdict ' + str(res.status), [str(res.status) || 'answer']), ' ', str(res.message) || 'Monitor: ' + str(res.status)]), extra, ok ? 'ok' : '');
     if (!benchOpen()) toast(str(res.message) || 'Monitor: ' + str(res.status), name ? [['Show checks', function () { showMetric(name); }]] : null);
   }
@@ -938,6 +1019,7 @@
     $('bench-toggle').classList.toggle('on', open);
     store('v2-bench', open ? '1' : '0');
     if (open) $('toast').hidden = true;
+    try { renderBrief(); } catch (e) { /* drawn again on the next poll */ }
     if (focus) (open ? $('f-kind') : $('bench-toggle')).focus();
     requestAnimationFrame(fitGraph);
   }

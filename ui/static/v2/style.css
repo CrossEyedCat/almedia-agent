@@ -120,7 +120,9 @@ button { cursor: pointer; }
 /* ------------------------------------------------------------------ the shell: rail | stage | bench */
 .shell { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr); }
 .shell.bench-open { grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--bench-w); }
-.shell.graph-view.bench-open { --rail-w: 264px; }
+/* graph and bench together: the rail steps aside so the whole tree and the metric's answer stay readable */
+.shell.graph-view.bench-open { grid-template-columns: minmax(0, 1fr) var(--bench-w); }
+.shell.graph-view.bench-open .rail { display: none; }
 .shell.graph-view.bench-open .view-graph { grid-template-columns: minmax(0, 1fr) 280px; }
 .shell.bench-open .view-graph:not(.has-metric) { grid-template-columns: minmax(0, 1fr); }
 .shell.bench-open .view-graph:not(.has-metric) .metric-pane { display: none; }
@@ -324,6 +326,20 @@ button { cursor: pointer; }
 
 .quiet-state { padding: 72px 0; max-width: 640px; }
 .quiet-state p { margin-top: 14px; font-size: 17px; color: var(--muted); }
+.quiet-bench { margin-top: 24px; min-height: 40px; padding: 8px 16px; border-radius: 8px; border: 1.5px dashed var(--edge); background: var(--sheet); font-weight: 600; font-size: 14px; }
+.quiet-bench:hover { border-color: var(--ink); }
+
+/* demo only: the bench fault behind this incident, ended from the brief (dashed, like the bench) */
+.demo-act { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 10px 12px 10px 14px; border: 1.5px dashed var(--edge); border-radius: 12px; max-width: 760px;
+  background-image: repeating-linear-gradient(135deg, transparent 0 9px, var(--track) 9px 10px); }
+.demo-act p { flex: 1 1 auto; font-size: 13.5px; color: var(--muted); line-height: 1.45; }
+.demo-act p .mono { font-size: 12.5px; color: var(--ink); }
+.demo-act .demo-tag { flex: none; margin-top: 0; }
+.demo-act .end-go { flex: none; min-height: 36px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--hot-line); background: var(--hot-bg); color: var(--ink); font-weight: 650; font-size: 13.5px; white-space: nowrap; }
+.demo-act .end-go:hover { border-color: var(--hot); }
+.demo-act .end-go:disabled { opacity: .55; cursor: default; }
+@keyframes st-flash { 0% { box-shadow: 0 0 0 0 var(--st); } 40% { box-shadow: 0 0 0 6px var(--st-line); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.status-tag.flash { animation: st-flash 1.2s ease-out 2; }
 
 /* ------------------------------------------------------------------ the graph view */
 .view-graph { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: 100%; }
@@ -374,7 +390,7 @@ svg text { font-family: var(--mono); }
 .legend svg { width: 24px; height: 10px; }
 .legend line { stroke: var(--edge); stroke-width: 1.5; }
 .legend line.may { stroke: var(--accent); stroke-dasharray: 4 3; }
-#extra { display: flex; align-items: center; gap: 6px; padding: 10px 28px 14px; border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: thin; white-space: nowrap; }
+#extra { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 28px 12px; border-top: 1px solid var(--line); max-height: 68px; overflow-y: auto; scrollbar-width: thin; flex: none; }
 #extra:empty { display: none; }
 .extra-k { font-size: 12.5px; color: var(--muted); margin-right: 6px; }
 .extra-m { flex: none; font: 12px var(--mono); border: 1px solid var(--line-2); background: var(--sheet); border-radius: 6px; padding: 3px 8px; }
@@ -486,6 +502,7 @@ select:hover { border-color: var(--edge); }
   .loc { grid-template-columns: minmax(0, 1fr) 120px; } .loc-sur, .loc.head span:last-child { display: none; }
 }
 @media (max-width: 1360px) { :root { --rail-w: 300px; --bench-w: 360px; } .clock-tz { display: none; }
+  .view-graph { grid-template-columns: minmax(0, 1fr) 300px; }
   .chip { padding: 4px 7px; } .views [role="tab"] { margin-right: 10px; } .domain-row { gap: 8px; } .sub-row { gap: 12px 20px; } }
 @media (max-width: 1180px) {
   .mast-row { gap: 10px 16px; padding-left: 16px; padding-right: 16px; } .clock { padding-left: 16px; } .clock-date { display: none; }
