@@ -110,13 +110,18 @@ def facts() -> dict:
                                         "or when a secret, data/ or incidents/ is tracked or in the git history"),
         ("scripts/rehearse_core.py", "Rehearsal in a new folder, without the console: a payment fault is found in its country and resolved after the rollback, "
                                      "a promo raises no alert, late data is reported as pending"),
+        # rows for scripts that other pull requests add; a row shows only while its file exists
+        ("scripts/baseline_ranking.py", "The plain ranking that docs/results.md sets beside the brain: each hour the most anomalous rate and cell "
+                                        "against the same hour of the previous three weeks, no calendar and no investigation"),
+        ("scripts/live_check.py", "Unattended live check: the real clock, brain and console-style injections for 36 simulated hours with every "
+                                  "kind of event, then eight checks; exit code 1 if one fails"),
         ("ui/app.py", "The console's API: graph export, incidents, state, injection, rollback, new metric, data browser"),
         ("ui/domains.py", "Which metric belongs to which business domain"),
         ("ui/static/index.html", "Console: domain selector, graph, incidents, report, DEMO controls"),
         ("ui/static/data.html", "Read-only browser of the simulator tables"),
         ("ui/static/console.css", "One style for both pages, light and dark"),
     ]
-    mods = [(name, job, lines(ROOT / name)) for name, job in modules]
+    mods = [(name, job, lines(ROOT / name)) for name, job in modules if (ROOT / name).is_file()]
     tests = [(p.name, tests_in(p)) for p in sorted((ROOT / "tests").glob("test_*.py"))]
     tables = re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", full_ddl())
     brain_files = [p for p in sorted((ROOT / "brain").glob("*.py")) if p.name != "__init__.py"]

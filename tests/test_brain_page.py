@@ -104,7 +104,9 @@ def test_the_committed_page_is_what_the_generator_makes_now():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)                       # the generator writes nothing when imported
     page, _ = mod.build()
-    stamp = re.compile(r"state of [^<]*")
+    # the time stamp, and the count of test functions, which grows with any test another change adds
+    moving = re.compile(r"state of [^<]*|<b>\d+</b> test functions")
     committed = (ROOT / "docs" / "brain-architecture.html").read_text(encoding="utf-8")
-    assert stamp.sub("state of -", mod.as_document(page)) == stamp.sub("state of -", committed)
+    assert moving.sub("-", mod.as_document(page)) == moving.sub("-", committed)
+    assert re.search(r"<b>\d+</b> test functions in the <b>\d+</b> test files", committed)
 
