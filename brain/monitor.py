@@ -1,8 +1,11 @@
-"""The monitor: every tick it judges the newest hours of every watched rate in every watched cut.
+"""The monitor: every tick it judges the newest hours of every watched rate in every watched cut,
+and the volumes (sessions, orders) in the coarser cuts.
 
 What is watched comes from the graph: every atomic rate (a ratio of two columns), on the formula
-tree or not. Outcomes such as orders are not judged directly, because a fault in one cell is lost
-in their noise; they are used for the impact once a rate has moved (brain/impact.py).
+tree or not. Money outcomes such as contribution are not judged directly, because a fault in one
+cell is lost in their noise; they are used for the impact once something has moved
+(brain/impact.py). Sessions and orders are judged as counts (below): a drop in traffic or orders
+with unchanged rates moves no rate at all.
 
 For a rate in a series (one cut of the dimensions, one value combination):
 
@@ -10,9 +13,14 @@ For a rate in a series (one cut of the dimensions, one value combination):
   leaving out the hours being judged, hours already flagged as bad, hours covered by a calendar
   event and hours whose data has not arrived;
 - an hour is bad when its counts, alone or summed with the two hours before, are too surprising
-  against that rate (brain/stats.py) and the rate moved by at least `min_effect`;
+  against that rate (brain/stats.py) and the rate moved by at least `min_effect`; an hour of a bad
+  summed window is marked bad only when it alone moved that way at p below 0.01, so an episode ends
+  at its last faulty hour and its newest-hours rate is the fault's rate;
 - hours whose sources have not arrived are held: not judged, not healthy;
-- the last hours are re-read on every tick, so a rewritten past is seen too.
+- the last hours are re-read on every tick, so a rewritten past is seen too;
+- a calendar event explains an alert only when the change goes the way the event predicts and is
+  not much larger than earlier events of that kind and place did (EVENT_EFFECTS); otherwise the
+  alert is raised with the event as `partial_explanation`.
 
 Volumes (sessions, orders) are judged as counts, in the whole market, per country, per platform and
 per country x platform, because an outage or a lost app-store listing removes visits and orders
@@ -59,6 +67,17 @@ VOLUME_CUTS: tuple[tuple[str, ...], ...] = ((), ("country",), ("platform",), ("c
 VOLUME_MIN_SLOTS = 24       # hours of the week seen in at least two weeks before `a` is trusted
 VOLUME_MIN_DISPERSION = 1e-4  # a: never assume counts steadier than a 1 % hour-to-hour spread
 VOLUME_TRIM = 5.0           # a week-to-week spread this many times the fitted one is left out of the fit
+
+# What a planned event does, by kind of calendar row: the metrics it moves and which way (+1 up, -1 down).
+# A promo brings more visits and orders, more add-to-carts per view, and gives more away. A calendar
+# row explains an alert only when the change goes this way and is no larger than EVENT_SIZE_FACTOR
+# times the largest effect earlier events of that kind and place had on that series (when there were
+# any); otherwise the alert is raised and the row is kept as `partial_explanation`. A kind or metric
+# missing here is not checked for direction.
+EVENT_EFFECTS: dict[str, dict[str, int]] = {
+    "promo": {"sessions": 1, "orders": 1, "add_to_cart_rate": 1, "discount_rate": 1},
+}
+EVENT_SIZE_FACTOR = 2.0
 
 
 @dataclass(frozen=True)
@@ -118,7 +137,8 @@ class Alert:
     episode_observed: float   # rate over the whole episode; a volume: count per hour over the episode
     score: float              # strongest surprise in the episode, -log10 p
     z: float                  # normal-equivalent of that
-    explained_by: dict | None = None   # a calendar row that covers it
+    explained_by: dict | None = None   # a calendar row that covers it and fits it (direction and size)
+    partial_explanation: dict | None = None   # a covering calendar row that does not fit it, with "why"
     trigger: str = "scan"              # "scan": the hourly scan; "release": the watch after a release
 
     @property
@@ -291,6 +311,8 @@ class Monitor:
         self.open_episodes: list[tuple] = []      # (metric, segment, onset) of incidents that are still open
         self._watch_seen: set[tuple] = set()      # (release, metric) that has alerted, by scan or watch
         self._watch_closed: set[tuple] = set()    # ... and whose episode is over: never raised again
+        self._recent: dict[tuple, Alert] = {}     # (metric, place) -> its alert on a recent tick (_drop_tails)
+        self._tails_now: pd.Timestamp | None = None
 
     def rewatch(self) -> list[str]:
         """Bring the watch list in line with the graph after the extension agent changed it: a rate that
@@ -426,7 +448,35 @@ class Monitor:
                     tick.judged_series += len(cube.keys)
         tick.alerts += self._release_watch(now, tick, events)
         tick.alerts += self._symptoms_dropped(volumes, tick.alerts)
+        tick.alerts = self._drop_tails(tick.alerts, now)
         return tick
+
+    def _drop_tails(self, alerts: list[Alert], now: pd.Timestamp) -> list[Alert]:
+        """A series that contains or crosses a fault's place can stay bad an hour or two longer than
+        the fault's own series (one noisy hour is enough). While both are live, `leading` keeps the
+        stronger; once the stronger has ended, the weaker would lead on its own and open a second
+        incident for the same problem. So an alert is dropped when a stronger alert of the same metric
+        in a compatible place, seen on an earlier tick, overlapped its episode, has ended, and ended at
+        most `episode_gap_hours` before this one's newest bad hour. Bad for longer, it is news again."""
+        cfg = self.config
+        if self._tails_now is not None and now < self._tails_now:
+            self._recent = {}            # the clock went back (a fresh replay): forget
+        self._tails_now = now
+        gap = cfg.episode_gap_hours * HOUR
+        live = {(a.metric, tuple(sorted(a.segment.items()))) for a in alerts}
+        kept = []
+        for a in alerts:
+            tail = any(key not in live and r.metric == a.metric and r.segment != a.segment
+                       and compatible(r.segment, a.segment) and r.score > a.score
+                       and a.onset <= r.last_bad and r.onset <= a.last_bad and a.last_bad <= r.last_bad + gap
+                       for key, r in self._recent.items())
+            if not tail:
+                kept.append(a)
+        for a in alerts:
+            self._recent[(a.metric, tuple(sorted(a.segment.items())))] = a
+        horizon = now - (cfg.active_hours + cfg.episode_gap_hours) * HOUR
+        self._recent = {k: r for k, r in self._recent.items() if r.last_bad >= horizon}
+        return kept
 
     def _judge(self, cube: Cube, w: Watched, j0: int, late_rows: list[int], cal: np.ndarray,
                events: list[dict]) -> list[Alert]:
@@ -508,11 +558,12 @@ class Monitor:
             if last < rows - cfg.active_hours:
                 continue
             first = self._episode_start(col, last, cfg.episode_gap_hours)
-            ep_n = np.nansum(N[first:last + 1, k])
-            ep_d = np.nansum(D[first:last + 1, k])
-            newest = max(first, last - max(cfg.windows) + 1)   # the state now: the newest bad hours
-            now_n = np.nansum(N[newest:last + 1, k])
-            now_d = np.nansum(D[newest:last + 1, k])
+            badrows = first + np.flatnonzero(col[first:last + 1])   # the episode's bad hours, gaps left out
+            ep_n = np.nansum(N[badrows, k])
+            ep_d = np.nansum(D[badrows, k])
+            newest = badrows[-max(cfg.windows):]                    # the state now: the newest bad hours
+            now_n = np.nansum(N[newest, k])
+            now_d = np.nansum(D[newest, k])
             recent = slice(max(first, j0) - j0, last - j0 + 1)
             i = int(np.nanargmax(best[recent, k])) if np.isfinite(best[recent, k]).any() else None
             alert = Alert(
@@ -524,15 +575,62 @@ class Monitor:
                 score=float(best[recent, k][i]) if i is not None else 0.0,
                 z=float(best_z[recent, k][i]) if i is not None else 0.0)
             if w.calendar:
-                alert.explained_by = self._covering_event(alert, events)
+                self._explain(alert, events, self._rate_past(cube, k, N, D, shift, rate[k] + shift),
+                              self._rate_beyond(kind, now_n, now_d, shift, rate[k] + shift,
+                                                scale[k] if kind == "ratio" else None))
             alerts.append(alert)
         return alerts
 
+    def _rate_past(self, cube: Cube, k: int, N, D, shift: float, expected: float):
+        """The effect an earlier calendar event had on this rate series: rate over its hours vs baseline."""
+        def past(e: dict) -> float | None:
+            r0, r1 = max(cube.row(e["start"]), 0), min(cube.row(e["end"]), cube.rows)
+            if r1 <= r0:
+                return None
+            n, d = N[r0:r1, k], D[r0:r1, k]
+            both = np.isfinite(n) & np.isfinite(d)
+            sum_d = float(d[both].sum())
+            if sum_d < self.config.min_ratio_volume:
+                return None
+            return (float(n[both].sum()) / sum_d + shift) / expected - 1.0
+        return past
+
+    def _rate_beyond(self, kind: str, now_n: float, now_d: float, shift: float, expected: float, scale):
+        """Is the rate of the newest bad hours surely beyond `expected x (1 + limit)`, the way it moved?"""
+        def beyond(limit: float, sign: int) -> bool:
+            if now_d <= 0:
+                return False
+            capped = expected * (1.0 + sign * limit)
+            if sign * ((now_n / now_d + shift) - capped) <= 0:
+                return False
+            base = capped - shift
+            if kind == "ratio":
+                score, _ = ratio_surprise(np.array([now_n]), np.array([now_d]), np.array([base]), np.array([scale]))
+            else:
+                if not 0 < base < 1:
+                    return bool(base <= 0) if sign < 0 else bool(base >= 1)
+                score, _ = binomial_surprise(np.array([now_n]), np.array([now_d]), np.array([base]))
+            return bool(np.isfinite(score[0]) and score[0] >= self.config.release_min_surprise)
+        return beyond
+
     def _mark(self, bad, hit, effect, single, single_score, width: int, min_effect: float) -> None:
-        """Mark the bad hours of one window width, in place."""
-        bad |= hit
-        # a sum over several hours says "somewhere in here": an earlier hour of the window is bad
-        # too when it alone moved the same way, by at least min_effect, and is itself unusual
+        """Mark the bad hours of one window width, in place.
+
+        A window of one hour is that hour's own evidence. A sum over several hours says "somewhere in
+        here", so each of its hours, the newest one included, is bad only when it alone moved the same
+        way by at least min_effect and is itself unusual (p below 0.01). A summed window at p below
+        1e-7 always holds such an hour: three hours each above p 0.01 sum to about p 5e-5 at most.
+        Without this the normal hours right after a fault ended were marked bad while the window still
+        reached back into the fault, which made the episode two hours too long and halved the change
+        reported for its newest hours."""
+        if width == 1:
+            bad |= hit
+            return
+        with np.errstate(invalid="ignore"):
+            own = (np.sign(single) == np.sign(effect)) & (np.abs(single) >= min_effect) \
+                & (single_score >= self.config.onset_min_surprise)
+        bad |= hit & own
+        # an earlier hour of the window is bad too on the same terms
         for i in range(bad.shape[0]):
             for back in range(1, width):
                 if i - back >= 0:
@@ -658,11 +756,13 @@ class Monitor:
             if last < rows - cfg.active_hours:
                 continue
             first = self._episode_start(col, last, cfg.episode_gap_hours)
-            span = np.arange(first, last + 1)
+            span = first + np.flatnonzero(col[first:last + 1])     # the episode's bad hours
             ep_x = np.nansum(X[span, k])
-            newest = np.arange(max(first, last - max(cfg.windows) + 1), last + 1)
-            ex, _ = self._volume_expected(X[:, k:k + 1], usable[:, k:k + 1], newest)
+            newest = span[-max(cfg.windows):]
+            ex, weeks = self._volume_expected(X[:, k:k + 1], usable[:, k:k + 1], newest)
             now_x, now_e = float(np.nansum(X[newest, k])), float(np.nansum(ex))
+            with np.errstate(invalid="ignore", divide="ignore"):
+                now_v = float(np.nansum((ex + a[k] * ex ** 2) * (1.0 + 1.0 / weeks)))
             recent = slice(max(first, j0) - j0, last - j0 + 1)
             i = int(np.nanargmax(best[recent, k])) if np.isfinite(best[recent, k]).any() else None
             alert = Alert(
@@ -672,9 +772,80 @@ class Monitor:
                 episode_observed=float(ep_x) / len(span),
                 score=float(best[recent, k][i]) if i is not None else 0.0,
                 z=float(best_z[recent, k][i]) if i is not None else 0.0)
-            alert.explained_by = self._covering_event(alert, events)
+            self._explain(alert, events, self._volume_past(cube, k, X, usable),
+                          self._volume_beyond(now_x, now_e, now_v))
             alerts.append(alert)
         return alerts
+
+    def _volume_past(self, cube: Cube, k: int, X, usable):
+        """The effect an earlier calendar event had on this count: its hours against their earlier weeks."""
+        def past(e: dict) -> float | None:
+            r0, r1 = max(cube.row(e["start"]), 0), min(cube.row(e["end"]), cube.rows)
+            if r1 <= r0:
+                return None
+            ex, _ = self._volume_expected(X[:, k:k + 1], usable[:, k:k + 1], np.arange(r0, r1))
+            x = X[r0:r1, k]
+            both = np.isfinite(x) & np.isfinite(ex[:, 0])
+            sum_e = float(ex[both, 0].sum())
+            if sum_e < self.config.volume_min_expected:
+                return None
+            return float(x[both].sum()) / sum_e - 1.0
+        return past
+
+    def _volume_beyond(self, now_x: float, now_e: float, now_v: float):
+        def beyond(limit: float, sign: int) -> bool:
+            if now_e <= 0 or not np.isfinite(now_v):
+                return False
+            factor = 1.0 + sign * limit
+            if factor <= 0:
+                return True
+            capped = now_e * factor
+            if sign * (now_x - capped) <= 0:
+                return False
+            # the spread at the capped level (scaled with the square of the level: conservative upward)
+            var = max(now_v * factor ** 2, capped * 1.0001)
+            score, _ = count_surprise(np.array([now_x]), np.array([capped]), np.array([var]))
+            return bool(np.isfinite(score[0]) and score[0] >= self.config.release_min_surprise)
+        return beyond
+
+    def _explain(self, alert: Alert, events: list[dict], past=None, beyond=None) -> None:
+        """Set explained_by when a covering calendar row fits the change: the way the event moves the
+        metric (EVENT_EFFECTS), and no more than EVENT_SIZE_FACTOR times the largest effect earlier
+        events of that kind and place had on this series. A row that covers but does not fit becomes
+        `partial_explanation`, with the reason, and the alert is raised."""
+        e = self._covering_event(alert, events)
+        if e is None:
+            return
+        effect = alert.effect
+        if not np.isfinite(effect) or effect == 0:
+            alert.explained_by = e
+            return
+        what = e["description"] or e["kind"]
+        predicted = EVENT_EFFECTS.get(e["kind"], {}).get(alert.metric)
+        way = int(np.sign(effect))
+        why = None
+        if predicted is not None and way != predicted:
+            why = (f"{what} should move {alert.metric} {'up' if predicted > 0 else 'down'}, "
+                   f"but it went {'up' if way > 0 else 'down'} ({effect:+.0%})")
+        elif past is not None and beyond is not None:
+            seen = []
+            for ev in events:
+                same = ev["kind"] == e["kind"] and ev["country"] == e["country"]
+                if not same or ev["end"] > alert.onset or iso_hour(ev["start"]) == e["start"]:
+                    continue
+                got = past(ev)
+                if got is not None and np.isfinite(got):
+                    seen.append(got * way)
+            if seen:
+                largest = max(max(seen), 0.0)
+                if beyond(EVENT_SIZE_FACTOR * largest, way):
+                    why = (f"{alert.metric} moved {effect:+.0%}, more than twice the largest effect earlier "
+                           f"{e['kind']} events of {e['country'] or 'all countries'} had here ({largest * way:+.0%})")
+        if why is None:
+            alert.explained_by = e
+        else:
+            alert.explained_by = None
+            alert.partial_explanation = dict(e, why=why)
 
     def _symptoms_dropped(self, volumes: list[Alert], alerts: list[Alert]) -> list[Alert]:
         """Orders = sessions x conversion. When the sessions or a rate in a compatible place moved in
@@ -801,7 +972,7 @@ class Monitor:
                     numerator=now_w["numerator"], denominator=now_w["denominator"],
                     episode_observed=now_w["observed"], score=best["score"], z=best["z"], trigger="release")
                 if w.calendar:
-                    alert.explained_by = self._covering_event(alert, events)
+                    self._explain(alert, events)   # direction only: one question since a release
                 out.append(alert)
         # Two releases can ask about the same metric in overlapping places (a routine one hours before the
         # real one). The older one's sum is the diluted one: of such alerts the strongest is kept.
