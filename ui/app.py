@@ -2,6 +2,9 @@
 
     uvicorn ui.app:app --port 8000        then open http://127.0.0.1:8000
 
+/ is the main console (design 3, "Investigation canvas", ui/static/v3/); /classic is the earlier console
+(ui/static/index.html); /data browses the simulator tables; /designs links the candidate designs.
+
 Reads: the graph export (docs/contracts/graph.json), incidents/*.json written by brain/, and the simulator
 database. It never writes to brain/. The buttons call the same functions as `python -m sim.inject`.
 """
@@ -63,17 +66,27 @@ app.mount("/static", NoCacheStatic(directory=Path(__file__).parent / "static"), 
 STATIC = Path(__file__).parent / "static"
 
 
-def _page(name: str) -> HTMLResponse:
-    """A page whose stylesheet link carries the file's modification time, so a changed style is fetched again
-    even by a browser that cached the old one."""
+def _page(name: str, assets: tuple[str, ...] = ("console.css",)) -> HTMLResponse:
+    """A page whose stylesheet and script links carry each file's modification time, so a changed style or script
+    is fetched again even by a browser that cached the old one."""
     html = (STATIC / name).read_text(encoding="utf-8")
-    version = int((STATIC / "console.css").stat().st_mtime)
-    return HTMLResponse(html.replace("/static/console.css", f"/static/console.css?v={version}"),
-                        headers={"Cache-Control": "no-cache"})
+    for asset in assets:
+        version = int((STATIC / asset).stat().st_mtime)
+        html = html.replace(f'"/static/{asset}"', f'"/static/{asset}?v={version}"')
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
+MAIN_DESIGN = 3      # the console served at /: design 3, "Investigation canvas" (ui/static/v3/)
 
 
 @app.get("/")
 def index():
+    return _page(f"v{MAIN_DESIGN}/index.html", (f"v{MAIN_DESIGN}/style.css", f"v{MAIN_DESIGN}/app.js"))
+
+
+@app.get("/classic")
+def classic():
+    """The console before design 3: graph and incidents side by side, the DEMO bar folded at the top."""
     return _page("index.html")
 
 
@@ -91,9 +104,11 @@ def design(n: int):
 
 @app.get("/designs")
 def designs():
-    """A page that links the current console and the four candidate designs, each with the same live data."""
+    """A page that links the main console, the classic one and the four candidate designs, each with the same live
+    data. Design 3 is the main console."""
     rows = "".join(
-        f'<li><a href="/v/{n}">{n}. {name}</a> <span>/v/{n}</span></li>'
+        f'<li><a href="/v/{n}">{n}. {name}</a> <span>/v/{n}</span>'
+        + (" <b>the main console, served at /</b>" if n == MAIN_DESIGN else "") + "</li>"
         for n, name in DESIGNS.items() if (STATIC / f"v{n}" / "index.html").is_file())
     html = (
         '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
@@ -102,10 +117,13 @@ def designs():
         'h1{font-size:28px;margin:0 0 8px}p{color:#4a5262;margin:0 0 24px}ul{list-style:none;padding:0;margin:0}'
         'li{margin:0 0 12px}a{color:#2f4ac6;font-weight:600;text-decoration:none;font-size:20px}a:hover{text-decoration:underline}'
         'span{color:#6b7280;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;margin-left:8px}'
-        '@media (prefers-color-scheme: dark){body{background:#12151c;color:#e8ecf2}p,span{color:#9aa3b2}a{color:#8ea2ff}}'
+        'b{font-weight:600;font-size:13px;margin-left:8px;color:#4a5262}'
+        '@media (prefers-color-scheme: dark){body{background:#12151c;color:#e8ecf2}p,span,b{color:#9aa3b2}a{color:#8ea2ff}}'
         '</style></head><body><h1>Eye of the System: four designs</h1>'
         '<p>The same monitor, the same live data and the same API; only the console differs.</p>'
-        f'<ul><li><a href="/">Current console</a> <span>/</span></li>{rows}</ul></body></html>')
+        f'<ul><li><a href="/">Main console ({MAIN_DESIGN}. {DESIGNS[MAIN_DESIGN]})</a> <span>/</span></li>'
+        '<li><a href="/classic">Classic console</a> <span>/classic</span></li>'
+        f'{rows}</ul></body></html>')
     return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 

@@ -20,7 +20,8 @@ def client(tmp_path, monkeypatch):
 
 
 def test_index_and_graph_are_served(client):
-    assert "Eye of the System" in client.get("/").text
+    for page in ("/", "/classic"):
+        assert "Eye of the System" in client.get(page).text, page
     g = client.get("/api/graph").json()
     assert g["nodes"] and g["trees"]
 
@@ -103,7 +104,7 @@ def test_clicking_the_same_button_twice_does_not_stack(client):
 
 
 def test_the_page_marks_the_controls_as_demo(client):
-    html = client.get("/").text
+    html = client.get("/classic").text
     assert 'class="demo-tag"' in html and "not part of the monitor" in html
 
 
@@ -148,7 +149,7 @@ def test_the_three_other_fault_kinds_can_be_injected_and_checked(client):
 
 
 def test_the_page_offers_the_fault_kinds(client):
-    html = client.get("/").text
+    html = client.get("/classic").text
     for word in ("stockout_surge", "search_regression", "ad_budget_exhausted", "Inject fault"):
         assert word in html
 
@@ -166,7 +167,7 @@ def test_domains_list_real_metrics_once_each(client):
 
 
 def test_the_page_has_the_domain_selector_and_keeps_the_demo_controls_folded(client):
-    html = client.get("/").text
+    html = client.get("/classic").text
     assert 'id="domains"' in html and "Business domain" in html
     assert '<details id="demo-controls">' in html and "open" not in html.split('<details id="demo-controls"')[1][:3]
 
@@ -205,7 +206,7 @@ def test_style_stays_flat_and_both_pages_share_it(client):
     css = (ui.Path(ui.__file__).parent / "static" / "console.css").read_text(encoding="utf-8")
     rules = re.sub(r"/\*.*?\*/", "", css, flags=re.S)                  # comments may talk about gradients
     assert "gradient" not in rules and "box-shadow" not in rules and "text-shadow" not in rules
-    for page in ("/", "/data"):
+    for page in ("/classic", "/data"):
         html = client.get(page).text
         assert "/static/console.css" in html and "gradient" not in html and "box-shadow" not in html
         assert "prefers-color-scheme" not in html                      # themes live in one place
@@ -213,7 +214,7 @@ def test_style_stays_flat_and_both_pages_share_it(client):
 
 
 def test_title_and_domain_selector_stay_at_the_top_when_scrolling(client):
-    html = client.get("/").text
+    html = client.get("/classic").text
     head, body = html.split("</head>")
     assert ".sticky-top { position: sticky; top: 0;" in head
     block = body.split('<div class="sticky-top">')[1].split("<main>")[0]
@@ -222,7 +223,7 @@ def test_title_and_domain_selector_stay_at_the_top_when_scrolling(client):
 
 
 def test_the_graph_card_stays_in_view_next_to_a_long_report(client):
-    html = client.get("/").text
+    html = client.get("/classic").text
     assert 'id="graph-card"' in html and "#graph-card { position: sticky;" in html
     assert "--top-h" in html and "setTop" in html                      # the offset follows the real height of the top bar
 
@@ -242,7 +243,7 @@ def test_a_fault_can_be_ended_from_the_page_and_stops_being_active(client):
 
 
 def test_the_page_has_the_end_control_next_to_the_other_demo_controls(client):
-    html = client.get("/").text
+    html = client.get("/classic").text
     assert 'id="end-grp"' in html and "End it (rollback)" in html and "/api/end" in html
     assert html.index('id="end-grp"') < html.index('id="demo-controls"') + 4000        # inside the folded demo bar
 
@@ -255,7 +256,7 @@ def test_static_files_are_not_cached_so_a_changed_style_shows_at_once(client):
 
 def test_pages_link_the_stylesheet_with_its_modification_time(client):
     import re
-    for page in ("/", "/data"):
+    for page in ("/classic", "/data"):
         r = client.get(page)
         assert re.search(r'/static/console\.css\?v=\d+"', r.text), page
         assert r.headers["cache-control"] == "no-cache"
@@ -317,7 +318,7 @@ def test_the_result_of_a_new_metric_is_read_from_its_result_file(client, tmp_pat
 
 
 def test_the_page_reads_the_typed_links_and_survives_odd_fields(client):
-    html = client.get("/").text
+    html = client.get("/classic").text
     for word in ("may_affect", "Breaks down by", "May be affected by", "Context", "Defined from", "Status", "Origin",
                  "Where in the segments", "/api/metric/", "function str(", "function list("):
         assert word in html, word
@@ -327,7 +328,7 @@ def test_the_page_reads_the_typed_links_and_survives_odd_fields(client):
 def test_page_metric_yaml_is_accepted_by_brain(client, tmp_path):
     import re
     from brain.metric_spec import load_specs
-    html = client.get('/').text
+    html = client.get('/classic').text
     literal = re.search(r"var y = '([^']+)';", html).group(1)
     yaml_text = literal.replace('\\n', '\n')
     response = client.post('/api/metric', json={'yaml_text': yaml_text})
@@ -368,7 +369,7 @@ for (const failed of [{text:null,source:'none',model:'claude-opus-5-5',reason:'t
 
 def test_metrics_the_monitor_also_watched_move_count_for_their_domain(client):
     """A watched metric in the investigation trail (stockout_rate next to an ad fault that began in the same hour) lights its own domain."""
-    html = client.get("/").text
+    html = client.get("/classic").text
     assert "t.action === 'watch'" in html and "meta[t.target]" in html
     assert html.count("t.action === 'watch'") == 2          # the domain counts and the highlight both use it
 
@@ -378,7 +379,7 @@ def test_page_faults_outlast_the_demo_script_and_the_ad_fault_keeps_its_shape(cl
     50 s after the click and the close 130 s after it: a 12 hour fault would be over after 24 s, before the rollback.
     The ad budget fault keeps 12 hours, because its shape (boost for hours // 3, then nothing) depends on it."""
     import re
-    html = client.get("/").text
+    html = client.get("/classic").text
     hours = {kind: int(h) for kind, h in re.findall(r"\['(\w+)', '[^']+', \[[^\]]*\], (\d+), (?:[\d.]+|null)\]", html)}
     assert set(hours) == {"payment_failure", "stockout_surge", "search_regression", "ad_budget_exhausted",
                           "traffic_drop", "feed_unavailable", "discount_push"}
@@ -404,3 +405,117 @@ def test_the_candidate_designs_are_served_beside_the_current_console(client, tmp
         page.parent.rmdir()
     assert client.get("/v/9").status_code == 404
     assert client.get("/v/77").status_code == 404
+
+
+# ------------------------------------------------- the main console is design 3, the old one stays at /classic
+def _main_page(client) -> tuple[str, str]:
+    """The main console's HTML as served at / and the script it loads, fetched through the link in the page."""
+    import re
+    html = client.get("/").text
+    src = re.search(r'<script src="(/static/v3/app\.js\?v=\d+)"></script>', html).group(1)
+    return html, client.get(src).text
+
+
+def test_the_main_console_is_design_3_with_its_own_files_fetched_again_when_changed(client):
+    import re
+    r = client.get("/")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+    html = r.text
+    for path in ("/static/v3/style.css", "/static/v3/app.js"):
+        version = int((ui.STATIC / path.removeprefix("/static/")).stat().st_mtime)
+        assert f'{path}?v={version}"' in html, path               # a changed file is fetched again on the next reload
+        assert client.get(f"{path}?v={version}").status_code == 200
+    assert "/static/console.css" not in html                       # the classic style is not loaded on the canvas
+    for word in ('id="canvas"', 'id="feed"', 'id="sheet"', 'id="bench"', "Replay the investigation", 'href="/data"'):
+        assert word in html, word
+    assert not re.search(r'/static/v3/(style\.css|app\.js)"', html), "a file without its version"
+
+
+def test_the_classic_console_is_kept_at_classic(client):
+    r = client.get("/classic")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+    assert '<details id="demo-controls">' in r.text and "/static/console.css?v=" in r.text
+    assert "/static/v3/" not in r.text
+
+
+def test_the_designs_page_names_the_main_and_the_classic_console(client):
+    listing = client.get("/designs").text
+    assert 'href="/classic"' in listing and "Classic console" in listing
+    main = listing.split('href="/v/3"')[1].split("</li>")[0]
+    assert "main console" in main.lower()                          # design 3 is the one served at /
+
+
+def _object(js: str, kind: str) -> str:
+    """The object literal the page posts for one kind, as written in the script: { kind: '<kind>', ... }."""
+    import re
+    m = re.search(r"\{\s*kind:\s*'" + kind + r"'[^{}]*\}", js)
+    assert m, f"the main console has no request body for {kind}"
+    return m.group(0)
+
+
+def _fields(literal: str, values: dict) -> dict:
+    """A request body from the page's object literal; a value read from a control or an argument comes from `values`."""
+    import re
+    out = {}
+    for key, raw in re.findall(r"(\w+):\s*([^,}]+)", literal):
+        raw = raw.strip()
+        if raw.startswith("'"):
+            out[key] = raw.strip("'")
+        elif re.fullmatch(r"-?\d+(\.\d+)?", raw):
+            out[key] = float(raw) if "." in raw else int(raw)
+        else:
+            out[key] = values[raw]
+    return out
+
+
+def test_the_main_console_sends_the_demo_requests_and_the_api_accepts_them(client, tmp_path):
+    """The bodies the demo uses (docs/demo.md), read from the main console's script and posted as the page posts them:
+    the payment fault, its rollback, the promo, the mix shift, the late data, refund_rate and the duplicate metric."""
+    import re
+    import yaml
+    from brain.metric_spec import load_specs
+    html, js = _main_page(client)
+
+    # the payment fault: one row of the fault list, sent with its own hours and severity
+    row = re.search(r"\['payment_failure', '[^']+', \['country', 'platform'\], (\d+), ([\d.]+)\]", js)
+    assert row and "body.severity = k[4]" in js and re.search(r"var body = \{ kind: kind, hours: hours, when: 'now' \}", js)
+    assert "post('/api/inject', body)" in js and 'id="f-go"' in html
+    fault = {"kind": "payment_failure", "country": "DE", "platform": "Android", "hours": int(row.group(1)),
+             "severity": float(row.group(2)), "when": "now"}
+    assert client.post("/api/inject", json=fault).status_code == 200
+
+    # the rollback of that fault
+    assert re.search(r"post\('/api/end', \{ id: id \}\)", js) and "End it (rollback)" in html
+    first = client.get("/api/state").json()["injected"][0]["id"]
+    assert client.post("/api/end", json={"id": first}).status_code == 200
+
+    # the innocent changes and the late data
+    controls = {"$('pr-country').value": "FR", "$('dd-source').value": "payments", "category": "fashion"}
+    for kind, button in (("promo", 'id="pr-go"'), ("mix_shift", 'id="ms-go"'), ("data_delay", 'id="dd-go"')):
+        body = _fields(_object(js, kind), controls)
+        assert body["kind"] == kind and body["when"] == "now" and button in html, kind
+        assert client.post("/api/inject", json=body).status_code == 200, body
+    assert [i["kind"] for i in client.get("/api/state").json()["injected"]] == [
+        "payment_failure", "promo", "mix_shift", "data_delay"]
+
+    # the new metric (the query only: the brain finds the formula) and the duplicate under another name
+    defs = {var: re.search(rf"var {var} = '([^']+)';", js).group(1).replace("\\n", "\n") for var in ("y", "dup")}
+    assert 'id="nm-go">Add refund_rate<' in html and re.search(r'id="nm-dup"[^>]*>Add a duplicate metric<', html)
+    spec, dup = yaml.safe_load(defs["y"]), yaml.safe_load(defs["dup"])
+    assert spec["name"] == "refund_rate" and "formula" not in spec and "SUM(refunds)" in spec["sql"]
+    assert dup["name"] == "payment_rate" and "formula" not in dup and "SUM(payment_successes)" in dup["sql"]
+    assert "post('/api/metric', { yaml_text: yamlText })" in js
+    for text in defs.values():
+        assert client.post("/api/metric", json={"yaml_text": text}).status_code == 200
+    assert [s.name for s in load_specs(tmp_path / "incoming" / "refund_rate.yaml")] == ["refund_rate"]
+
+
+def test_main_console_faults_outlast_the_demo_script(client):
+    """The same rule as for the classic page: a fault lasts longer than the 130 s from the click to the close."""
+    import re
+    _, js = _main_page(client)
+    hours = {kind: int(h) for kind, h in re.findall(r"\['(\w+)', '[^']+', \[[^\]]*\], (\d+), (?:[\d.]+|null)\]", js)}
+    assert set(hours) == {"payment_failure", "stockout_surge", "search_regression", "ad_budget_exhausted",
+                          "traffic_drop", "feed_unavailable", "discount_push"}
+    for kind, h in hours.items():
+        assert h == 12 if kind == "ad_budget_exhausted" else h * 2 > 130, kind

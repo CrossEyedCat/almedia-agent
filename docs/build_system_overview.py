@@ -119,11 +119,17 @@ def facts() -> dict:
                                     "unannounced mix shift, recommendations faults, missing or late release, sibling places, "
                                     "recurrence, late source), each a seeded 30-day history replayed by the brain and judged "
                                     "from its output files; writes docs/stress.md and docs/stress.json"),
-        ("ui/app.py", "The console's API: graph export, incidents, state, injection, rollback, new metric, data browser"),
+        ("ui/app.py", "The console's API: the main console at /, the classic one at /classic, graph export, incidents, state, "
+                      "injection, rollback, new metric, data browser"),
         ("ui/domains.py", "Which metric belongs to which business domain"),
-        ("ui/static/index.html", "Console: domain selector, graph, incidents, report, DEMO controls"),
+        ("ui/static/v3/index.html", "Main console (/), the investigation canvas: header with clock, counts, domains and Test bench; "
+                                    "graph canvas; incident dock; report panel; replay controls"),
+        ("ui/static/v3/style.css", "The main console's style, light and dark"),
+        ("ui/static/v3/app.js", "The main console's script: draws the graph, the dock and the reports, replays an incident's trail "
+                                "on the graph, sends the Test bench's requests"),
+        ("ui/static/index.html", "Classic console (/classic): domain selector, graph, incidents, report, DEMO controls"),
         ("ui/static/data.html", "Read-only browser of the simulator tables"),
-        ("ui/static/console.css", "One style for both pages, light and dark"),
+        ("ui/static/console.css", "Style of the classic console and of the data browser, light and dark"),
     ]
     mods = [(name, job, lines(ROOT / name)) for name, job in modules if (ROOT / name).is_file()]
     tests = [(p.name, tests_in(p)) for p in sorted((ROOT / "tests").glob("test_*.py"))]
@@ -147,7 +153,7 @@ def facts() -> dict:
         "small_rows": small.group(1), "small_attempts": small.group(2),
         # the path the demo gives to the brain (--graph-out) and to the console (GRAPH_JSON)
         "graph_out": found(r"\| GRAPH_JSON \| (\S+) \|", read("docs/demo.md"), "GRAPH_JSON in docs/demo.md").group(1),
-        "refresh_s": int(found(r"setInterval\(refresh, (\d+)\)", read("ui/static/index.html"), "the console's refresh interval").group(1)) / 1000,
+        "refresh_s": int(found(r"setInterval\(refresh, (\d+)\)", read("ui/static/v3/app.js"), "the console's refresh interval").group(1)) / 1000,
         "calls_a_language_model": any(re.search(r"^\s*(?:import|from)\s+anthropic\b", p.read_text(encoding="utf-8"), flags=re.M)
                                       for folder in ("brain", "sim", "ui", "scripts") for p in (ROOT / folder).glob("*.py")),
         **scoring_facts(), "measured": measured(),
@@ -252,10 +258,10 @@ def diagram(f) -> str:
         box(372, 470, 276, 42, "incidents/*.json", ["also explained and pending records"], part=True),
 
         box(700, 216, 280, 308, "console", [], strong=True, tail="ui/"),
-        box(712, 250, 256, 60, "DEMO controls", ["inject a fault, roll it back,", "Add refund_rate (a new metric)"], part=True),
-        box(712, 320, 256, 42, "metric graph", ["the formula tree, by domain"], part=True),
+        box(712, 250, 256, 60, "Test bench (DEMO)", ["inject a fault, roll it back,", "Add refund_rate (a new metric)"], part=True),
+        box(712, 320, 256, 42, "graph canvas", ["the formula tree, by domain"], part=True),
         box(712, 370, 256, 42, "data page", ["the tables, read only"], part=True),
-        box(712, 420, 256, 92, "incidents and report", ["what changed, where, what it cost,", "causes with their evidence,", "the trail, what remains uncertain"], part=True),
+        box(712, 420, 256, 92, "incident dock and report", ["what changed, where, what it cost,", "causes, what remains uncertain,", "the trail, replayed on the graph"], part=True),
 
         # a new metric goes left (yaml), its answer goes right (result.json); graph export and incidents go right
         arrow(700, 279, 648, 279), arrow(372, 279, 320, 279),
@@ -266,7 +272,7 @@ def diagram(f) -> str:
         # ---- between the rows
         arrow(500, 146, 296, 216, f"read only,\n{len(readable)} tables", lx=418, ly=194),
         arrow(712, 146, 760, 216, "clock, tables", lx=724, ly=190, anchor="end"),
-        arrow(900, 216, 900, 138, "DEMO controls", lx=890, ly=181, anchor="end"),
+        arrow(900, 216, 900, 138, "Test bench", lx=890, ly=181, anchor="end"),
 
         # ---- the scoring run
         caption(20, 560, "SCORING RUN", "its own database and incident folder; the brain is the same code"),
@@ -332,7 +338,9 @@ def build() -> str:
     - the example incident only while the incidents folder is missing: ui/app.py, _incidents, and the brain makes the
       folder at its start: brain/incidents.py, Book.__init__;
     - the graph export at the start and after each change of the graph: brain/run.py, main, and brain/extension.py;
-    - the console never reads a node's `domain`: ui/static/index.html takes the domains from /api/domains only."""
+    - the console never reads a node's `domain`: ui/static/v3/app.js (and the classic ui/static/index.html) take the
+      domains from /api/domains only;
+    - the main console's canvas, dock, report panel, replay and Test bench: ui/static/v3/index.html and app.js."""
     f = facts()
     css = read("ui/static/console.css")
     total_tests = sum(n for _, n in f["tests"])
@@ -441,16 +449,23 @@ segment stay where they were. Backfill, live mode and replaying an injection giv
 reach. The tests compare whole tables row by row to prove it.</p>
 
 <h2 id="console">The console</h2>
-<p>Top bar: the domain selector. The graph shows the formula tree, coloured by incident status; picking a domain keeps that domain's boxes
-and their path to the top. The right side lists the incidents of the domain, then a report, or the details of a clicked metric.
-The folded DEMO bar holds the controls that write simulated faults, end them (a rollback) and hand in a new metric.
-The Data page browses the tables read-only.</p>
+<p>The main console (<code>/</code>, <code>ui/static/v3/</code>) is a canvas. The header holds the clock, the incident counts,
+the domain selector and the <b>Test bench</b>. The graph fills the page and can be dragged and zoomed; it shows the formula tree,
+coloured by incident status, and picking a domain keeps that domain's boxes and their path to the top. The incidents are cards
+in a dock along the bottom, live ones first. A click on a card lights the incident's path on the graph, with the change of each
+moved metric and "held" on each factor that stayed normal, and opens its report in a panel on the right; a click on a metric
+opens its definition there. <b>Replay the investigation</b> walks the incident's trail on the graph one step at a time: each
+step rings the metrics it touched, leaves a numbered pin and shows its result, and the same step is lit in the report's trail.
+The Test bench, marked DEMO, holds the controls that write simulated faults, end them (a rollback) and hand in a new metric.
+The classic console (<code>/classic</code>, <code>ui/static/index.html</code>) shows the same data and controls with the graph
+and the incidents side by side and the DEMO bar folded at the top. The Data page browses the tables read-only.</p>
 <p>The console draws the graph from the brain's graph export, the JSON file that the variable <code>GRAPH_JSON</code> names.
 The demo sets it to <code>{esc(f['graph_out'])}</code>. The brain writes that file when it starts (<code>--graph-out</code>) and
 again whenever the graph changes. Without the variable the console reads the tracked example export
 <code>docs/contracts/graph.json</code>, which does not change at run time. The console asks for the graph, the incidents and
 the clock every {f['refresh_s']:g} seconds.</p>
-<p>A new metric at run time. The button <b>Add refund_rate</b> in the DEMO bar sends a definition (a name, a formula and a query)
+<p>A new metric at run time. The button <b>Add refund_rate</b> in the Test bench sends a definition (a name and a query; the
+agent finds the formula itself)
 to the console's API, which saves it as <code>incoming_metrics/&lt;name&gt;.yaml</code>. The brain's extension agent looks into
 that folder on every poll, checks the definition against the data and answers in
 <code>incoming_metrics/&lt;name&gt;.result.json</code>: a status (<code>validated</code>, <code>tentative</code> or
